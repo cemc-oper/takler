@@ -9,8 +9,20 @@
 本教程使用 Takler 项目的两个软件包：
 
 * `takler <https://github.com/perillaroc/takler>`_：takler 核心项目 (Python)，用于创建工作流并运行 Takler 服务
-* `takler-client <https://github.com/perillaroc/takler-client>`_：takler 命令行客户端 (Golang)，用于与 Takler 服务进行交互。
+* `takler-client <https://github.com/perillaroc/takler-client>`_：takler 命令行客户端 (Golang)，用于与 Takler 服务进行交互
 
+
+CMA-HPC2023-SC3
+^^^^^^^^^^^^^^^^
+
+在 CMA-HPC2023-SC3 上可以使用 wangdp 账户预安装的 takler 环境。
+
+.. code-block:: bash
+
+    export MODULEPATH=/g1/u/wangdp/modules:$MODULEPATH
+    module load wangdp/share/tool/takler/latest
+
+如果在其他环境中，可以按照以下两节安装 takler 和 takler-client 两个软件包。
 
 安装 Takler 软件包
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -37,14 +49,18 @@
 编译后会在 **bin** 目录生成可执行程序 ``takler_client``。
 将其拷贝到环境变量 ``PATH`` 可以访问到的目录中（例如 ``$HOME/bin``），或将其目录加入到 ``PATH`` 中。
 
+.. note::
+
+    在 CMA-HPC2023-SC3 等无法直接连接互联网的超算中，需要下载 takler 和 takler-client 的压缩包安装。
+
 创建教程目录
 ----------------
 
-为教程创建单独的目录，例如在 CMA-PI 上创建目录
+为教程创建单独的目录，例如在 CMA-HPC2023-SC1 上创建目录。
 
 .. code-block:: bash
 
-    export TAKLER_HOME=/g11/wangdp/project/course/takler/tutorial
+    export TAKLER_HOME=/g6/wangdp/project/course/takler/tutorial
     mkdir -p ${TAKLER_HOME}
     cd ${TAKLER_HOME}
 
