@@ -1,12 +1,17 @@
+import json
+import sys
 from typing import Optional, Union, List
 from datetime import datetime
 
 import grpc
 
+from takler.core.node import Node
+from takler.core import Bunch
 from takler.server.protocol.takler_pb2_grpc import TaklerServerStub
 from takler.server.protocol import takler_pb2
 from takler.logging import get_logger
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
+from takler.visitor import pre_order_travel, PrintVisitor
 
 
 logger = get_logger("client")
@@ -277,7 +282,17 @@ class TaklerServiceClient:
                 show_meter=show_meter,
             )
         )
-        print(response.output)
+        bunch_dict = json.loads(response.output)
+        bunch = Bunch.from_dict(bunch_dict)
+        for name, flow in bunch.flows.items():
+            pre_order_travel(flow, PrintVisitor(
+                stream=sys.stdout,
+                show_parameter=show_parameter,
+                show_trigger=show_trigger,
+                show_limit=show_limit,
+                show_event=show_event,
+                show_meter=show_meter,
+            ))
 
     def ping(self):
         start_time = datetime.now()

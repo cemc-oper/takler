@@ -1,3 +1,4 @@
+import importlib
 from typing import Optional, Dict, Union, List
 
 from pydantic import BaseModel, field_validator
@@ -30,6 +31,20 @@ class Bunch(NodeContainer):
         result["server_state"] = self.server_state.to_dict()
 
         return result
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Bunch":
+        class_type = d["class_type"]
+        class_module = class_type["module"]
+        class_name = class_type["name"]
+        class_module = importlib.import_module(class_module)
+        class_object = getattr(class_module, class_name)
+        bunch = class_object(name=d["name"])
+        for flow in d["flows"]:
+            flow = Flow.from_dict(flow)
+            bunch.flows[flow.name] = flow
+        bunch.server_state = ServerState.from_dict(d["server_state"])
+        return bunch
 
     # Attr ------------------------------------------------
 
@@ -186,3 +201,14 @@ class ServerState(BaseModel):
             port=self.port,
         )
         return result
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> ServerState:
+        params = list()
+        for p in d["parameters"]:
+            params.append(Parameter.from_dict(p))
+        return cls(
+            host=d["host"],
+            port=d["port"],
+            server_parameters=params,
+        )

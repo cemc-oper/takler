@@ -2,14 +2,12 @@ import asyncio
 import time
 import datetime
 import json
-from io import StringIO
 from queue import Queue
 from typing import Optional
 
 from takler.core import Bunch, Task, NodeStatus, Event, Flow, SerializationType
 from takler.core.node import Node
 from takler.logging import get_logger
-from takler.visitor import pre_order_travel, PrintVisitor
 
 
 logger = get_logger("server.scheduler")
@@ -457,16 +455,7 @@ class Scheduler:
             show_event: bool,
             show_meter: bool,
     ) -> str:
-        stream = StringIO()
+        bunch_dict = self.bunch.to_dict()
+        bunch_json_str = json.dumps(bunch_dict)
 
-        for name, flow in self.bunch.flows.items():
-            pre_order_travel(flow, PrintVisitor(
-                stream=stream,
-                show_parameter=show_parameter,
-                show_trigger=show_trigger,
-                show_limit=show_limit,
-                show_event=show_event,
-                show_meter=show_meter,
-            ))
-
-        return stream.getvalue()
+        return bunch_json_str
