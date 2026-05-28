@@ -75,7 +75,7 @@ def status_flow_queued(status_flow) -> StatusFlow:
               |- task5 [queued]
             |- task6 [queued]
     """
-    for field_name, field in status_flow.model_fields.items():
+    for field_name in StatusFlow.model_fields:
         node = getattr(status_flow, field_name)
         node.state.node_status = NodeStatus.queued
     return status_flow

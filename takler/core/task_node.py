@@ -2,7 +2,7 @@ import functools
 import asyncio
 from typing import Optional, Dict, Set
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .node import Node
 from .state import NodeStatus
@@ -236,8 +236,9 @@ class TaskNodeGeneratedParameters(BaseModel):
     takler_rid: Parameter = Parameter(TAKLER_RID, None)
     takler_try_no: Parameter = Parameter(TAKLER_TRY_NO, None)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True
+    )
 
     def update_parameters(self):
         """

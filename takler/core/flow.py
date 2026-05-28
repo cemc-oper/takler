@@ -1,7 +1,7 @@
 import datetime
 from typing import TYPE_CHECKING, Optional, Dict
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .node_container import NodeContainer
 from .calendar import Calendar
@@ -101,8 +101,9 @@ class FlowGeneratedParameters(BaseModel):
     date: Parameter = Parameter(DATE, None)
     time: Parameter = Parameter(TIME, None)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True
+    )
 
     def update_parameters(self):
         """
