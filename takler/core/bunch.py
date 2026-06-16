@@ -204,7 +204,7 @@ class ServerState(BaseModel):
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict) -> ServerState:
+    def from_dict(cls, d: Dict) -> "ServerState":
         params = list()
         for p in d["parameters"]:
             params.append(Parameter.from_dict(p))

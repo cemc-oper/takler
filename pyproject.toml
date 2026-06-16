@@ -39,10 +39,27 @@ dependencies = [
 Homepage = "https://github.com/perillaroc/takler"
 Repository = "https://github.com/perillaroc/takler.git"
 
-[project.optional-dependencies]
-test = ["pytest"]
-log = ["loguru"]
-tui = ["textual>=0.60", "rich>=13.0"]
+[dependency-groups]
+dev = [
+    "build",
+    "twine",
+    "ipython",
+]
+
+test = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
+tui = [
+    "textual>=0.60",
+    "rich>=13.0",
+]
+
+log = [
+    "loguru",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
