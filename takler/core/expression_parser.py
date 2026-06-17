@@ -111,46 +111,68 @@ class ExpressionTransformer(Transformer):
 
     def expression(self, s):
         """
-        trigger expression, start from here.
+        Top-level expression.
         """
-        if len(s) == 3:
-            s[1].left = s[0]
-            s[1].right = s[2]
-            return s[1]
-        elif len(s) == 1:
+        return s[0]
+
+    def or_expr(self, s):
+        """
+        Logical OR expression.
+        """
+        if len(s) == 1:
             return s[0]
-        else:
-            raise ValueError(f"value is not supported: {s}")
+        s[1].left = s[0]
+        s[1].right = s[2]
+        return s[1]
+
+    def and_expr(self, s):
+        """
+        Logical AND expression.
+        """
+        if len(s) == 1:
+            return s[0]
+        s[1].left = s[0]
+        s[1].right = s[2]
+        return s[1]
+
+    def cmp_expr(self, s):
+        """
+        Comparison or math expression.
+        """
+        if len(s) == 1:
+            return s[0]
+        s[1].left = s[0]
+        s[1].right = s[2]
+        return s[1]
 
 
 # Lark version of expression trigger parser.
 trigger_parser: Lark = Lark(r"""
     !node_path: ("."|"..")?"/"node_name("/"node_name)*
     !variable_path: node_path":"variable_name
-    path: node_path | variable_path
 
-    op_eq: "==" | "eq"i
-    op_gt: ">"
-    op_ge: ">="
-    op_lt: "<"
-    op_le: "<="
-    op_and: "and"i
-    op_or: "or"i
-    ?operator: op_eq | op_gt | op_ge | op_lt | op_le
-    ?logical_operator: op_and | op_or
-    
-    math_add: "+"
+    op_eq.2: "==" | "eq"i
+    op_gt.2: ">"
+    op_ge.2: ">="
+    op_lt.2: "<"
+    op_le.2: "<="
+    ?op_cmp: op_eq | op_gt | op_ge | op_lt | op_le
+
+    op_and.2: "and"i
+    op_or.2: "or"i
+
+    math_add.2: "+"
     ?math_operator: math_add
 
-    st_complete: "complete"i
-    st_aborted: "aborted"i
-    st_active: "active"i
+    st_complete.2: "complete"i
+    st_aborted.2: "aborted"i
+    st_active.2: "active"i
     ?status: st_complete | st_aborted | st_active
-    
-    event_set: "set"i
-    event_unset: "unset"i
+
+    event_set.2: "set"i
+    event_unset.2: "unset"i
     ?event_value: event_set|event_unset
-    
+
     meter_value: NUMBER
 
     ?node_name: pure_node_name | dot | double_dot
@@ -159,15 +181,12 @@ trigger_parser: Lark = Lark(r"""
     !pure_node_name: (LETTER|DIGIT)("_"|LETTER|DIGIT)*
     ?variable_name: CNAME
 
-    expression: "(" expression ")"
-              | (node_path operator status) 
-              | (variable_path) 
-              | (variable_path operator event_value)
-              | (variable_path operator meter_value)
-              | (variable_path operator variable_path)
-              | (expression operator expression)
-              | (expression logical_operator expression)
-              | (variable_path math_operator variable_path)
+    ?expression: or_expr
+    or_expr: and_expr | or_expr op_or and_expr
+    and_expr: cmp_expr | and_expr op_and cmp_expr
+    cmp_expr: primary | primary op_cmp cmp_rhs | primary math_operator primary
+    ?cmp_rhs: status | event_value | meter_value | primary
+    ?primary: variable_path | node_path | "(" expression ")"
 
     %import common.CNAME
     %import common.DIGIT
