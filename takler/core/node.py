@@ -112,6 +112,9 @@ class Node(ABC):
         # 状态
         self.state: State = State()
 
+        # 默认状态，requeue 时节点会重置为该状态
+        self.default_node_status: Literal[NodeStatus.queued, NodeStatus.complete] = NodeStatus.queued
+
         # 树形结构
         self.parent: Optional["Node"] = None
         self.children: List["Node"] = list()
@@ -163,6 +166,8 @@ class Node(ABC):
                 name=self.__class__.__name__
             )
         )
+        if self.default_node_status != NodeStatus.queued:
+            result["default_node_status"] = self.default_node_status.value
         if len(self.children) != 0:
             result["children"] = [child.to_dict() for child in self.children]
         if len(self.user_parameters) != 0:
@@ -232,6 +237,9 @@ class Node(ABC):
         if method == SerializationType.Status:
             state = d["state"]
             node.state = State.from_dict(state, method=method)
+
+        if "default_node_status" in d:
+            node.default_node_status = NodeStatus(d["default_node_status"])
 
         if "user_parameters" in d:
             user_parameters = d["user_parameters"]
@@ -502,6 +510,28 @@ class Node(ABC):
 
         self.set_node_status_only(node_status)
         self.handle_status_change()
+
+    def set_default_node_status(self, node_status: Literal[NodeStatus.queued, NodeStatus.complete]):
+        """
+        Set the default node status. ``requeue`` will reset the node to this status
+        instead of ``NodeStatus.queued``.
+
+        Only ``queued`` and ``complete`` are allowed as a default status,
+        because ``submitted``/``active``/``aborted`` are transient runtime statuses and
+        make no sense as a requeue target.
+
+        Parameters
+        ----------
+        node_status
+            Default node status used by ``requeue``.
+        """
+        allowed = (NodeStatus.queued, NodeStatus.complete)
+        if node_status not in allowed:
+            raise ValueError(
+                f"default node status {node_status} is not supported. "
+                f"Only {', '.join(s.name for s in allowed)} are allowed."
+            )
+        self.default_node_status = node_status
 
     def sink_status_change_only(self, node_status: NodeStatus):
         """
@@ -1115,9 +1145,9 @@ class Node(ABC):
         """
         Requeue the node itself, don't affect children nodes.
 
-        Requeue operation sets node's status to ``NodeStatus.queued``
+        Requeue operation sets node's status to ``self.default_node_status`` (``NodeStatus.queued`` by default)
         """
-        self.set_node_status_only(NodeStatus.queued)
+        self.set_node_status_only(self.default_node_status)
 
         # reset complete trigger
         self.is_complete_triggered = False

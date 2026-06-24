@@ -129,3 +129,6 @@ class NodeContainer(Node):
 
         for child in self.children:
             child.requeue(reset_repeat=reset_repeat)
+
+        if self.default_node_status == NodeStatus.complete:
+            self.sink_status_change_only(NodeStatus.complete)
