@@ -50,6 +50,8 @@ test = [
     "pytest",
     "pytest-cov",
     "ruff",
+    # Property-based testing for the logging subsystem (optional dev tooling).
+    "hypothesis",
 ]
 
 tui = [
@@ -60,6 +62,13 @@ tui = [
 log = [
     "loguru",
 ]
+
+[tool.pytest.ini_options]
+# Use importlib import mode so test packages can mirror source package names
+# without colliding with standard-library modules. In particular, the
+# `tests/logging/` package would otherwise shadow the stdlib `logging` module
+# under the default "prepend" import mode and break collection.
+addopts = "--import-mode=importlib"
 
 [tool.setuptools.packages.find]
 where = ["."]
