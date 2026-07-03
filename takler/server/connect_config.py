@@ -1,12 +1,133 @@
+import enum
+import os
 import socket
 from pathlib import Path
-from typing import Union
+from typing import Mapping, Optional, Union
 
 import yaml
 from pydantic import BaseModel
 
+from takler.logging import get_logger
 
+
+logger = get_logger("server.config")
+
+
+# Environment variable names recognized by the server configuration.
 TAKLER_CONNECT_FILE = "TAKLER_CONNECT_FILE"
+TAKLER_EXCEPTION_POLICY = "TAKLER_EXCEPTION_POLICY"
+
+
+class ExceptionPolicy(enum.Enum):
+    """How the server handles unexpected exceptions at its boundaries.
+
+    The policy governs both the :class:`~takler.server.scheduler.Scheduler`
+    main loop and the gRPC ``TaklerService`` command/query handlers:
+
+    * :attr:`RESILIENT` (default): catch, log and recover from unexpected
+      exceptions so the server process keeps running (skip the offending flow
+      / return an error response).
+    * :attr:`FAIL_FAST`: log the exception first, then let the server process
+      exit cleanly. This restores the pre-fix legacy behaviour, but as an
+      explicit opt-in rather than the default.
+
+    ``RESILIENT`` is the default; ``FAIL_FAST`` is only ever selected when a
+    caller explicitly opts in (Requirement 2.6).
+    """
+
+    RESILIENT = "resilient"
+    FAIL_FAST = "fail_fast"
+
+    @classmethod
+    def from_str(cls, value: "Union[str, ExceptionPolicy]") -> "ExceptionPolicy":
+        """Parse a policy name into an :class:`ExceptionPolicy`.
+
+        Name matching is case-insensitive and tolerates ``-`` in place of
+        ``_`` (so ``"fail-fast"``, ``"FAIL_FAST"`` and ``"fail_fast"`` all
+        resolve to :attr:`FAIL_FAST`). Surrounding whitespace is ignored. An
+        :class:`ExceptionPolicy` value is returned unchanged for convenience.
+
+        Unlike a strict parser, an unrecognized (or blank/non-string) value
+        does not raise: it degrades gracefully to the default
+        :attr:`RESILIENT` and emits a WARNING identifying the offending value,
+        so a misconfigured policy can never make the server less resilient
+        (Requirement 2.6).
+
+        Args:
+            value: A recognized policy name (any letter case) or an existing
+                :class:`ExceptionPolicy`.
+
+        Returns:
+            The matching :class:`ExceptionPolicy` member, or
+            :attr:`RESILIENT` when ``value`` is not recognized.
+        """
+        if isinstance(value, ExceptionPolicy):
+            return value
+
+        if isinstance(value, str):
+            normalized = value.strip().upper().replace("-", "_")
+            member = cls.__members__.get(normalized)
+            if member is not None:
+                return member
+
+        logger.warning(
+            f"Invalid {TAKLER_EXCEPTION_POLICY} value {value!r}; "
+            f"falling back to {DEFAULT_EXCEPTION_POLICY.name}."
+        )
+        return DEFAULT_EXCEPTION_POLICY
+
+
+# Built-in default applied when neither an explicit argument nor an
+# environment variable provides a value (Requirement 2.6).
+DEFAULT_EXCEPTION_POLICY = ExceptionPolicy.RESILIENT
+
+
+def _is_blank(value: Optional[str]) -> bool:
+    """Return ``True`` when an environment value counts as "not provided".
+
+    Empty strings and whitespace-only strings are treated as absent so that a
+    blank environment variable falls back to the built-in default.
+    """
+    return value is None or value.strip() == ""
+
+
+def resolve_exception_policy(
+    explicit: "Optional[Union[str, ExceptionPolicy]]" = None,
+    env: Optional[Mapping[str, str]] = None,
+) -> ExceptionPolicy:
+    """Resolve the effective :class:`ExceptionPolicy`.
+
+    Applies per-source precedence -- explicit argument > ``TAKLER_EXCEPTION_POLICY``
+    environment variable > built-in default :attr:`ExceptionPolicy.RESILIENT`
+    (Requirement 2.6). A missing explicit argument (``None``) lets the
+    environment value take effect; a blank/whitespace-only environment value is
+    treated as absent so the default applies.
+
+    Both the explicit argument and the environment value are parsed with
+    :meth:`ExceptionPolicy.from_str`, so an unrecognized value degrades to
+    :attr:`ExceptionPolicy.RESILIENT` with a WARNING rather than raising.
+
+    Args:
+        explicit: An explicitly supplied policy (constructor argument), either
+            an :class:`ExceptionPolicy` or its name. ``None`` means "not
+            provided" so the next precedence source applies.
+        env: A mapping of environment variables (defaults to ``os.environ``).
+            Only ``TAKLER_EXCEPTION_POLICY`` is consulted.
+
+    Returns:
+        The fully resolved :class:`ExceptionPolicy`.
+    """
+    if explicit is not None:
+        return ExceptionPolicy.from_str(explicit)
+
+    if env is None:
+        env = os.environ
+
+    env_value = env.get(TAKLER_EXCEPTION_POLICY)
+    if _is_blank(env_value):
+        return DEFAULT_EXCEPTION_POLICY
+
+    return ExceptionPolicy.from_str(env_value)
 
 
 class Address(BaseModel):

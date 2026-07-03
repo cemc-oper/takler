@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from typing import Union, Optional
 
 from takler.core import Bunch, NodeStatus
@@ -6,6 +7,7 @@ from takler.logging import configure, get_logger
 
 from .scheduler import Scheduler
 from .network_service import TaklerService
+from .connect_config import ExceptionPolicy, resolve_exception_policy
 
 
 logger = get_logger("server")
@@ -19,13 +21,50 @@ class TaklerServer:
     * scheduler: A scheduler to check dependencies in loop.
     * network service: A gRPC server to receive client command.
     """
-    def __init__(self, host: Optional[str] = None, port: Optional[Union[str, int]] = None):
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        port: Optional[Union[str, int]] = None,
+        exception_policy: "Optional[Union[str, ExceptionPolicy]]" = None,
+    ):
+        # Resolve the effective exception-handling policy following the source
+        # precedence: explicit argument > ``TAKLER_EXCEPTION_POLICY`` env var >
+        # built-in default ``RESILIENT`` (Requirement 2.6).
+        self.exception_policy: ExceptionPolicy = resolve_exception_policy(exception_policy)
+
+        # Shared fatal-error signal. In ``FAIL_FAST`` mode the scheduler / service
+        # request a clean server exit by triggering this event; ``run()`` waits on
+        # it alongside the scheduler task so both modes share one clean shutdown
+        # path (Requirements 2.4, 2.5, 3.4).
+        self._fatal_error_event: asyncio.Event = asyncio.Event()
+        # Guard so the clean shutdown flow runs at most once, whether it is
+        # reached through ``stop()`` or through ``run()`` after the scheduler
+        # task completes / the fatal-error event fires.
+        self._stopped: bool = False
+
         port_str = str(port)
         self.bunch: Bunch = Bunch(host=host, port=port_str)
-        self.scheduler: Scheduler = Scheduler(bunch=self.bunch)
-        self.network_service: TaklerService = TaklerService(
-            scheduler=self.scheduler, host="[::]", port=port
+        self.scheduler: Scheduler = Scheduler(
+            bunch=self.bunch,
+            exception_policy=self.exception_policy,
+            fatal_shutdown=self._trigger_fatal_shutdown,
         )
+        self.network_service: TaklerService = TaklerService(
+            scheduler=self.scheduler,
+            host="[::]",
+            port=port,
+            exception_policy=self.exception_policy,
+            fatal_shutdown=self._trigger_fatal_shutdown,
+        )
+
+    def _trigger_fatal_shutdown(self):
+        """Signal that the server must exit (the ``FAIL_FAST`` path).
+
+        Sets the shared fatal-error event so that ``run()`` -- which waits on it
+        together with the scheduler task -- wakes up and drives the shared clean
+        shutdown flow. Safe to call more than once.
+        """
+        self._fatal_error_event.set()
 
     async def start(self):
         """
@@ -71,12 +110,52 @@ class TaklerServer:
 
         * run network service
         * run scheduler
+
+        ``run()`` returns when either the scheduler task finishes (e.g. after a
+        normal ``stop()``) or the shared fatal-error event fires (the
+        ``FAIL_FAST`` path). In both cases it drives the same clean shutdown flow
+        as :meth:`stop` before returning, so the two modes share one identical
+        clean shutdown path (Requirements 2.4, 2.5, 3.4).
         """
         loop = asyncio.get_running_loop()
         loop.create_task(self.network_service.run(), name="takler.server.network_service")
 
         scheduler_task = loop.create_task(self.scheduler.run(), name="takler.server.scheduler")
-        await scheduler_task
+        # ``asyncio.wait`` requires awaitables wrapped as tasks/futures, so wrap
+        # the event wait in its own task and wait for whichever finishes first.
+        fatal_task = asyncio.ensure_future(self._fatal_error_event.wait())
+
+        try:
+            await asyncio.wait(
+                {scheduler_task, fatal_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            # Tidy up the fatal-error waiter if it did not complete (scheduler
+            # finished first), so it does not linger as a pending task.
+            if not fatal_task.done():
+                fatal_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await fatal_task
+
+        # Whichever branch woke us up, go through the shared clean shutdown flow.
+        await self._shutdown()
+
+    async def _shutdown(self):
+        """
+        Clean shutdown flow shared by :meth:`stop` and :meth:`run`.
+
+        Stops the network service and scheduler without raising. Guarded by
+        ``self._stopped`` so it runs at most once even when both an external
+        ``stop()`` call and ``run()`` reach it (Requirement 3.4).
+        """
+        if self._stopped:
+            return
+        self._stopped = True
+        logger.info("stop server...")
+        await self.network_service.stop()
+        await self.scheduler.stop()
+        logger.info("stop server...done")
 
     async def stop(self):
         """
@@ -87,10 +166,7 @@ class TaklerServer:
         """
         # Record the server shutdown event at INFO level through the named
         # "server" logger, mirroring the start event (Requirement 10.7).
-        logger.info("stop server...")
-        await self.network_service.stop()
-        await self.scheduler.stop()
-        logger.info("stop server...done")
+        await self._shutdown()
 
 
 async def run_server_until_complete(server: TaklerServer, check_interval: int = 10):

@@ -3,11 +3,12 @@ import time
 import datetime
 import json
 from queue import Queue
-from typing import Optional
+from typing import Callable, Optional
 
 from takler.core import Bunch, Task, NodeStatus, Event, Flow, SerializationType
 from takler.core.node import Node
 from takler.logging import get_logger
+from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
 
 
 logger = get_logger("server.scheduler")
@@ -27,11 +28,26 @@ class Scheduler:
     interval_main_loop : float
         time interval to check flow dependencies, unit is seconds.
     """
-    def __init__(self, bunch: Bunch, interval_main_loop: float = DEFAULT_INTERVAL_LOOP_SECONDS):
+    def __init__(
+        self,
+        bunch: Bunch,
+        interval_main_loop: float = DEFAULT_INTERVAL_LOOP_SECONDS,
+        exception_policy: Optional[ExceptionPolicy] = None,
+        fatal_shutdown: Optional[Callable[[], None]] = None,
+    ):
         self.bunch: Bunch = bunch
         self.interval_main_loop: float = interval_main_loop
         self.command_queue: Queue = Queue()
         self.should_stop: bool = False
+        # Exception-handling policy and fatal-shutdown trigger are threaded in
+        # from ``TaklerServer`` (task 3.2). They are stored here so the main
+        # loop can consult them once the per-flow exception boundary lands in
+        # task 3.3; for now they are kept for forward compatibility and do not
+        # alter behaviour.
+        self.exception_policy: ExceptionPolicy = (
+            exception_policy if exception_policy is not None else DEFAULT_EXCEPTION_POLICY
+        )
+        self.fatal_shutdown: Optional[Callable[[], None]] = fatal_shutdown
 
     async def start(self):
         pass
@@ -59,13 +75,48 @@ class Scheduler:
             # logger.debug("main loop...")
             start_time = time.time()
 
-            # update calendar for all flows.
+            # Process every flow behind its own exception boundary so that one
+            # flow's failure cannot abort the whole iteration (or, in
+            # ``FAIL_FAST`` mode, terminate the process without a clean
+            # shutdown). ``dict`` is snapshotted with ``list(...)`` so a flow
+            # mutation mid-iteration cannot raise ``RuntimeError``.
             time_now = datetime.datetime.now()
-            for name, flow in self.bunch.flows.items():
-                flow.update_calendar(time_now)
+            fatal = False
+            for name, flow in list(self.bunch.flows.items()):
+                try:
+                    self._process_flow(name, flow, time_now)
+                except Exception as exc:  # noqa: BLE001 - boundary is intentional
+                    # Unified diagnostic log (task 3.5): always record the
+                    # operation identifier (flow name) plus the error detail
+                    # (exception type + message) with a traceback, before any
+                    # policy-specific action, regardless of the current policy
+                    # (Requirement 2.7). This mirrors the RPC boundary in
+                    # ``TaklerService._handle_command``.
+                    logger.error(
+                        f"unexpected exception while processing flow {name!r}: "
+                        f"{type(exc).__name__}: {exc}",
+                        exc_info=True,
+                    )
+                    if self.exception_policy is ExceptionPolicy.FAIL_FAST:
+                        # FAIL_FAST: after logging the detail, note the
+                        # policy-driven shutdown and trigger the unified clean
+                        # exit path.
+                        logger.critical(
+                            f"fail-fast policy active after flow {name!r} "
+                            f"failure; shutting server down"
+                        )
+                        self._trigger_fatal_shutdown()
+                        fatal = True
+                        break
+                    else:
+                        # RESILIENT (default): skip only this flow, keeping the
+                        # loop running for the rest.
+                        continue
 
-            # travel the bunch.
-            self.travel_bunch()
+            if fatal:
+                # Fail-fast triggered: leave the main loop so the server can go
+                # through its unified clean-shutdown path.
+                break
 
             elapsed = time.time() - start_time
             if elapsed > self.interval_main_loop:
@@ -88,6 +139,39 @@ class Scheduler:
         while self.should_stop:
             await asyncio.sleep(0.1)
         logger.info("scheduler shutting down...done")
+
+    def _trigger_fatal_shutdown(self):
+        """Invoke the fatal-shutdown trigger if one was provided.
+
+        In ``FAIL_FAST`` mode the scheduler asks the owning ``TaklerServer`` to
+        exit through its unified clean-shutdown path. If no trigger was wired in
+        (e.g. the scheduler is used standalone in tests), this is a no-op beyond
+        the caller leaving the main loop.
+        """
+        if self.fatal_shutdown is not None:
+            self.fatal_shutdown()
+
+    def _process_flow(self, name: str, flow: Flow, time_now: datetime.datetime):
+        """Process a single flow: update its calendar and resolve dependencies.
+
+        This encapsulates the per-flow work that was previously spread across
+        the ``update_calendar`` loop and :meth:`travel_bunch` in ``main_loop``.
+        On the success path (no exception) it behaves identically to calling
+        ``flow.update_calendar(time_now)`` followed by
+        ``flow.resolve_dependencies()`` for that flow, keeping the two in
+        lock-step (Requirement 3.1).
+
+        Parameters
+        ----------
+        name
+            flow name, used for diagnostic context by the caller.
+        flow
+            the flow to process.
+        time_now
+            current time used to update the flow's calendar.
+        """
+        flow.update_calendar(time_now)
+        flow.resolve_dependencies()
 
     def travel_bunch(self):
         """
