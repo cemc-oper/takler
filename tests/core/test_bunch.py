@@ -46,8 +46,6 @@ def test_bunch_find_flow(simple_bunch, simple_flow, simple_flow_2):
 
 def test_bunch_find_node(simple_bunch, simple_flow, simple_flow_2):
     bunch = simple_bunch
-    flow1 = simple_flow.flow1
-    flow2 = simple_flow_2.flow2
 
     flow1_task3 = simple_flow.task3
     node = bunch.find_node("/flow1/container1/container2/task3")

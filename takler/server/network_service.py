@@ -1,4 +1,4 @@
-from typing import Callable, Optional, List, Dict
+from typing import Callable, Optional
 import asyncio
 import inspect
 
@@ -346,7 +346,7 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
         flow_bytes = request.flow
 
         def op():
-            logger.info(f"Load flow from bytes...")
+            logger.info("Load flow from bytes...")
             self.scheduler.run_command_load(flow_type=flow_type, flow_bytes=flow_bytes)
             return takler_pb2.ServiceResponse(flag=0, message="")
 

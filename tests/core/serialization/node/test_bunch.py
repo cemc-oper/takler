@@ -268,4 +268,4 @@ def test_bunch_from_dict(bunch_case):
 
     bunch_text = get_node_tree_print_string(test_bunch)
     expected_bunch_text = get_node_tree_print_string(bunch)
-    return
+    assert bunch_text == expected_bunch_text

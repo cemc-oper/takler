@@ -29,7 +29,6 @@ from textual.geometry import Offset
 from textual.widgets import (
     Footer,
     Header,
-    Static,
     TabbedContent,
     TabPane,
 )

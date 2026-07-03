@@ -33,7 +33,7 @@ class Parameter(object):
         return f"Parameter<{self.name}, {self.value}>"
 
     def __eq__(self, other):
-        return type(other) == type(self) and other.name == self.name and other.value == self.value
+        return type(other) is type(self) and other.name == self.name and other.value == self.value
 
     @property
     def value(self):

@@ -16,12 +16,11 @@ from .expression import Expression
 from .repeat import Repeat, RepeatBase
 from .time_attr import TimeAttribute
 
-from .util import logger, SerializationType
+from .util import SerializationType
 
 if TYPE_CHECKING:
     from .bunch import Bunch
     from .calendar import Calendar
-    from .flow import Flow
 
 
 # def compute_node_status(node: Node, immediate: bool) -> NodeStatus:

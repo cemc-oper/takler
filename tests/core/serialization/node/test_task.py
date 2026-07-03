@@ -1,7 +1,6 @@
 import pytest
 
 from takler.core import Flow, RepeatDate, Task, SerializationType
-from takler.visitor import pre_order_travel, PrintVisitor
 
 from .util import get_node_tree_print_string
 

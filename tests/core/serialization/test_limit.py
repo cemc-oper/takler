@@ -126,7 +126,7 @@ def test_in_limit_manager_to_dict():
     in_limit.set_limit(limit)
     limit_2 = Limit("run_limit", 5)
     in_limit_2 = InLimit("run_limit")
-    in_limit_2.set_limit(limit)
+    in_limit_2.set_limit(limit_2)
 
     node = Task("task1")
     in_limit_manager = InLimitManager(node)

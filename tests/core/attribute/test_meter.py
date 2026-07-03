@@ -86,8 +86,8 @@ def test_task_set_meter(simple_flow):
 
 def test_task_set_meter_on_non_exist_meter(simple_flow):
     task1 = simple_flow.task1
-    meter1 = task1.add_meter("meter1", 0, 24)
-    meter2 = task1.add_meter("meter2", 10, 100)
+    # meter1 = task1.add_meter("meter1", 0, 24)
+    # meter2 = task1.add_meter("meter2", 10, 100)
 
     assert not task1.set_meter("not_exist_meter", 10)
 
@@ -121,6 +121,6 @@ def test_task_reset_event(simple_flow):
 
 def test_task_reset_event_on_non_exist_meter(simple_flow):
     task1 = simple_flow.task1
-    meter1 = task1.add_meter("meter1", 0, 24)
-    meter2 = task1.add_meter("meter2", 10, 100)
+    # meter1 = task1.add_meter("meter1", 0, 24)
+    # meter2 = task1.add_meter("meter2", 10, 100)
     assert not task1.reset_meter("not_exist_meter")

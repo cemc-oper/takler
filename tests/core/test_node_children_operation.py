@@ -88,8 +88,8 @@ def test_node_delete_child():
     node1 = Node("node1")
     child1 = node1.append_child("child1")
     child2 = node1.append_child("child2")
-    child2_1 = child2.append_child("child2_1")
-    child2_2 = child2.append_child("child2_2")
+    child2.append_child("child2_1")
+    child2.append_child("child2_2")
 
     assert node1.children == [child1, child2]
 

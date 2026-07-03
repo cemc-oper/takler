@@ -1,4 +1,4 @@
-from takler.core import Bunch, Parameter
+from takler.core import Parameter
 from takler.core.bunch import ServerState
 
 

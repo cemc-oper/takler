@@ -1,4 +1,4 @@
-from takler.core import Task, NodeStatus
+from takler.core import NodeStatus
 
 
 def test_complete_on_task(simple_flow_for_operation):

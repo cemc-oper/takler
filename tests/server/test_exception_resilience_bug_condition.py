@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 from unittest import mock
 
 from hypothesis import given, settings, HealthCheck
@@ -57,6 +56,8 @@ from takler.core import Bunch, Flow
 from takler.server.network_service import TaklerService
 from takler.server.protocol import takler_pb2
 from takler.server.scheduler import Scheduler
+from takler.server import TaklerServer
+from takler.server.connect_config import ExceptionPolicy
 
 
 # ---------------------------------------------------------------------------
@@ -367,9 +368,6 @@ def test_rpc_meter_invalid_value_returns_error_response(meter_value):
 # unified clean-shutdown path without raising.
 #
 # Validates: Requirements 2.4, 2.5 (Property 3)
-
-from takler.server import TaklerServer
-from takler.server.connect_config import ExceptionPolicy
 
 
 def _run_main_loop_to_completion(scheduler: Scheduler, timeout: float = 2.0):

@@ -24,7 +24,7 @@ def test_parameter_create__float():
 def test_parameter_create_bool():
     p = Parameter("FLAG_UPLOAD", True)
     assert p.name == "FLAG_UPLOAD"
-    assert p.value == True
+    assert p.value
     
 
 def test_parameter_create_none():

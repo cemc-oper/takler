@@ -5,7 +5,7 @@ from typing import Optional, List, Union, Tuple
 import typer
 
 from takler.client.service_client import TaklerServiceClient
-from takler.server.connect_config import ConnectConfig, load_connect_config, TAKLER_CONNECT_FILE
+from takler.server.connect_config import load_connect_config, TAKLER_CONNECT_FILE
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 
 

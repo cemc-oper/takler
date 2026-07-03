@@ -5,7 +5,6 @@ from datetime import datetime
 
 import grpc
 
-from takler.core.node import Node
 from takler.core import Bunch
 from takler.server.protocol.takler_pb2_grpc import TaklerServerStub
 from takler.server.protocol import takler_pb2
@@ -303,7 +302,7 @@ class TaklerServiceClient:
         self.shutdown()
 
     def run_request_ping(self):
-        response = self.stub.RunRequestPing(
+        _ = self.stub.RunRequestPing(
             takler_pb2.PingResponse()
         )
 

@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from takler.core import Repeat, RepeatDate, Flow, NodeStatus, Parameter
+from takler.core import RepeatDate, Flow, NodeStatus, Parameter
 
 import pytest
 

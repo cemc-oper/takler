@@ -19,7 +19,7 @@ class ShellRunner:
         async def run_shell_command():
             await run_process(["/bin/sh", "-c", command])
         loop = asyncio.get_running_loop()
-        t = loop.create_task(run_shell_command())
+        _ = loop.create_task(run_shell_command())
 
     def spwan_v2(self, command: str):
         """

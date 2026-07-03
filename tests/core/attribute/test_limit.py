@@ -1,4 +1,3 @@
-from pydantic import ConfigDict
 import pytest
 
 from takler.core import Limit, InLimit, Flow, Task

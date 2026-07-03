@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from takler.core import Bunch
-from takler.core.event import Event
-from takler.core.meter import Meter
 from takler.core.node import Node
 
 

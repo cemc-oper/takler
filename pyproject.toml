@@ -78,3 +78,10 @@ include-package-data = true
 
 [tool.setuptools_scm]
 version_file = "takler/_version.py"
+
+[tool.ruff]
+# 排除 protobuf 生成目录
+exclude = [
+    "**/*_pb2.py",
+    "**/*_pb2_grpc.py",
+]

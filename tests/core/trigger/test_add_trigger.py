@@ -1,6 +1,5 @@
 import pytest
 
-from takler.core import Task
 from takler.core.expression import Expression
 
 

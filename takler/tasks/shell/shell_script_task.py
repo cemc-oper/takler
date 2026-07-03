@@ -14,8 +14,7 @@ from .constant import (
     TAKLER_SCRIPT,
     TAKLER_JOB,
     TAKLER_JOBOUT,
-    JOB_SCRIPT_EXTENSION,
-    JOB_OUTPUT_EXTENSION
+    JOB_SCRIPT_EXTENSION
 )
 from .shell_render import ShellRender
 from .shell_runner import ShellRunner
@@ -118,7 +117,7 @@ class ShellScriptTask(Task):
         return run_command
 
     def check_job_creation(self) -> bool:
-        run_command = self.create_job_script()
+        _ = self.create_job_script()
         return True
 
 
