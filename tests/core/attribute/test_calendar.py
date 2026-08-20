@@ -20,6 +20,7 @@ def patch_datetime_now(monkeypatch, current_time):
     """
     set ``datetime.datetime.now`` to a fixed time, 2025-08-29 10:00:10
     """
+
     class TestDateTime(datetime.datetime):
         @classmethod
         def now(cls, tz=None):
@@ -62,4 +63,3 @@ def test_calendar_update(patch_datetime_now, begin_time, current_time):
     assert calendar.increment == datetime.timedelta(minutes=29, seconds=50)
     assert calendar.initial_real_time == current_time
     assert calendar.last_real_time == update_time
-

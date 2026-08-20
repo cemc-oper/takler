@@ -37,11 +37,15 @@ def test_simple_script_render(scripts_directory, takler_home_directory):
     shell_script.render_script(script_path=task1_script_path)
 
 
-def test_script_with_include_render(scripts_directory, takler_home_directory, takler_include_directory):
+def test_script_with_include_render(
+    scripts_directory, takler_home_directory, takler_include_directory
+):
     with Bunch("nwpc_op") as bunch:
         with Flow("flow1") as flow1:
             bunch.add_flow(flow1)
-            task1_script_path = str(Path(scripts_directory, "task1_with_include.takler"))
+            task1_script_path = str(
+                Path(scripts_directory, "task1_with_include.takler")
+            )
             with flow1.add_task(ShellScriptTask("task1", task1_script_path)) as task1:
                 task1.add_parameter("TAKLER_HOME", str(takler_home_directory))
                 task1.add_parameter("TAKLER_INCLUDE", str(takler_include_directory))

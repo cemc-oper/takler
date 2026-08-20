@@ -55,5 +55,3 @@ def test_state_set():
     node_state.suspended = True
     assert node_state.node_status == NodeStatus.queued
     assert node_state.suspended is True
-
-

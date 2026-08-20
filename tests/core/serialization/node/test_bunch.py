@@ -56,10 +56,7 @@ def test_bunch_to_dict(bunch_case):
     bunch = bunch_case.bunch
     assert bunch.to_dict() == dict(
         name="bunch1",
-        class_type=dict(
-            module="takler.core.bunch",
-            name="Bunch"
-        ),
+        class_type=dict(module="takler.core.bunch", name="Bunch"),
         state=dict(status=1, suspended=False),
         server_state=dict(
             host="host1",
@@ -67,31 +64,26 @@ def test_bunch_to_dict(bunch_case):
             parameters=[
                 dict(name="TAKLER_HOST", value="host1"),
                 dict(name="TAKLER_PORT", value="port1"),
-                dict(name="TAKLER_HOME", value=".")
-            ]
+                dict(name="TAKLER_HOME", value="."),
+            ],
         ),
         flows=[
             dict(
                 name="flow1",
-                class_type=dict(
-                    module="takler.core.flow",
-                    name="Flow"
-                ),
+                class_type=dict(module="takler.core.flow", name="Flow"),
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
                         name="container1",
                         class_type=dict(
-                            module="takler.core.node_container",
-                            name="NodeContainer"
+                            module="takler.core.node_container", name="NodeContainer"
                         ),
                         state=dict(status=3, suspended=False),
                         children=[
                             dict(
                                 name="task1",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
@@ -101,15 +93,14 @@ def test_bunch_to_dict(bunch_case):
                             dict(
                                 name="task2",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
                                 try_no=0,
-                            )
-                        ]
+                            ),
+                        ],
                     )
                 ],
                 begun=False,
@@ -124,25 +115,20 @@ def test_bunch_to_dict(bunch_case):
             ),
             dict(
                 name="flow2",
-                class_type=dict(
-                    module="takler.core.flow",
-                    name="Flow"
-                ),
+                class_type=dict(module="takler.core.flow", name="Flow"),
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
                         name="container2",
                         class_type=dict(
-                            module="takler.core.node_container",
-                            name="NodeContainer"
+                            module="takler.core.node_container", name="NodeContainer"
                         ),
                         state=dict(status=3, suspended=False),
                         children=[
                             dict(
                                 name="task3",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
@@ -152,15 +138,14 @@ def test_bunch_to_dict(bunch_case):
                             dict(
                                 name="task4",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
                                 try_no=0,
-                            )
-                        ]
+                            ),
+                        ],
                     )
                 ],
                 begun=False,
@@ -172,8 +157,8 @@ def test_bunch_to_dict(bunch_case):
                     initial_real_time=None,
                     last_real_time=None,
                 ),
-            )
-        ]
+            ),
+        ],
     )
 
 
@@ -181,10 +166,7 @@ def test_bunch_from_dict(bunch_case):
     bunch = bunch_case.bunch
     d = dict(
         name="bunch1",
-        class_type=dict(
-            module="takler.core.bunch",
-            name="Bunch"
-        ),
+        class_type=dict(module="takler.core.bunch", name="Bunch"),
         state=dict(status=1, suspended=False),
         server_state=dict(
             host="host1",
@@ -192,31 +174,26 @@ def test_bunch_from_dict(bunch_case):
             parameters=[
                 dict(name="TAKLER_HOST", value="host1"),
                 dict(name="TAKLER_PORT", value="port1"),
-                dict(name="TAKLER_HOME", value=".")
-            ]
+                dict(name="TAKLER_HOME", value="."),
+            ],
         ),
         flows=[
             dict(
                 name="flow1",
-                class_type=dict(
-                    module="takler.core.flow",
-                    name="Flow"
-                ),
+                class_type=dict(module="takler.core.flow", name="Flow"),
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
                         name="container1",
                         class_type=dict(
-                            module="takler.core.node_container",
-                            name="NodeContainer"
+                            module="takler.core.node_container", name="NodeContainer"
                         ),
                         state=dict(status=3, suspended=False),
                         children=[
                             dict(
                                 name="task1",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
@@ -226,39 +203,33 @@ def test_bunch_from_dict(bunch_case):
                             dict(
                                 name="task2",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
                                 try_no=0,
-                            )
-                        ]
+                            ),
+                        ],
                     )
-                ]
+                ],
             ),
             dict(
                 name="flow2",
-                class_type=dict(
-                    module="takler.core.flow",
-                    name="Flow"
-                ),
+                class_type=dict(module="takler.core.flow", name="Flow"),
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
                         name="container2",
                         class_type=dict(
-                            module="takler.core.node_container",
-                            name="NodeContainer"
+                            module="takler.core.node_container", name="NodeContainer"
                         ),
                         state=dict(status=3, suspended=False),
                         children=[
                             dict(
                                 name="task3",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
@@ -268,19 +239,18 @@ def test_bunch_from_dict(bunch_case):
                             dict(
                                 name="task4",
                                 class_type=dict(
-                                    module="takler.core.task_node",
-                                    name="Task"
+                                    module="takler.core.task_node", name="Task"
                                 ),
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
                                 try_no=0,
-                            )
-                        ]
+                            ),
+                        ],
                     )
-                ]
-            )
-        ]
+                ],
+            ),
+        ],
     )
 
     test_bunch = Bunch.from_dict(d)

@@ -9,6 +9,7 @@ There is no ``pytest-asyncio`` in this project (see ``pyproject.toml``), so the
 async handlers are driven with :func:`asyncio.run`, mirroring the convention of
 ``tests/server/test_exception_resilience_bug_condition.py``.
 """
+
 import asyncio
 from unittest import mock
 

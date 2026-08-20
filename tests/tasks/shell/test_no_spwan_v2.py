@@ -33,9 +33,7 @@ SPAWN_METHOD = "spwan"
 
 
 def _parse(source_path: Path) -> ast.Module:
-    return ast.parse(
-        source_path.read_text(encoding="utf-8"), filename=str(source_path)
-    )
+    return ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
 
 
 def _function_names(tree: ast.AST) -> List[str]:

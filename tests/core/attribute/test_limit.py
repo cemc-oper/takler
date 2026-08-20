@@ -5,9 +5,10 @@ from takler.core.limit import InLimitManager
 
 from ..conftest import SimpleFlow
 
-#------------------
+# ------------------
 # Limit
-#------------------
+# ------------------
+
 
 def test_limit_create():
     limit_count = 20
@@ -72,9 +73,10 @@ def test_limit_reset():
     assert limit.value == 0
 
 
-#---------------------
+# ---------------------
 # InLimit
-#---------------------
+# ---------------------
+
 
 def test_in_limit_create():
     in_limit = InLimit("post_limit")
@@ -91,9 +93,10 @@ def test_in_limit_set_limit():
     assert in_limit.limit == limit
 
 
-#-------------------------------
+# -------------------------------
 # InLimitManager
-#-------------------------------
+# -------------------------------
+
 
 def test_in_limit_manager_create():
     task = Task("task1")
@@ -259,17 +262,18 @@ def test_in_limit_manager_decrement_in_limit():
     assert limit_three.value == 0
 
 
-#-------------------------------
+# -------------------------------
 # Flow
-#-------------------------------
+# -------------------------------
+
 
 def test_flow_add_limit_duplicate(simple_flow):
     flow1 = simple_flow.flow1
-    flow1.add_limit('limit1', 10)
+    flow1.add_limit("limit1", 10)
 
     with pytest.raises(RuntimeError):
-        flow1.add_limit('limit1', 20)
-        
+        flow1.add_limit("limit1", 20)
+
 
 class FlowWithLimit(SimpleFlow):
     total_limit: Limit
@@ -496,9 +500,11 @@ def test_flow_limit(flow_with_limit):
     assert total_limit.value == 0
     assert section_limit.value == 0
 
-#-------------------------------
+
+# -------------------------------
 # InLimitManager.delete_in_limit
-#-------------------------------
+# -------------------------------
+
 
 def test_in_limit_manager_delete_in_limit_without_tokens():
     limit_one = Limit("limit1", 2)

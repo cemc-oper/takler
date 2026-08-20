@@ -2,9 +2,10 @@ import pytest
 
 from takler.core import Event
 
-#----------------
+# ----------------
 # Event
-#----------------
+# ----------------
+
 
 def test_event_create():
     event = Event("event1")
@@ -56,9 +57,9 @@ def test_event_reset():
     assert event.initial_value is True
 
 
-#----------------
+# ----------------
 # Event in flow
-#----------------
+# ----------------
 
 
 def test_task_add_event(simple_flow):
@@ -123,5 +124,3 @@ def test_task_reset_event(simple_flow):
     assert event2.value is True
 
     assert task1.reset_event("not_exist_event") is False
-
-

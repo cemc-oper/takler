@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from takler.core import  Flow, NodeContainer, Task
+from takler.core import Flow, NodeContainer, Task
 
 
 class FlowWithParameter(BaseModel):

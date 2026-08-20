@@ -131,9 +131,7 @@ class ServerRunner:
         self._thread.start()
 
         if not self._ready.wait(timeout):
-            raise TimeoutError(
-                f"takler server did not start within {timeout} seconds"
-            )
+            raise TimeoutError(f"takler server did not start within {timeout} seconds")
         if self._error is not None:
             raise self._error
         return self
@@ -142,7 +140,11 @@ class ServerRunner:
         """Stop the server and join its thread; safe to call more than once."""
         if self._thread is None:
             return
-        if self._loop is not None and self.server is not None and self._thread.is_alive():
+        if (
+            self._loop is not None
+            and self.server is not None
+            and self._thread.is_alive()
+        ):
             # ``stop()`` must run *on* the server's loop, hence the
             # thread-safe hand-off. ``TaklerServer._shutdown`` is idempotent,
             # so a second call is harmless.

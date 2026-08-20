@@ -33,12 +33,13 @@ def _service_response_block(text: str) -> str:
     """Return the body of ``message ServiceResponse`` including its comments."""
     start = text.index("message ServiceResponse")
     end = text.index("}", start)
-    return text[start:end + 1]
+    return text[start : end + 1]
 
 
 # ---------------------------------------------------------------------------
 # Message shape (Requirements 3.2, 3.10)
 # ---------------------------------------------------------------------------
+
 
 def test_service_response_has_exactly_two_fields():
     """No field was added to or removed from ``ServiceResponse``."""
@@ -77,6 +78,7 @@ def test_service_response_default_flag_is_success():
 # ---------------------------------------------------------------------------
 # Proto text and comment (Requirements 3.2, 3.11)
 # ---------------------------------------------------------------------------
+
 
 def test_proto_file_is_shipped_with_the_package():
     """The ``.proto`` lives inside the installed package, next to the stubs."""

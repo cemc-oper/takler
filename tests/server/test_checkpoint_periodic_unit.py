@@ -34,6 +34,7 @@ from takler.server.checkpoint import TEMP_SUFFIX, CheckpointManager
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_bunch() -> Bunch:
     bunch = Bunch(host="login01", port="33083")
     flow = Flow(name="flow1")
@@ -43,8 +44,8 @@ def _make_bunch() -> Bunch:
 
 
 def _make_manager(
-        tmp_path: Path,
-        interval: float = 0.02,
+    tmp_path: Path,
+    interval: float = 0.02,
 ) -> CheckpointManager:
     """A manager whose period is short enough for a test to observe."""
     manager = CheckpointManager(
@@ -70,6 +71,7 @@ def _capturing_stderr(func):
 # ---------------------------------------------------------------------------
 # Periodic writing (Requirement 5.1)
 # ---------------------------------------------------------------------------
+
 
 def test_start_holds_the_periodic_task_and_writes_once_per_period(tmp_path):
     manager = _make_manager(tmp_path)
@@ -171,6 +173,7 @@ def test_cancelling_the_loop_task_is_not_swallowed(tmp_path):
 # Overrun warning (Requirement 5.10)
 # ---------------------------------------------------------------------------
 
+
 def test_write_slower_than_the_period_logs_a_warning_with_both_values(tmp_path):
     manager = _make_manager(tmp_path, interval=0.05)
     original = manager.write_checkpoint_async
@@ -225,6 +228,7 @@ def test_write_faster_than_the_period_logs_no_warning(tmp_path):
 # ---------------------------------------------------------------------------
 # Shutdown snapshot (Requirement 5.9)
 # ---------------------------------------------------------------------------
+
 
 def test_stop_writes_a_final_snapshot_after_cancelling_the_task(tmp_path):
     manager = _make_manager(tmp_path, interval=5.0)

@@ -44,6 +44,7 @@ from takler.tasks.shell import ShellScriptTask
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _source_bunch() -> Bunch:
     """A bunch carrying every kind of runtime state the requirements name.
 
@@ -96,9 +97,7 @@ def _target_manager(tmp_path: Path, name: str = "takler.check") -> CheckpointMan
 
 def _write_source_snapshot(tmp_path: Path, name: str = "takler.check") -> Path:
     """Write one real snapshot of :func:`_source_bunch` and return its path."""
-    writer = CheckpointManager(
-        bunch=_source_bunch(), checkpoint_file=tmp_path / name
-    )
+    writer = CheckpointManager(bunch=_source_bunch(), checkpoint_file=tmp_path / name)
     assert writer.write_checkpoint() is True
     return writer.checkpoint_file
 
@@ -137,6 +136,7 @@ def _lines(captured: str, level: str) -> list:
 # What is restored (Requirements 6.1, 6.2, 6.3, 6.11, 6.13)
 # ---------------------------------------------------------------------------
 
+
 def test_restore_brings_back_every_flow_into_the_existing_bunch(tmp_path):
     _write_source_snapshot(tmp_path)
     manager = _target_manager(tmp_path)
@@ -154,9 +154,7 @@ def test_restore_brings_back_every_flow_into_the_existing_bunch(tmp_path):
 def test_restore_round_trips_the_status_serialization(tmp_path):
     """Requirement 6.2 / 6.11 in one assertion: nothing written is dropped."""
     source = _source_bunch()
-    writer = CheckpointManager(
-        bunch=source, checkpoint_file=tmp_path / "takler.check"
-    )
+    writer = CheckpointManager(bunch=source, checkpoint_file=tmp_path / "takler.check")
     writer.write_checkpoint()
     manager = _target_manager(tmp_path)
 
@@ -232,7 +230,9 @@ def test_restore_keeps_begun_and_the_calendar(tmp_path):
 
     flow1 = manager.bunch.find_flow("flow1")
     assert flow1.begun is True
-    assert flow1.calendar.initial_time == source.find_flow("flow1").calendar.initial_time
+    assert (
+        flow1.calendar.initial_time == source.find_flow("flow1").calendar.initial_time
+    )
     # An un-begun flow stays un-begun, calendar included.
     flow2 = manager.bunch.find_flow("flow2")
     assert flow2.begun is False
@@ -256,6 +256,7 @@ def test_restore_does_not_requeue(tmp_path):
 # The snapshot's server_state is discarded (Requirements 6.5, 6.22)
 # ---------------------------------------------------------------------------
 
+
 def test_restore_keeps_the_current_process_host_and_port(tmp_path):
     _write_source_snapshot(tmp_path)
     manager = _target_manager(tmp_path)
@@ -272,6 +273,7 @@ def test_restore_keeps_the_current_process_host_and_port(tmp_path):
 # ---------------------------------------------------------------------------
 # Reporting (Requirement 6.10)
 # ---------------------------------------------------------------------------
+
 
 def test_restore_logs_the_flow_and_node_counts(tmp_path):
     _write_source_snapshot(tmp_path)
@@ -291,6 +293,7 @@ def test_restore_logs_the_flow_and_node_counts(tmp_path):
 # ---------------------------------------------------------------------------
 # Fallback chain (Requirements 6.7, 6.8, 6.9)
 # ---------------------------------------------------------------------------
+
 
 def test_missing_checkpoint_file_starts_with_an_empty_bunch(tmp_path):
     manager = _target_manager(tmp_path)
@@ -357,6 +360,7 @@ def test_a_snapshot_without_a_bunch_key_is_unusable(tmp_path):
 # Format version (Requirements 6.14, 6.15)
 # ---------------------------------------------------------------------------
 
+
 def test_a_snapshot_without_a_format_version_is_still_restored(tmp_path):
     path = _write_source_snapshot(tmp_path)
     snapshot = json.loads(path.read_text(encoding="utf-8"))
@@ -395,6 +399,7 @@ def test_a_newer_format_version_is_refused_and_falls_back(tmp_path):
 # One broken flow does not lose the others
 # ---------------------------------------------------------------------------
 
+
 def test_a_broken_flow_is_skipped_and_the_rest_is_restored(tmp_path):
     path = _write_source_snapshot(tmp_path)
     snapshot = json.loads(path.read_text(encoding="utf-8"))
@@ -429,6 +434,7 @@ def test_restore_never_raises_on_a_directory_in_place_of_the_snapshot(tmp_path):
 # _load_snapshot / _restore_into_bunch directly
 # ---------------------------------------------------------------------------
 
+
 def test_load_snapshot_returns_the_parsed_dictionary(tmp_path):
     path = _write_source_snapshot(tmp_path)
     manager = _target_manager(tmp_path)
@@ -443,9 +449,7 @@ def test_restore_into_bunch_reports_the_counts(tmp_path):
     path = _write_source_snapshot(tmp_path)
     manager = _target_manager(tmp_path)
 
-    flow_count, node_count = manager._restore_into_bunch(
-        manager._load_snapshot(path)
-    )
+    flow_count, node_count = manager._restore_into_bunch(manager._load_snapshot(path))
 
     assert (flow_count, node_count) == (2, 7)
 

@@ -70,9 +70,7 @@ def fake_server(monkeypatch):
 def write_connect_config(path: Path, hostname: str, port: str) -> Path:
     """Write a minimal ``connect.yaml`` holding only the ``server`` section."""
     content = {
-        "server": {
-            "address": {"hostname": hostname, "ip": "127.0.0.1", "port": port}
-        }
+        "server": {"address": {"hostname": hostname, "ip": "127.0.0.1", "port": port}}
     }
     with open(path, "w") as f:
         yaml.safe_dump(content, f)
@@ -124,11 +122,16 @@ def test_options_are_passed_to_the_server(fake_server, tmp_path):
     result = runner.invoke(
         cli.app,
         [
-            "--host", "login_a06",
-            "--port", "34567",
-            "--checkpoint-file", str(checkpoint_file),
-            "--checkpoint-interval", "45",
-            "--exception-policy", "fail_fast",
+            "--host",
+            "login_a06",
+            "--port",
+            "34567",
+            "--checkpoint-file",
+            str(checkpoint_file),
+            "--checkpoint-interval",
+            "45",
+            "--exception-policy",
+            "fail_fast",
         ],
         env=WIDE,
     )

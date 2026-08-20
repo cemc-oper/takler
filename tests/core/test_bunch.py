@@ -18,9 +18,7 @@ def test_bunch_add_flow(simple_flow, simple_flow_2):
     bunch = Bunch()
     flow1 = simple_flow.flow1
     bunch.add_flow(flow1)
-    assert bunch.flows == {
-        "flow1": flow1
-    }
+    assert bunch.flows == {"flow1": flow1}
 
     flow2 = simple_flow_2.flow2
     bunch.add_flow(flow2)
@@ -63,9 +61,7 @@ def test_bunch_delete_flow(simple_bunch, simple_flow, simple_flow_2):
 
     f = bunch.delete_flow("flow1")
     assert f == flow1
-    assert bunch.flows == {
-        "flow2": flow2
-    }
+    assert bunch.flows == {"flow2": flow2}
 
 
 def test_bunch_find_node_with_relative_path(simple_bunch):

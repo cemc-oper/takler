@@ -6,9 +6,10 @@ from pydantic import BaseModel, ConfigDict
 from takler.core import Flow, Task
 
 
-#-------------------
+# -------------------
 # Flow
-#-------------------
+# -------------------
+
 
 class OneTaskFlow(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -27,10 +28,7 @@ def one_task_time_flow() -> OneTaskFlow:
         with flow1.add_task("task1") as task1:
             task1.add_time(datetime.time(12, 0))
 
-    flow1 = OneTaskFlow(
-        flow1=flow1,
-        task1=task1
-    )
+    flow1 = OneTaskFlow(flow1=flow1, task1=task1)
     return flow1
 
 
@@ -42,6 +40,7 @@ def patch_datetime_now(monkeypatch):
     """
     set ``datetime.datetime.now`` to a fixed time, 2022-09-12 10:00:01
     """
+
     class TestDateTime(datetime.datetime):
         @classmethod
         def now(cls, tz=None):
@@ -132,7 +131,9 @@ def test_time_attr_requeue(one_task_time_flow, patch_datetime_now):
     assert flow1.calendar.to_dict() == calendar_before_requeue
 
 
-def _next_time_point(after: datetime.datetime, time_point: datetime.time) -> datetime.datetime:
+def _next_time_point(
+    after: datetime.datetime, time_point: datetime.time
+) -> datetime.datetime:
     """
     The first datetime later than ``after`` whose HH:MM equals ``time_point``.
     """
@@ -174,7 +175,9 @@ def test_time_attr_begin_again_catch_time_point(one_task_time_flow):
     assert flow1.calendar.flow_time == initial_time
     assert not task1.times[0].free
 
-    first_hit = _next_time_point(initial_time + datetime.timedelta(minutes=2), time_point)
+    first_hit = _next_time_point(
+        initial_time + datetime.timedelta(minutes=2), time_point
+    )
 
     _advance_flow_time(flow1, first_hit - datetime.timedelta(minutes=1))
     assert not task1.times[0].free
@@ -196,7 +199,9 @@ def test_time_attr_begin_again_catch_time_point(one_task_time_flow):
     assert flow1.calendar.flow_time == new_initial_time
     assert not task1.times[0].free
 
-    second_hit = _next_time_point(new_initial_time + datetime.timedelta(minutes=2), time_point)
+    second_hit = _next_time_point(
+        new_initial_time + datetime.timedelta(minutes=2), time_point
+    )
 
     _advance_flow_time(flow1, second_hit - datetime.timedelta(minutes=1))
     assert not task1.times[0].free
@@ -226,8 +231,8 @@ def test_time_attr_free_dependencies(one_task_time_flow, patch_datetime_now):
 
 
 def test_task_resolve_time_dependencies_single_task():
-    task = Task('task1')
-    task.add_time('12:00')
+    task = Task("task1")
+    task.add_time("12:00")
 
     with pytest.raises(RuntimeError):
         task.resolve_time_dependencies()

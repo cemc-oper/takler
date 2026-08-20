@@ -71,9 +71,7 @@ def _nested_relative_paths(draw: st.DrawFn) -> List[str]:
     not to exist yet under a freshly created temp base.
     """
     depth = draw(st.integers(min_value=1, max_value=4))
-    directories = draw(
-        st.lists(_safe_segment, min_size=depth, max_size=depth)
-    )
+    directories = draw(st.lists(_safe_segment, min_size=depth, max_size=depth))
     filename = draw(_safe_segment) + ".log"
     return [*directories, filename]
 

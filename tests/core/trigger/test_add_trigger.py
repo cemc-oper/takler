@@ -8,7 +8,7 @@ def test_task_add_trigger_expression(trigger_simple_flow):
 
     task2.add_trigger(Expression("./task1 == complete"))
 
-    assert task2.trigger_expression.expression_str == './task1 == complete'
+    assert task2.trigger_expression.expression_str == "./task1 == complete"
 
 
 def test_task_add_trigger_error_type(trigger_simple_flow):
@@ -26,9 +26,8 @@ def test_task_add_trigger_parse(trigger_simple_flow):
     task2.add_trigger("./task1 == complete")
     assert task2.trigger_expression.ast is None
 
-    task3.add_trigger('../task2 == complete', parse=True)
+    task3.add_trigger("../task2 == complete", parse=True)
     assert task3.trigger_expression.ast is not None
 
-    task4.add_trigger('../task3 == complete', parse=False)
+    task4.add_trigger("../task3 == complete", parse=False)
     assert task4.trigger_expression.ast is None
-

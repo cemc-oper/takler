@@ -207,7 +207,7 @@ def restored(tmp_path: Path) -> Tuple[Path, Bunch, ShellScriptTask]:
 
 
 def test_restored_shell_task_keeps_the_script_path_of_the_snapshot(
-        restored: Tuple[Path, Bunch, ShellScriptTask],
+    restored: Tuple[Path, Bunch, ShellScriptTask],
 ) -> None:
     """Requirement 6.13: ``script_path`` comes back exactly as written.
 
@@ -236,7 +236,7 @@ def test_restored_shell_task_keeps_the_script_path_of_the_snapshot(
 
 
 def test_restored_shell_task_resolves_the_current_server_address(
-        restored: Tuple[Path, Bunch, ShellScriptTask],
+    restored: Tuple[Path, Bunch, ShellScriptTask],
 ) -> None:
     """Requirements 6.5, 6.12, 6.22: the chain reaches *this* bunch.
 
@@ -277,7 +277,7 @@ def test_restored_shell_task_resolves_the_current_server_address(
 
 
 def test_restored_shell_task_can_create_its_job_again(
-        restored: Tuple[Path, Bunch, ShellScriptTask],
+    restored: Tuple[Path, Bunch, ShellScriptTask],
 ) -> None:
     """Requirement 16.15: job creation succeeds and carries the new address.
 
@@ -320,8 +320,8 @@ def test_restored_shell_task_can_create_its_job_again(
 
 
 def test_task_restored_by_a_started_server_creates_a_job_for_that_server(
-        tmp_path: Path,
-        request: pytest.FixtureRequest,
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
 ) -> None:
     """The same scenario through ``TaklerServer.start`` and a bound port.
 
@@ -351,9 +351,7 @@ def test_task_restored_by_a_started_server_creates_a_job_for_that_server(
     assert task.find_parent_parameter(TAKLER_PORT).value == str(runner.port)
 
     assert task.check_job_creation() is True
-    job_script = Path(task.find_parameter(TAKLER_JOB).value).read_text(
-        encoding="utf-8"
-    )
+    job_script = Path(task.find_parameter(TAKLER_JOB).value).read_text(encoding="utf-8")
     assert f"export {TAKLER_HOST}={runner.host}" in job_script
     assert f"export {TAKLER_PORT}={runner.port}" in job_script
     assert SNAPSHOT_PORT not in job_script

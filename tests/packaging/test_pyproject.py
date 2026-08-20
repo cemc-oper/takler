@@ -78,7 +78,7 @@ def _has_lower_bound(requirement: str) -> bool:
     # Strip the name (and any extras) so a name such as ``zope.interface``
     # cannot be mistaken for an operator.
     name = _distribution_name(requirement)
-    specifier = specifier[len(name):]
+    specifier = specifier[len(name) :]
     return any(operator in specifier for operator in LOWER_BOUND_OPERATORS)
 
 
@@ -89,8 +89,7 @@ def _all_requirements(
     pairs = [("project.dependencies", req) for req in project["dependencies"]]
     for group, requirements in optional_dependencies.items():
         pairs.extend(
-            (f"project.optional-dependencies.{group}", req)
-            for req in requirements
+            (f"project.optional-dependencies.{group}", req) for req in requirements
         )
     return pairs
 
@@ -98,6 +97,7 @@ def _all_requirements(
 # ---------------------------------------------------------------------------
 # Optional dependency groups (Requirements 14.1, 14.2, 14.3, 14.7)
 # ---------------------------------------------------------------------------
+
 
 def test_optional_dependency_groups_are_exactly_tui_log_test(
     optional_dependencies: dict[str, list[str]],
@@ -134,11 +134,10 @@ def test_dependency_groups_keeps_only_dev_tooling(pyproject: dict):
 # Version lower bounds (Requirements 14.4, 14.5)
 # ---------------------------------------------------------------------------
 
+
 def test_every_runtime_dependency_declares_a_lower_bound(project: dict):
     """No runtime requirement is left unbounded below."""
-    unbounded = [
-        req for req in project["dependencies"] if not _has_lower_bound(req)
-    ]
+    unbounded = [req for req in project["dependencies"] if not _has_lower_bound(req)]
 
     assert unbounded == []
 
@@ -160,6 +159,7 @@ def test_every_optional_dependency_declares_a_lower_bound(
 # Environment markers (Requirement 14.6)
 # ---------------------------------------------------------------------------
 
+
 def test_no_requirement_carries_a_python_version_marker(
     project: dict, optional_dependencies: dict[str, list[str]]
 ):
@@ -176,6 +176,7 @@ def test_no_requirement_carries_a_python_version_marker(
 # ---------------------------------------------------------------------------
 # Console entry points (Requirements 15.1, 15.7, 16.18)
 # ---------------------------------------------------------------------------
+
 
 def test_scripts_are_exactly_the_three_expected_entries(project: dict):
     """The entry point set is frozen so a rename cannot be reverted silently."""

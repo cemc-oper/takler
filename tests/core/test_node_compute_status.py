@@ -6,7 +6,6 @@ from takler.core import Flow, NodeContainer, Task, NodeStatus
 from takler.core.node import compute_most_significant_status
 
 
-
 class StatusFlow(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -82,8 +81,16 @@ def status_flow_queued(status_flow) -> StatusFlow:
 
 
 def test_compute_status_unknown(status_flow):
-    assert compute_most_significant_status(status_flow.container1.children, immediate=True) == NodeStatus.unknown
-    assert compute_most_significant_status(status_flow.container1.children, immediate=False) == NodeStatus.unknown
+    assert (
+        compute_most_significant_status(status_flow.container1.children, immediate=True)
+        == NodeStatus.unknown
+    )
+    assert (
+        compute_most_significant_status(
+            status_flow.container1.children, immediate=False
+        )
+        == NodeStatus.unknown
+    )
 
 
 def test_compute_status_submitted(status_flow_queued):
@@ -94,17 +101,35 @@ def test_compute_status_submitted(status_flow_queued):
 
     task2.state.node_status = NodeStatus.submitted
 
-    assert compute_most_significant_status(container2.children, immediate=True) == NodeStatus.submitted
-    assert compute_most_significant_status(container1.children, immediate=True) == NodeStatus.queued
-    assert compute_most_significant_status(flow1.children, immediate=True) == NodeStatus.queued
+    assert (
+        compute_most_significant_status(container2.children, immediate=True)
+        == NodeStatus.submitted
+    )
+    assert (
+        compute_most_significant_status(container1.children, immediate=True)
+        == NodeStatus.queued
+    )
+    assert (
+        compute_most_significant_status(flow1.children, immediate=True)
+        == NodeStatus.queued
+    )
 
-    assert compute_most_significant_status(flow1.children, immediate=False) == NodeStatus.submitted
+    assert (
+        compute_most_significant_status(flow1.children, immediate=False)
+        == NodeStatus.submitted
+    )
     assert flow1.state.node_status == NodeStatus.queued
     assert container1.state.node_status == NodeStatus.queued
     assert container2.state.node_status == NodeStatus.queued
 
-    assert compute_most_significant_status(container1.children, immediate=False) == NodeStatus.submitted
-    assert compute_most_significant_status(container2.children, immediate=False) == NodeStatus.submitted
+    assert (
+        compute_most_significant_status(container1.children, immediate=False)
+        == NodeStatus.submitted
+    )
+    assert (
+        compute_most_significant_status(container2.children, immediate=False)
+        == NodeStatus.submitted
+    )
 
 
 def test_compute_status_submitted_and_active(status_flow_queued):
@@ -117,17 +142,35 @@ def test_compute_status_submitted_and_active(status_flow_queued):
     task2.state.node_status = NodeStatus.submitted
     task3.state.node_status = NodeStatus.active
 
-    assert compute_most_significant_status(container2.children, immediate=True) == NodeStatus.active
-    assert compute_most_significant_status(container1.children, immediate=True) == NodeStatus.queued
-    assert compute_most_significant_status(flow1.children, immediate=True) == NodeStatus.queued
+    assert (
+        compute_most_significant_status(container2.children, immediate=True)
+        == NodeStatus.active
+    )
+    assert (
+        compute_most_significant_status(container1.children, immediate=True)
+        == NodeStatus.queued
+    )
+    assert (
+        compute_most_significant_status(flow1.children, immediate=True)
+        == NodeStatus.queued
+    )
 
-    assert compute_most_significant_status(flow1.children, immediate=False) == NodeStatus.active
+    assert (
+        compute_most_significant_status(flow1.children, immediate=False)
+        == NodeStatus.active
+    )
     assert flow1.state.node_status == NodeStatus.queued
     assert container1.state.node_status == NodeStatus.queued
     assert container2.state.node_status == NodeStatus.queued
 
-    assert compute_most_significant_status(container1.children, immediate=False) == NodeStatus.active
-    assert compute_most_significant_status(container2.children, immediate=False) == NodeStatus.active
+    assert (
+        compute_most_significant_status(container1.children, immediate=False)
+        == NodeStatus.active
+    )
+    assert (
+        compute_most_significant_status(container2.children, immediate=False)
+        == NodeStatus.active
+    )
 
 
 def test_compute_status_submitted_and_active_and_complete(status_flow_queued):
@@ -142,17 +185,31 @@ def test_compute_status_submitted_and_active_and_complete(status_flow_queued):
     task3.state.node_status = NodeStatus.active
     task4.state.node_status = NodeStatus.complete
 
-    assert compute_most_significant_status(container2.children, immediate=True) == NodeStatus.active
-    assert compute_most_significant_status(container1.children, immediate=True) == NodeStatus.queued
-    assert compute_most_significant_status(flow1.children, immediate=True) == NodeStatus.queued
+    assert (
+        compute_most_significant_status(container2.children, immediate=True)
+        == NodeStatus.active
+    )
+    assert (
+        compute_most_significant_status(container1.children, immediate=True)
+        == NodeStatus.queued
+    )
+    assert (
+        compute_most_significant_status(flow1.children, immediate=True)
+        == NodeStatus.queued
+    )
 
-    assert compute_most_significant_status(flow1.children, immediate=False) == NodeStatus.active
+    assert (
+        compute_most_significant_status(flow1.children, immediate=False)
+        == NodeStatus.active
+    )
     assert flow1.state.node_status == NodeStatus.queued
     assert container1.state.node_status == NodeStatus.queued
     assert container2.state.node_status == NodeStatus.queued
 
 
-def test_compute_status_submitted_and_active_and_complete_and_aborted(status_flow_queued):
+def test_compute_status_submitted_and_active_and_complete_and_aborted(
+    status_flow_queued,
+):
     flow1 = status_flow_queued.flow1
     container1 = status_flow_queued.container1
     container2 = status_flow_queued.container2
@@ -166,17 +223,35 @@ def test_compute_status_submitted_and_active_and_complete_and_aborted(status_flo
     task4.state.node_status = NodeStatus.complete
     task5.state.node_status = NodeStatus.aborted
 
-    assert compute_most_significant_status(container2.children, immediate=True) == NodeStatus.aborted
-    assert compute_most_significant_status(container1.children, immediate=True) == NodeStatus.queued
-    assert compute_most_significant_status(flow1.children, immediate=True) == NodeStatus.queued
+    assert (
+        compute_most_significant_status(container2.children, immediate=True)
+        == NodeStatus.aborted
+    )
+    assert (
+        compute_most_significant_status(container1.children, immediate=True)
+        == NodeStatus.queued
+    )
+    assert (
+        compute_most_significant_status(flow1.children, immediate=True)
+        == NodeStatus.queued
+    )
 
-    assert compute_most_significant_status(flow1.children, immediate=False) == NodeStatus.aborted
+    assert (
+        compute_most_significant_status(flow1.children, immediate=False)
+        == NodeStatus.aborted
+    )
     assert flow1.state.node_status == NodeStatus.queued
     assert container1.state.node_status == NodeStatus.queued
     assert container2.state.node_status == NodeStatus.queued
 
-    assert compute_most_significant_status(container1.children, immediate=False) == NodeStatus.aborted
-    assert compute_most_significant_status(container2.children, immediate=False) == NodeStatus.aborted
+    assert (
+        compute_most_significant_status(container1.children, immediate=False)
+        == NodeStatus.aborted
+    )
+    assert (
+        compute_most_significant_status(container2.children, immediate=False)
+        == NodeStatus.aborted
+    )
 
 
 def test_compute_status_complete_and_queued(status_flow_queued):
@@ -193,17 +268,35 @@ def test_compute_status_complete_and_queued(status_flow_queued):
     task4.state.node_status = NodeStatus.complete
     task5.state.node_status = NodeStatus.complete
 
-    assert compute_most_significant_status(container2.children, immediate=True) == NodeStatus.complete
-    assert compute_most_significant_status(container1.children, immediate=True) == NodeStatus.queued
-    assert compute_most_significant_status(flow1.children, immediate=True) == NodeStatus.queued
+    assert (
+        compute_most_significant_status(container2.children, immediate=True)
+        == NodeStatus.complete
+    )
+    assert (
+        compute_most_significant_status(container1.children, immediate=True)
+        == NodeStatus.queued
+    )
+    assert (
+        compute_most_significant_status(flow1.children, immediate=True)
+        == NodeStatus.queued
+    )
 
-    assert compute_most_significant_status(flow1.children, immediate=False) == NodeStatus.queued
+    assert (
+        compute_most_significant_status(flow1.children, immediate=False)
+        == NodeStatus.queued
+    )
     assert flow1.state.node_status == NodeStatus.queued
     assert container1.state.node_status == NodeStatus.queued
     assert container2.state.node_status == NodeStatus.queued
 
-    assert compute_most_significant_status(container1.children, immediate=False) == NodeStatus.queued
-    assert compute_most_significant_status(container2.children, immediate=False) == NodeStatus.complete
+    assert (
+        compute_most_significant_status(container1.children, immediate=False)
+        == NodeStatus.queued
+    )
+    assert (
+        compute_most_significant_status(container2.children, immediate=False)
+        == NodeStatus.complete
+    )
 
 
 def test_node_container_compute_status_empty_children():

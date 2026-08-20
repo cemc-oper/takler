@@ -34,6 +34,7 @@ from takler.server.connect_config import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _server_section() -> dict:
     return {
         "address": {
@@ -54,6 +55,7 @@ def _make_config(checkpoint: CheckpointSettings | None = None) -> ConnectConfig:
 # ---------------------------------------------------------------------------
 # CheckpointSettings defaults
 # ---------------------------------------------------------------------------
+
 
 def test_checkpoint_settings_default_to_none():
     """Both knobs default to ``None``, i.e. "not configured"."""
@@ -76,6 +78,7 @@ def test_connect_config_default_checkpoint_is_not_shared():
 # ---------------------------------------------------------------------------
 # Backward compatible loading
 # ---------------------------------------------------------------------------
+
 
 def test_load_connect_config_without_checkpoint_section(tmp_path):
     """A legacy file holding only ``server`` still loads (Requirement 7.1)."""
@@ -129,6 +132,7 @@ def test_load_connect_config_with_partial_checkpoint_section(tmp_path):
 # Saving
 # ---------------------------------------------------------------------------
 
+
 def test_save_connect_config_writes_checkpoint_section(tmp_path):
     """``save_connect_config`` emits a ``checkpoint`` section (Requirement 7.1)."""
     file_path = tmp_path / "connect.yaml"
@@ -146,9 +150,7 @@ def test_save_connect_config_writes_checkpoint_section(tmp_path):
 def test_save_connect_config_round_trip_preserves_checkpoint(tmp_path):
     """Configured values survive a save / load round trip."""
     file_path = tmp_path / "connect.yaml"
-    config = _make_config(
-        CheckpointSettings(interval=120.0, file="run/takler.check")
-    )
+    config = _make_config(CheckpointSettings(interval=120.0, file="run/takler.check"))
 
     save_connect_config(config, file_path)
     loaded = load_connect_config(file_path)

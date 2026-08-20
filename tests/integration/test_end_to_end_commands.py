@@ -110,8 +110,7 @@ class CommandLog:
         """Record a command RPC and assert the server reported success."""
         self.commands.append(name)
         assert response.flag == 0, (
-            f"command {name} failed: flag={response.flag}, "
-            f"message={response.message!r}"
+            f"command {name} failed: flag={response.flag}, message={response.message!r}"
         )
         return response
 
@@ -190,13 +189,17 @@ def test_all_commands_over_the_wire(takler_server, tmp_path: Path):
         assert task1.task_id == "job-42"
 
         # -- Child: event -----------------------------------------------
-        log.command("event", client.run_command_event(node_path=TASK1, event_name="event_a"))
+        log.command(
+            "event", client.run_command_event(node_path=TASK1, event_name="event_a")
+        )
         assert task1.find_event("event_a").value is True
 
         # -- Child: meter -----------------------------------------------
         log.command(
             "meter",
-            client.run_command_meter(node_path=TASK1, meter_name="meter_a", meter_value="5"),
+            client.run_command_meter(
+                node_path=TASK1, meter_name="meter_a", meter_value="5"
+            ),
         )
         assert task1.find_meter("meter_a").value == 5
 

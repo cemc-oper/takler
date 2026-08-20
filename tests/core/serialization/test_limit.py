@@ -15,10 +15,7 @@ def test_limit_to_dict():
 
     limit.increment(1, "/flow1/task1")
     assert limit.to_dict() == dict(
-        name="upload_limit",
-        limit=10,
-        value=1,
-        node_paths=["/flow1/task1"]
+        name="upload_limit", limit=10, value=1, node_paths=["/flow1/task1"]
     )
 
     limit.increment(1, "/flow1/task2")
@@ -29,43 +26,34 @@ def test_limit_to_dict():
         node_paths=[
             "/flow1/task1",
             "/flow1/task2",
-        ]
+        ],
     )
 
     limit.decrement(1, "/flow1/task1")
     assert limit.to_dict() == dict(
-        name="upload_limit",
-        limit=10,
-        value=1,
-        node_paths=[
-            "/flow1/task2"
-        ]
+        name="upload_limit", limit=10, value=1, node_paths=["/flow1/task2"]
     )
 
 
 def test_limit_from_dict():
-    d = dict(
-        name="upload_limit",
-        limit=10
+    d = dict(name="upload_limit", limit=10)
+    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit(
+        "upload_limit", 10
     )
-    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit("upload_limit", 10)
     with pytest.raises(KeyError):
         Limit.from_dict(d)
     with pytest.raises(KeyError):
         Limit.from_dict(d, method=SerializationType.Status)
 
-    d = dict(
-        name="upload_limit",
-        limit=10,
-        value=1,
-        node_paths=["/flow1/task1"]
-    )
+    d = dict(name="upload_limit", limit=10, value=1, node_paths=["/flow1/task1"])
 
     limit = Limit("upload_limit", 10)
     limit.increment(1, "/flow1/task1")
     assert Limit.from_dict(d) == limit
     assert Limit.from_dict(d, method=SerializationType.Status) == limit
-    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit("upload_limit", 10)
+    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit(
+        "upload_limit", 10
+    )
 
     d = dict(
         name="upload_limit",
@@ -74,25 +62,22 @@ def test_limit_from_dict():
         node_paths=[
             "/flow1/task1",
             "/flow1/task2",
-        ]
+        ],
     )
     limit.increment(1, "/flow1/task2")
     assert Limit.from_dict(d) == limit
     assert Limit.from_dict(d, method=SerializationType.Status)
-    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit("upload_limit", 10)
-
-    d = dict(
-        name="upload_limit",
-        limit=10,
-        value=1,
-        node_paths=[
-            "/flow1/task2"
-        ]
+    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit(
+        "upload_limit", 10
     )
+
+    d = dict(name="upload_limit", limit=10, value=1, node_paths=["/flow1/task2"])
     limit.decrement(1, "/flow1/task1")
     assert Limit.from_dict(d) == limit
     assert Limit.from_dict(d, method=SerializationType.Status)
-    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit("upload_limit", 10)
+    assert Limit.from_dict(d, method=SerializationType.Tree) == Limit(
+        "upload_limit", 10
+    )
 
 
 def test_in_limit_to_dict():
@@ -114,10 +99,14 @@ def test_in_limit_from_dict():
         node_path=None,
     )
     assert InLimit.from_dict(d, method=SerializationType.Tree) == InLimit(
-        limit_name="upload_limit", tokens=1, node_path=None)
+        limit_name="upload_limit", tokens=1, node_path=None
+    )
     assert InLimit.from_dict(d, method=SerializationType.Status) == InLimit(
-        limit_name="upload_limit", tokens=1, node_path=None)
-    assert InLimit.from_dict(d) == InLimit(limit_name="upload_limit", tokens=1, node_path=None)
+        limit_name="upload_limit", tokens=1, node_path=None
+    )
+    assert InLimit.from_dict(d) == InLimit(
+        limit_name="upload_limit", tokens=1, node_path=None
+    )
 
 
 def test_in_limit_manager_to_dict():
@@ -153,7 +142,7 @@ def test_in_limit_manager_to_dict():
                 limit_name="run_limit",
                 tokens=1,
                 node_path=None,
-            )
+            ),
         ]
     )
 
@@ -188,7 +177,7 @@ def test_in_limit_manager_from_dict():
                 limit_name="run_limit",
                 tokens=1,
                 node_path=None,
-            )
+            ),
         ]
     )
 

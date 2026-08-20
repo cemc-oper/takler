@@ -137,6 +137,7 @@ def _option_names(command: Any) -> set[str]:
 # takler-client-py (Requirement 15.2)
 # ---------------------------------------------------------------------------
 
+
 def test_client_help_lists_commands_and_exits_zero(runner: CliRunner):
     """``takler-client-py --help`` prints the command list, exit code 0."""
     from takler.client.cli import app
@@ -144,9 +145,7 @@ def test_client_help_lists_commands_and_exits_zero(runner: CliRunner):
     result = runner.invoke(app, ["--help"], env=WIDE_TERMINAL)
 
     assert result.exit_code == 0, result.output
-    missing = [
-        name for name in PRE_M1_CLIENT_COMMANDS if name not in result.output
-    ]
+    missing = [name for name in PRE_M1_CLIENT_COMMANDS if name not in result.output]
     assert missing == [], result.output
 
 
@@ -166,6 +165,7 @@ def test_client_help_of_each_command_exits_zero(runner: CliRunner):
 # ---------------------------------------------------------------------------
 # takler-server (Requirements 15.3, 15.4)
 # ---------------------------------------------------------------------------
+
 
 def test_server_help_shows_startup_options_and_exits_zero(runner: CliRunner):
     """``takler-server --help`` prints the startup options, exit code 0."""
@@ -219,6 +219,7 @@ def test_server_entry_accepts_host_port_and_config_options():
 # takler-tui (Requirement 15.5)
 # ---------------------------------------------------------------------------
 
+
 def test_tui_help_exits_zero(runner: CliRunner):
     """``takler-tui --help`` runs the existing ``takler.tui`` entry, exit 0."""
     pytest.importorskip("textual", reason="the tui extra is not installed")
@@ -248,6 +249,7 @@ def test_tui_entry_is_the_module_entry_point():
 # ---------------------------------------------------------------------------
 # python -m takler.client (Requirement 15.6)
 # ---------------------------------------------------------------------------
+
 
 def test_module_entry_is_the_client_cli_app():
     """``python -m takler.client`` runs the very same Typer app as the script."""

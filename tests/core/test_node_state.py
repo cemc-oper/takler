@@ -75,13 +75,18 @@ def test_node_container_sink_status_change_only(simple_flow_with_queued_status):
 
     assert container1.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task1.state.node_status == NodeStatus.complete
-    assert simple_flow_with_queued_status.container2.state.node_status == NodeStatus.complete
+    assert (
+        simple_flow_with_queued_status.container2.state.node_status
+        == NodeStatus.complete
+    )
     assert simple_flow_with_queued_status.task2.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task3.state.node_status == NodeStatus.complete
 
     assert simple_flow_with_queued_status.flow1.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task4.state.node_status == NodeStatus.queued
-    assert simple_flow_with_queued_status.container3.state.node_status == NodeStatus.queued
+    assert (
+        simple_flow_with_queued_status.container3.state.node_status == NodeStatus.queued
+    )
     assert simple_flow_with_queued_status.task5.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task6.state.node_status == NodeStatus.queued
 
@@ -94,28 +99,40 @@ def test_task_swim_status_change_only(simple_flow_with_queued_status):
     assert task2.state.node_status == NodeStatus.active
 
     task2.swim_status_change_only()
-    assert simple_flow_with_queued_status.container2.state.node_status == NodeStatus.active
-    assert simple_flow_with_queued_status.container1.state.node_status == NodeStatus.active
+    assert (
+        simple_flow_with_queued_status.container2.state.node_status == NodeStatus.active
+    )
+    assert (
+        simple_flow_with_queued_status.container1.state.node_status == NodeStatus.active
+    )
     assert simple_flow_with_queued_status.flow1.state.node_status == NodeStatus.active
 
     assert simple_flow_with_queued_status.task1.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task3.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task4.state.node_status == NodeStatus.queued
-    assert simple_flow_with_queued_status.container3.state.node_status == NodeStatus.queued
+    assert (
+        simple_flow_with_queued_status.container3.state.node_status == NodeStatus.queued
+    )
 
 
 def test_task_set_node_status(simple_flow_with_queued_status):
     task2 = simple_flow_with_queued_status.task2
 
     task2.set_node_status(NodeStatus.active)
-    assert simple_flow_with_queued_status.container2.state.node_status == NodeStatus.active
-    assert simple_flow_with_queued_status.container1.state.node_status == NodeStatus.active
+    assert (
+        simple_flow_with_queued_status.container2.state.node_status == NodeStatus.active
+    )
+    assert (
+        simple_flow_with_queued_status.container1.state.node_status == NodeStatus.active
+    )
     assert simple_flow_with_queued_status.flow1.state.node_status == NodeStatus.active
 
     assert simple_flow_with_queued_status.task1.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task3.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task4.state.node_status == NodeStatus.queued
-    assert simple_flow_with_queued_status.container3.state.node_status == NodeStatus.queued
+    assert (
+        simple_flow_with_queued_status.container3.state.node_status == NodeStatus.queued
+    )
 
 
 def test_container_sink_status_change(simple_flow_with_queued_status):
@@ -134,7 +151,10 @@ def test_container_sink_status_change(simple_flow_with_queued_status):
 
     assert simple_flow_with_queued_status.flow1.state.node_status == NodeStatus.queued
     assert container1.state.node_status == NodeStatus.complete
-    assert simple_flow_with_queued_status.container2.state.node_status == NodeStatus.complete
+    assert (
+        simple_flow_with_queued_status.container2.state.node_status
+        == NodeStatus.complete
+    )
     assert simple_flow_with_queued_status.task1.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task2.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task3.state.node_status == NodeStatus.complete
@@ -142,12 +162,18 @@ def test_container_sink_status_change(simple_flow_with_queued_status):
     assert container3.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task5.state.node_status == NodeStatus.queued
     assert task6.state.node_status == NodeStatus.queued
-    
+
     task4.set_node_status(NodeStatus.complete)
 
     assert simple_flow_with_queued_status.flow1.state.node_status == NodeStatus.queued
-    assert simple_flow_with_queued_status.container1.state.node_status == NodeStatus.complete
-    assert simple_flow_with_queued_status.container2.state.node_status == NodeStatus.complete
+    assert (
+        simple_flow_with_queued_status.container1.state.node_status
+        == NodeStatus.complete
+    )
+    assert (
+        simple_flow_with_queued_status.container2.state.node_status
+        == NodeStatus.complete
+    )
     assert simple_flow_with_queued_status.task1.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task2.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task3.state.node_status == NodeStatus.complete
@@ -155,12 +181,18 @@ def test_container_sink_status_change(simple_flow_with_queued_status):
     assert container3.state.node_status == NodeStatus.queued
     assert simple_flow_with_queued_status.task5.state.node_status == NodeStatus.queued
     assert task6.state.node_status == NodeStatus.queued
-    
+
     container3.sink_status_change(NodeStatus.complete)
 
     assert simple_flow_with_queued_status.flow1.state.node_status == NodeStatus.queued
-    assert simple_flow_with_queued_status.container1.state.node_status == NodeStatus.complete
-    assert simple_flow_with_queued_status.container2.state.node_status == NodeStatus.complete
+    assert (
+        simple_flow_with_queued_status.container1.state.node_status
+        == NodeStatus.complete
+    )
+    assert (
+        simple_flow_with_queued_status.container2.state.node_status
+        == NodeStatus.complete
+    )
     assert simple_flow_with_queued_status.task1.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task2.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task3.state.node_status == NodeStatus.complete
@@ -172,8 +204,14 @@ def test_container_sink_status_change(simple_flow_with_queued_status):
     task6.set_node_status(NodeStatus.complete)
 
     assert simple_flow_with_queued_status.flow1.state.node_status == NodeStatus.complete
-    assert simple_flow_with_queued_status.container1.state.node_status == NodeStatus.complete
-    assert simple_flow_with_queued_status.container2.state.node_status == NodeStatus.complete
+    assert (
+        simple_flow_with_queued_status.container1.state.node_status
+        == NodeStatus.complete
+    )
+    assert (
+        simple_flow_with_queued_status.container2.state.node_status
+        == NodeStatus.complete
+    )
     assert simple_flow_with_queued_status.task1.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task2.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task3.state.node_status == NodeStatus.complete
@@ -181,5 +219,3 @@ def test_container_sink_status_change(simple_flow_with_queued_status):
     assert container3.state.node_status == NodeStatus.complete
     assert simple_flow_with_queued_status.task5.state.node_status == NodeStatus.complete
     assert task6.state.node_status == NodeStatus.complete
-    
-    

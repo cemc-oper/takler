@@ -37,7 +37,7 @@ def task_case():
         result.task2 = task2
         task2.add_parameter("param1", "one")
         task2.add_trigger("./task1:event1 == set")
-        task2.add_complete_trigger('./task2:event2 == set')
+        task2.add_complete_trigger("./task2:event2 == set")
         task2.add_event("event1")
         task2.add_meter("meter1", 0, 10)
         task2.add_limit("limit1", 10)
@@ -74,16 +74,10 @@ def test_node_to_dict(task_case):
         events=[
             dict(name="event1", initial_value=False, value=False),
         ],
-        meters=[
-            dict(name="meter1", min_value=0, max_value=10, value=0)
-        ],
-        limits=[
-            dict(name="limit1", limit=10, node_paths=list(), value=0)
-        ],
+        meters=[dict(name="meter1", min_value=0, max_value=10, value=0)],
+        limits=[dict(name="limit1", limit=10, node_paths=list(), value=0)],
         in_limit_manager=dict(
-            in_limit_list=[
-                dict(limit_name="limit1", tokens=1, node_path=None)
-            ]
+            in_limit_list=[dict(limit_name="limit1", tokens=1, node_path=None)]
         ),
         repeat=dict(
             r=dict(
@@ -98,7 +92,6 @@ def test_node_to_dict(task_case):
         times=[
             dict(time="12:00", free=False),
         ],
-
         # task
         task_id=None,
         aborted_reason=None,
@@ -125,16 +118,10 @@ def test_node_from_dict(task_case):
         events=[
             dict(name="event1", initial_value=False, value=False),
         ],
-        meters=[
-            dict(name="meter1", min_value=0, max_value=10, value=0)
-        ],
-        limits=[
-            dict(name="limit1", limit=10, node_paths=list(), value=0)
-        ],
+        meters=[dict(name="meter1", min_value=0, max_value=10, value=0)],
+        limits=[dict(name="limit1", limit=10, node_paths=list(), value=0)],
         in_limit_manager=dict(
-            in_limit_list=[
-                dict(limit_name="limit1", tokens=1, node_path=None)
-            ]
+            in_limit_list=[dict(limit_name="limit1", tokens=1, node_path=None)]
         ),
         repeat=dict(
             r=dict(
@@ -149,7 +136,6 @@ def test_node_from_dict(task_case):
         times=[
             dict(time="12:00", free=False),
         ],
-
         # task
         task_id="123456",
         aborted_reason="trap",

@@ -54,6 +54,7 @@ from takler.server.checkpoint import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_bunch(host: str = "login01", port: str = "33083") -> Bunch:
     """A bunch with one flow and one task, enough to be recognizable."""
     bunch = Bunch(host=host, port=port)
@@ -113,8 +114,9 @@ def _write_snapshot(tmp_path: Path, name: str) -> Path:
 # A write slower than the period (Requirement 5.10)
 # ---------------------------------------------------------------------------
 
+
 def test_a_write_slower_than_the_period_is_reported_with_duration_and_period(
-        tmp_path,
+    tmp_path,
 ):
     """Requirement 5.10: the WARNING carries the measured cost and the period.
 
@@ -191,8 +193,9 @@ def test_a_slow_write_does_not_stop_the_snapshots(tmp_path):
 # A snapshot without a format version (Requirement 6.15)
 # ---------------------------------------------------------------------------
 
+
 def test_a_snapshot_without_a_format_version_is_read_as_the_earliest_version(
-        tmp_path,
+    tmp_path,
 ):
     """Requirement 6.15: the missing field means "the oldest format we read"."""
     path = _write_snapshot(tmp_path, "takler.check")
@@ -217,9 +220,9 @@ def test_a_snapshot_without_a_format_version_is_read_as_the_earliest_version(
 
 
 def test_a_versionless_snapshot_restores_exactly_as_the_earliest_version_does(
-        tmp_path,
+    tmp_path,
 ):
-    """"按最早支持版本处理" means the same restore, not merely a restore."""
+    """ "按最早支持版本处理" means the same restore, not merely a restore."""
     source = _write_snapshot(tmp_path, "takler.check")
     snapshot = json.loads(source.read_text(encoding="utf-8"))
 
@@ -233,9 +236,7 @@ def test_a_versionless_snapshot_restores_exactly_as_the_earliest_version_does(
         source.write_text(json.dumps(payload), encoding="utf-8")
         manager = _restoring_manager(tmp_path)
         assert manager.restore() is True
-        restored.append(
-            [flow.to_dict() for _, flow in manager.bunch.flows.items()]
-        )
+        restored.append([flow.to_dict() for _, flow in manager.bunch.flows.items()])
 
     assert restored[0] == restored[1]
 
@@ -249,8 +250,9 @@ def test_the_earliest_supported_version_is_not_above_what_is_written(tmp_path):
 # No snapshot file on disk (Requirement 6.9)
 # ---------------------------------------------------------------------------
 
+
 def test_a_first_start_without_any_snapshot_is_an_info_and_an_empty_bunch(
-        tmp_path,
+    tmp_path,
 ):
     """Requirement 6.9: a first start is normal, so nothing may be an ERROR."""
     manager = _restoring_manager(tmp_path)
@@ -263,18 +265,12 @@ def test_a_first_start_without_any_snapshot_is_an_info_and_an_empty_bunch(
     assert manager.bunch.flows == {}
     assert "ERROR" not in captured
     assert "WARNING" not in captured
-    empty_bunch = [
-        line for line in _lines(captured, "INFO") if "empty bunch" in line
-    ]
+    empty_bunch = [line for line in _lines(captured, "INFO") if "empty bunch" in line]
     assert len(empty_bunch) == 1
     assert str(manager.checkpoint_file) in empty_bunch[0]
     # Every path that was looked for is named, so the operator can check
     # whether the server is reading the location they configured.
-    looked_for = [
-        line
-        for line in _lines(captured, "INFO")
-        if "does not exist" in line
-    ]
+    looked_for = [line for line in _lines(captured, "INFO") if "does not exist" in line]
     assert len(looked_for) == 2
     assert str(manager.checkpoint_file) in looked_for[0]
     assert str(manager.backup_file) in looked_for[1]
@@ -311,6 +307,7 @@ def test_an_absent_checkpoint_file_still_restores_from_the_backup(tmp_path):
 # ---------------------------------------------------------------------------
 # The clean shutdown snapshot (Requirement 5.9)
 # ---------------------------------------------------------------------------
+
 
 def test_stop_leaves_a_snapshot_of_the_state_it_shut_down_with(tmp_path):
     """Requirement 5.9 through the public ``stop`` contract.

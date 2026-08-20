@@ -3,9 +3,10 @@ from takler.core import RepeatDate, Flow, NodeStatus, Parameter
 
 import pytest
 
-#------------------
+# ------------------
 # RepeatDate
-#------------------
+# ------------------
+
 
 @pytest.fixture
 def start_date_int():
@@ -161,9 +162,10 @@ def test_repeat_date_generated_params(start_date_int, end_date_int):
     }
 
 
-#---------------
+# ---------------
 # Flow
-#---------------
+# ---------------
+
 
 def test_flow_add_repeat_repeat_date(start_date_int, end_date_int):
     flow1 = Flow("flow1")

@@ -152,9 +152,7 @@ def test_child_command_survives_a_five_minute_outage(
         # is the only real waiting in the test, bounded by gRPC's backoff and
         # unrelated to the length of the outage.
         reconnect_started = time.monotonic()
-        grpc.channel_ready_future(client.channel).result(
-            timeout=CHANNEL_READY_TIMEOUT
-        )
+        grpc.channel_ready_future(client.channel).result(timeout=CHANNEL_READY_TIMEOUT)
         timing["reconnect_seconds"] = time.monotonic() - reconnect_started
 
     client = TaklerServiceClient(

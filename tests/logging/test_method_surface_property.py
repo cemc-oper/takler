@@ -111,9 +111,7 @@ def test_uniform_logging_method_surface_across_backends(backend, method_name):
         # methods return None (Requirement 8.2).
         result = method(marker)
 
-    assert result is None, (
-        f"method {method_name!r} returned {result!r}, expected None"
-    )
+    assert result is None, f"method {method_name!r} returned {result!r}, expected None"
 
     output = buffer.getvalue()
 

@@ -120,9 +120,7 @@ def test_retention_bounds_rotated_file_count(
 
         # The active file is exactly the configured path; everything else in the
         # dedicated directory is a rotated file.
-        all_files = [
-            os.path.join(temp_dir, name) for name in os.listdir(temp_dir)
-        ]
+        all_files = [os.path.join(temp_dir, name) for name in os.listdir(temp_dir)]
         active_exists = os.path.isfile(log_path)
         rotated_files = [path for path in all_files if path != log_path]
 

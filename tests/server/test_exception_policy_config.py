@@ -102,11 +102,17 @@ def test_from_str_strips_surrounding_whitespace(
 
 def test_from_str_passes_through_enum_value() -> None:
     """An existing ExceptionPolicy is returned unchanged for convenience."""
-    assert ExceptionPolicy.from_str(ExceptionPolicy.FAIL_FAST) is ExceptionPolicy.FAIL_FAST
-    assert ExceptionPolicy.from_str(ExceptionPolicy.RESILIENT) is ExceptionPolicy.RESILIENT
+    assert (
+        ExceptionPolicy.from_str(ExceptionPolicy.FAIL_FAST) is ExceptionPolicy.FAIL_FAST
+    )
+    assert (
+        ExceptionPolicy.from_str(ExceptionPolicy.RESILIENT) is ExceptionPolicy.RESILIENT
+    )
 
 
-@pytest.mark.parametrize("bad", ["", "   ", "resilent", "failfast", "safe", "exit", "0"])
+@pytest.mark.parametrize(
+    "bad", ["", "   ", "resilent", "failfast", "safe", "exit", "0"]
+)
 def test_from_str_unknown_value_falls_back_to_resilient(bad: str) -> None:
     """Unrecognized / blank strings degrade to RESILIENT (Requirement 2.6)."""
     result, warnings = _capture_warning(lambda: ExceptionPolicy.from_str(bad))

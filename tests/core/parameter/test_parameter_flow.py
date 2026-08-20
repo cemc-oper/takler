@@ -15,6 +15,7 @@ def patch_datetime_now(monkeypatch):
     """
     set ``datetime.datetime.now`` to a fixed time, 2022-09-12 10:00:01
     """
+
     class TestDateTime(datetime.datetime):
         @classmethod
         def now(cls, tz=None):
@@ -23,9 +24,9 @@ def patch_datetime_now(monkeypatch):
     monkeypatch.setattr(datetime, "datetime", TestDateTime)
 
 
-#-----------------------------
+# -----------------------------
 # FlowGeneratedParameters
-#-----------------------------
+# -----------------------------
 
 
 def test_flow_generated_parameters_create():
@@ -36,7 +37,9 @@ def test_flow_generated_parameters_create():
     assert gen_params.time == Parameter(TIME, None)
 
 
-def test_flow_generated_parameters_update_parameters(flow_with_parameter, patch_datetime_now):
+def test_flow_generated_parameters_update_parameters(
+    flow_with_parameter, patch_datetime_now
+):
     flow1 = flow_with_parameter.flow1
     flow1.requeue_calendar()
     gen_params = FlowGeneratedParameters(flow=flow1)
@@ -46,7 +49,9 @@ def test_flow_generated_parameters_update_parameters(flow_with_parameter, patch_
     assert gen_params.time == Parameter(TIME, "13:30")
 
 
-def test_flow_generated_parameters_find_parameter(flow_with_parameter, patch_datetime_now):
+def test_flow_generated_parameters_find_parameter(
+    flow_with_parameter, patch_datetime_now
+):
     flow1 = flow_with_parameter.flow1
     flow1.requeue_calendar()
     gen_params = FlowGeneratedParameters(flow=flow1)
@@ -57,7 +62,9 @@ def test_flow_generated_parameters_find_parameter(flow_with_parameter, patch_dat
     assert gen_params.find_parameter("NON_EXIST") is None
 
 
-def test_flow_generated_parameters_generated_parameters(flow_with_parameter, patch_datetime_now):
+def test_flow_generated_parameters_generated_parameters(
+    flow_with_parameter, patch_datetime_now
+):
     flow1 = flow_with_parameter.flow1
     flow1.requeue_calendar()
     gen_params = FlowGeneratedParameters(flow=flow1)
@@ -69,9 +76,9 @@ def test_flow_generated_parameters_generated_parameters(flow_with_parameter, pat
     }
 
 
-#--------------------
+# --------------------
 # Flow
-#--------------------
+# --------------------
 
 
 def test_flow_update_generated_parameters(flow_with_parameter, patch_datetime_now):

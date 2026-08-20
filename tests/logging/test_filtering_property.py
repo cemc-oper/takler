@@ -44,7 +44,9 @@ _METHOD_FOR_LEVEL = {
 }
 
 
-def _emit_and_capture(backend, configured: LogLevel, record: LogLevel, message: str) -> str:
+def _emit_and_capture(
+    backend, configured: LogLevel, record: LogLevel, message: str
+) -> str:
     """Configure ``backend`` at ``configured`` and emit one record at ``record``.
 
     The backend is configured with the console sink enabled and no file sink,

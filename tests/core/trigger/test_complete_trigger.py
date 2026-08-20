@@ -123,9 +123,9 @@ def test_task_add_complete_trigger_parse(trigger_simple_flow):
     task3 = trigger_simple_flow.task3
     task4 = trigger_simple_flow.task4
 
-    task2.add_complete_trigger('./task1 == complete')
+    task2.add_complete_trigger("./task1 == complete")
     assert task2.complete_trigger_expression.ast is None
-    task3.add_complete_trigger('../task2 == complete', parse=True)
+    task3.add_complete_trigger("../task2 == complete", parse=True)
     assert task3.complete_trigger_expression.ast is not None
-    task4.add_complete_trigger('./task3 == complete', parse=False)
+    task4.add_complete_trigger("./task3 == complete", parse=False)
     assert task4.complete_trigger_expression.ast is None

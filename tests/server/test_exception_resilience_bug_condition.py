@@ -226,9 +226,9 @@ def test_scheduler_main_loop_isolates_throwing_flow(throw_in, exc_type):
 @given(
     node_path=st.sampled_from(
         [
-            "/flow1/missing_task",          # flow exists, node does not
-            "/missing_flow/task1",          # flow does not exist
-            "/flow1/container/deep/task",   # nothing along the path
+            "/flow1/missing_task",  # flow exists, node does not
+            "/missing_flow/task1",  # flow does not exist
+            "/flow1/container/deep/task",  # nothing along the path
         ]
     )
 )
@@ -268,11 +268,11 @@ def test_rpc_complete_unknown_node_returns_error_response(node_path):
 @given(
     payload=st.sampled_from(
         [
-            ("json", b"not json at all"),       # json.JSONDecodeError
-            ("json", b"{ broken : json"),       # json.JSONDecodeError
-            ("json", b""),                      # json.JSONDecodeError
-            ("yaml", b"a: 1"),                  # unsupported flow_type -> RuntimeError
-            ("xml", b"<flow/>"),                # unsupported flow_type -> RuntimeError
+            ("json", b"not json at all"),  # json.JSONDecodeError
+            ("json", b"{ broken : json"),  # json.JSONDecodeError
+            ("json", b""),  # json.JSONDecodeError
+            ("yaml", b"a: 1"),  # unsupported flow_type -> RuntimeError
+            ("xml", b"<flow/>"),  # unsupported flow_type -> RuntimeError
         ]
     )
 )
@@ -311,9 +311,7 @@ def test_rpc_load_malformed_payload_returns_error_response(payload):
 
 
 @settings(max_examples=15, deadline=None)
-@given(
-    meter_value=st.sampled_from(["abc", "", "1.5", "ten", "  ", "0x10", "NaNish"])
-)
+@given(meter_value=st.sampled_from(["abc", "", "1.5", "ten", "  ", "0x10", "NaNish"]))
 def test_rpc_meter_invalid_value_returns_error_response(meter_value):
     """Test D: ``RunCommandMeter`` with a non-int value must return an error.
 
@@ -457,7 +455,9 @@ def test_rpc_fail_fast_logs_and_triggers_fatal_shutdown():
     )
 
     request = mock.MagicMock()
-    request.child_options.node_path = "/flow1/missing_task"  # unknown node -> ValueError
+    request.child_options.node_path = (
+        "/flow1/missing_task"  # unknown node -> ValueError
+    )
     context = mock.MagicMock()
 
     with mock.patch("takler.server.network_service.logger") as mock_logger:
@@ -468,7 +468,9 @@ def test_rpc_fail_fast_logs_and_triggers_fatal_shutdown():
     # The failure was logged with diagnostic context.
     assert mock_logger.error.called, "the RPC failure was not logged"
     logged = mock_logger.error.call_args[0][0]
-    assert "RunCommandComplete" in logged, "log message is missing the RPC operation context"
+    assert "RunCommandComplete" in logged, (
+        "log message is missing the RPC operation context"
+    )
     # An error response is still returned to the client.
     assert isinstance(response, takler_pb2.ServiceResponse)
     assert response.flag != 0 and response.message

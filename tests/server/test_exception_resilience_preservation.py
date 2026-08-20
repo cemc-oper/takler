@@ -226,7 +226,12 @@ def test_error_free_iteration_processes_all_flows_and_continues(flow_names):
 
 
 @settings(max_examples=30, deadline=None)
-@given(task_name=_task_names, task_id=st.text(alphabet=st.characters(min_codepoint=48, max_codepoint=122), max_size=8))
+@given(
+    task_name=_task_names,
+    task_id=st.text(
+        alphabet=st.characters(min_codepoint=48, max_codepoint=122), max_size=8
+    ),
+)
 def test_valid_complete_then_init_execute_and_return_success(task_name, task_id):
     """``RunCommandComplete`` / ``RunCommandInit`` on a valid Task succeed.
 

@@ -1,5 +1,3 @@
-
-
 def test_task_add_trigger_event(trigger_simple_flow):
     flow1 = trigger_simple_flow.flow1
     task1 = trigger_simple_flow.task1

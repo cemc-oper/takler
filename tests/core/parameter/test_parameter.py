@@ -25,7 +25,7 @@ def test_parameter_create_bool():
     p = Parameter("FLAG_UPLOAD", True)
     assert p.name == "FLAG_UPLOAD"
     assert p.value
-    
+
 
 def test_parameter_create_none():
     p = Parameter("TYPHOON_ID", None)
@@ -48,7 +48,7 @@ def test_parameter_create_none():
         (True, 20.5, 20.5),
         (True, "20", "20"),
         (True, False, False),
-    ]
+    ],
 )
 def test_parameter_set_value(test_case):
     original_value, new_value, expected_value = test_case

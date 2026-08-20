@@ -47,6 +47,7 @@ from takler.server.connect_config import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _config(interval=None, file=None) -> ConnectConfig:
     return ConnectConfig(
         server=Server(
@@ -84,6 +85,7 @@ def _capturing_stderr(func):
 # Constants
 # ---------------------------------------------------------------------------
 
+
 def test_constants():
     assert CHECKPOINT_FORMAT_VERSION == 1
     assert EARLIEST_SUPPORTED_FORMAT_VERSION == 1
@@ -97,6 +99,7 @@ def test_constants():
 # ---------------------------------------------------------------------------
 # Interval resolution (Requirements 7.2, 7.5)
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_interval_defaults_when_nothing_configured():
     assert _resolve_interval() == DEFAULT_CHECKPOINT_INTERVAL
@@ -124,6 +127,7 @@ def test_resolve_interval_explicit_wins_over_rejected_config_silently():
 # ---------------------------------------------------------------------------
 # Interval validation (Requirement 7.6)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("value", [0.0, -1.0, -0.5, 0.001, 1.0, 9.999])
 def test_resolve_interval_rejects_short_and_non_positive(value):
@@ -154,6 +158,7 @@ def test_manager_falls_back_to_default_interval_with_warning():
 # ---------------------------------------------------------------------------
 # Path resolution (Requirements 7.3, 7.5)
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_path_defaults_to_cwd_relative_name():
     path = _resolve_path()
@@ -193,6 +198,7 @@ def test_resolve_path_treats_blank_as_absent(blank):
 # ---------------------------------------------------------------------------
 # Manager properties (Requirement 7.4)
 # ---------------------------------------------------------------------------
+
 
 def test_manager_defaults():
     manager = _make_manager()

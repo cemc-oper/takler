@@ -1,5 +1,3 @@
-
-
 def test_task_add_trigger_status_complete(trigger_simple_flow):
     task1 = trigger_simple_flow.task1
     task2 = trigger_simple_flow.task2

@@ -8,9 +8,15 @@ from takler.core import NodeStatus
 from takler.exceptions import ExpressionSyntaxError
 from takler.core.expression_parser import parse_trigger
 from takler.core.expression_ast import (
-    AstOpEq, AstOpGt, AstOpGe,
-    AstOpOr, AstOpAnd,
-    AstNodePath, AstVariablePath, AstNodeStatus, AstInteger,
+    AstOpEq,
+    AstOpGt,
+    AstOpGe,
+    AstOpOr,
+    AstOpAnd,
+    AstNodePath,
+    AstVariablePath,
+    AstNodeStatus,
+    AstInteger,
     AstMathAdd,
 )
 
@@ -108,7 +114,9 @@ def test_variable_path():
         TestCase("/flow1/task1:event1 == set", "/flow1/task1", "event1"),
         TestCase("./task1:meter1 >= 20", "./task1", "meter1"),
         TestCase("../container1/task1:event2 == set", "../container1/task1", "event2"),
-        TestCase("../../container1/task1:meter2 > 10", "../../container1/task1", "meter2"),
+        TestCase(
+            "../../container1/task1:meter2 > 10", "../../container1/task1", "meter2"
+        ),
     ]
     for test_case in expr_cases:
         ast = parse_trigger(test_case.expr_string)
@@ -123,21 +131,32 @@ def test_op_eq():
         expr_string: str
         left: Union[AstNodePath, AstVariablePath]
         right: Union[NodeStatus, int]
+
     expr_cases = [
-        TestCase("/flow1/task1 == complete", AstNodePath("/flow1/task1"), NodeStatus.complete),
-        TestCase("/flow1/task1 eq complete", AstNodePath("/flow1/task1"), NodeStatus.complete),
-        TestCase("/flow1/task1 EQ complete", AstNodePath("/flow1/task1"), NodeStatus.complete),
-        TestCase("/flow1/task1 eQ complete", AstNodePath("/flow1/task1"), NodeStatus.complete),
-        TestCase("/flow1/task1 Eq complete", AstNodePath("/flow1/task1"), NodeStatus.complete),
+        TestCase(
+            "/flow1/task1 == complete", AstNodePath("/flow1/task1"), NodeStatus.complete
+        ),
+        TestCase(
+            "/flow1/task1 eq complete", AstNodePath("/flow1/task1"), NodeStatus.complete
+        ),
+        TestCase(
+            "/flow1/task1 EQ complete", AstNodePath("/flow1/task1"), NodeStatus.complete
+        ),
+        TestCase(
+            "/flow1/task1 eQ complete", AstNodePath("/flow1/task1"), NodeStatus.complete
+        ),
+        TestCase(
+            "/flow1/task1 Eq complete", AstNodePath("/flow1/task1"), NodeStatus.complete
+        ),
         TestCase(
             "/flow1/task1:event1 == set",
             AstVariablePath(AstNodePath("/flow1/task1"), "event1"),
-            1
+            1,
         ),
         TestCase(
-            "/flow1/task1:meter1 == 10", # not suggested.
+            "/flow1/task1:meter1 == 10",  # not suggested.
             AstVariablePath(AstNodePath("/flow1/task1"), "meter1"),
-            10
+            10,
         ),
     ]
     for test_case in expr_cases:
@@ -199,17 +218,20 @@ def test_meter_value():
             "/flow1/task1:meter1 == 10",
             AstVariablePath(AstNodePath("/flow1/task1"), "meter1"),
             10,
-            AstOpEq),
+            AstOpEq,
+        ),
         TestCase(
             "/flow1/task1:meter1 > 10",
             AstVariablePath(AstNodePath("/flow1/task1"), "meter1"),
             10,
-            AstOpGt),
+            AstOpGt,
+        ),
         TestCase(
             "/flow1/task1:meter1 >= 10",
             AstVariablePath(AstNodePath("/flow1/task1"), "meter1"),
             10,
-            AstOpGe),
+            AstOpGe,
+        ),
     ]
     for test_case in expr_cases:
         ast = parse_trigger(test_case.expr_string)
@@ -223,6 +245,7 @@ def test_meter_value():
         assert isinstance(ast_right, AstInteger)
         assert ast_right.value() == 10
 
+
 def test_op_gt():
     @dataclass
     class TestCase:
@@ -231,7 +254,11 @@ def test_op_gt():
         right: int
 
     expr_cases = [
-        TestCase("/flow1/task1:meter1 > 20", AstVariablePath(AstNodePath("/flow1/task1"), "meter1"), 20),
+        TestCase(
+            "/flow1/task1:meter1 > 20",
+            AstVariablePath(AstNodePath("/flow1/task1"), "meter1"),
+            20,
+        ),
     ]
     for test_case in expr_cases:
         ast = parse_trigger(test_case.expr_string)

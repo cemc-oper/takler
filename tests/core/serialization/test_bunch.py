@@ -8,7 +8,7 @@ def test_server_state_to_dict():
             Parameter("int_param", 1),
             Parameter("float_param", 0.25),
             Parameter("str_param", "arrived"),
-            Parameter("bool_param", True)
+            Parameter("bool_param", True),
         ],
         host="login_b01",
         port="31071",
@@ -18,10 +18,10 @@ def test_server_state_to_dict():
             dict(name="int_param", value=1),
             dict(name="float_param", value=0.25),
             dict(name="str_param", value="arrived"),
-            dict(name="bool_param", value=True)
+            dict(name="bool_param", value=True),
         ],
         host="login_b01",
-        port="31071"
+        port="31071",
     )
 
 
@@ -31,17 +31,17 @@ def test_server_state_from_json():
             dict(name="int_param", value=1),
             dict(name="float_param", value=0.25),
             dict(name="str_param", value="arrived"),
-            dict(name="bool_param", value=True)
+            dict(name="bool_param", value=True),
         ],
         host="login_b01",
-        port="31071"
+        port="31071",
     )
     expected_server_state = ServerState(
         server_parameters=[
             Parameter("int_param", 1),
             Parameter("float_param", 0.25),
             Parameter("str_param", "arrived"),
-            Parameter("bool_param", True)
+            Parameter("bool_param", True),
         ],
         host="login_b01",
         port="31071",

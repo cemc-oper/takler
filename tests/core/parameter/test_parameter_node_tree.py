@@ -3,9 +3,9 @@ from takler.core.task_node import TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
 from takler.core.parameter import DATE, TIME
 
 
-#------------------------
+# ------------------------
 # find_user_parameter
-#------------------------
+# ------------------------
 
 
 def test_find_user_parameter_with_task(flow_with_parameter):
@@ -27,9 +27,9 @@ def test_find_user_parameter_with_flow(flow_with_parameter):
     assert flow1.find_user_parameter("NO_EXIST") is None
 
 
-#----------------------------
+# ----------------------------
 # find_generated_parameter
-#----------------------------
+# ----------------------------
 
 
 def test_find_generated_parameter_with_task(flow_with_parameter):
@@ -37,16 +37,18 @@ def test_find_generated_parameter_with_task(flow_with_parameter):
     task1.init(task_id="1001")
     task1.update_generated_parameters()
     assert task1.find_generated_parameter(TASK) == Parameter(TASK, "task1")
-    assert task1.find_generated_parameter(TAKLER_NAME) == Parameter(TAKLER_NAME, "/flow1/task1")
+    assert task1.find_generated_parameter(TAKLER_NAME) == Parameter(
+        TAKLER_NAME, "/flow1/task1"
+    )
     assert task1.find_generated_parameter(TAKLER_RID) == Parameter(TAKLER_RID, "1001")
 
     assert task1.find_generated_parameter("DATA_SOURCE") is None
     assert task1.find_generated_parameter("NO_EXIST") is None
 
 
-#-----------------
+# -----------------
 # find_parameter
-#-----------------
+# -----------------
 
 
 def test_find_parameter_with_container(flow_with_parameter):
@@ -72,9 +74,9 @@ def test_find_parameter_with_task(flow_with_parameter):
     assert task1.find_parameter("NO_EXIST") is None
 
 
-#-----------------------
+# -----------------------
 # find_parent_parameter
-#-----------------------
+# -----------------------
 
 
 def test_find_parent_parameter_with_task(flow_with_parameter):
@@ -82,19 +84,27 @@ def test_find_parent_parameter_with_task(flow_with_parameter):
     task2.init(task_id="1001")
     task2.update_generated_parameters()
     assert task2.find_parent_parameter("AN_OPTION") == Parameter("AN_OPTION", 2)
-    assert task2.find_parent_parameter(TAKLER_NAME) == Parameter(TAKLER_NAME, "/flow1/container1/task2")
+    assert task2.find_parent_parameter(TAKLER_NAME) == Parameter(
+        TAKLER_NAME, "/flow1/container1/task2"
+    )
     assert task2.find_parent_parameter("NO_EXIST") is None
 
-    assert task2.find_parent_parameter("TIME_INTERVAL") == Parameter("TIME_INTERVAL", 10)
+    assert task2.find_parent_parameter("TIME_INTERVAL") == Parameter(
+        "TIME_INTERVAL", 10
+    )
     assert task2.find_parent_parameter("PARTITION") == Parameter("PARTITION", "serial")
 
 
 def test_find_parent_parameter_with_container(flow_with_parameter):
     container1 = flow_with_parameter.container2
-    assert container1.find_parent_parameter("TIME_INTERVAL") == Parameter("TIME_INTERVAL", 10)
+    assert container1.find_parent_parameter("TIME_INTERVAL") == Parameter(
+        "TIME_INTERVAL", 10
+    )
     assert container1.find_parent_parameter("NO_EXIST") is None
 
-    assert container1.find_parent_parameter("PARTITION") == Parameter("PARTITION", "serial")
+    assert container1.find_parent_parameter("PARTITION") == Parameter(
+        "PARTITION", "serial"
+    )
     assert container1.find_parent_parameter("AN_OPTION") is None
 
 
@@ -107,9 +117,9 @@ def test_find_parent_parameter_with_flow(flow_with_parameter):
     assert flow1.find_parent_parameter("NO_EXIST") is None
 
 
-#----------------
+# ----------------
 # parameters
-#----------------
+# ----------------
 
 
 def test_parameters_with_task(flow_with_parameter):
@@ -133,9 +143,9 @@ def test_parameters_with_task(flow_with_parameter):
     }
 
 
-#------------------
+# ------------------
 # parameters_only
-#------------------
+# ------------------
 
 
 def test_parameters_only_with_task(flow_with_parameter):
@@ -151,9 +161,9 @@ def test_parameters_only_with_task(flow_with_parameter):
     }
 
 
-#------------------
+# ------------------
 # user_parameters_only
-#------------------
+# ------------------
 
 
 def test_user_parameters_only_with_task(flow_with_parameter):
@@ -165,9 +175,9 @@ def test_user_parameters_only_with_task(flow_with_parameter):
     }
 
 
-#-----------------------------
+# -----------------------------
 # generated_parameters_only
-#-----------------------------
+# -----------------------------
 
 
 def test_generated_parameters_only_with_task(flow_with_parameter):

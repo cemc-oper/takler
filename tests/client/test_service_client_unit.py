@@ -128,8 +128,12 @@ def test_call_passes_single_timeout_and_returns_response(fake_clock):
 
 def test_call_uses_configured_single_timeout(fake_clock):
     client = TaklerServiceClient(
-        host="h", port=1, single_timeout=2.5,
-        retry_window=0.0, clock=fake_clock, sleep=fake_clock.sleep,
+        host="h",
+        port=1,
+        single_timeout=2.5,
+        retry_window=0.0,
+        clock=fake_clock,
+        sleep=fake_clock.sleep,
     )
     rpc = FakeRpc(FakeResponse())
 
@@ -210,12 +214,15 @@ def test_call_zero_window_makes_a_single_attempt(fake_clock):
 # -- _call: status code mapping ---------------------------------------
 
 
-@pytest.mark.parametrize("code, expected", [
-    (grpc.StatusCode.INVALID_ARGUMENT, InvalidRequestError),
-    (grpc.StatusCode.NOT_FOUND, NodeNotFoundError),
-    (grpc.StatusCode.PERMISSION_DENIED, PermissionDeniedError),
-    (grpc.StatusCode.UNAUTHENTICATED, PermissionDeniedError),
-])
+@pytest.mark.parametrize(
+    "code, expected",
+    [
+        (grpc.StatusCode.INVALID_ARGUMENT, InvalidRequestError),
+        (grpc.StatusCode.NOT_FOUND, NodeNotFoundError),
+        (grpc.StatusCode.PERMISSION_DENIED, PermissionDeniedError),
+        (grpc.StatusCode.UNAUTHENTICATED, PermissionDeniedError),
+    ],
+)
 def test_call_maps_non_retryable_status_without_retry(fake_clock, code, expected):
     client = make_client(fake_clock)
     rpc = FakeRpc(FakeRpcError(code, details="bad request"))
@@ -273,9 +280,7 @@ def test_close_channel_clears_channel_and_stub():
 def test_guarded_closes_channel_when_body_raises(monkeypatch):
     client = TaklerServiceClient(host="h", port=1)
     channel = FakeChannel()
-    monkeypatch.setattr(
-        "grpc.insecure_channel", lambda address: channel
-    )
+    monkeypatch.setattr("grpc.insecure_channel", lambda address: channel)
 
     def body():
         assert client.channel is channel
@@ -297,14 +302,17 @@ class ShowClient(TaklerServiceClient):
 
     def __init__(self, output: str):
         super().__init__(host="localhost", port=33083, retry_window=0.0)
-        self.stub = type("S", (), {"RunRequestShow": FakeRpc(
-            FakeResponse(flag=0, output=output)
-        )})()
+        self.stub = type(
+            "S", (), {"RunRequestShow": FakeRpc(FakeResponse(flag=0, output=output))}
+        )()
 
     def run_show(self, **kwargs):
         options = dict(
-            show_trigger=False, show_parameter=False, show_limit=False,
-            show_event=False, show_meter=False,
+            show_trigger=False,
+            show_parameter=False,
+            show_limit=False,
+            show_event=False,
+            show_meter=False,
         )
         options.update(kwargs)
         return self.run_request_show(**options)
@@ -350,9 +358,11 @@ def test_show_valid_json_prints_node_tree(capsys):
 
 def test_command_prints_error_classification_name(fake_clock, capsys):
     client = make_client(fake_clock, retry_window=0.0)
-    client.stub = type("S", (), {"RunCommandComplete": FakeRpc(
-        FakeResponse(flag=10, message="no such node")
-    )})()
+    client.stub = type(
+        "S",
+        (),
+        {"RunCommandComplete": FakeRpc(FakeResponse(flag=10, message="no such node"))},
+    )()
 
     response = client.run_command_complete(node_path="/flow1/task1")
 

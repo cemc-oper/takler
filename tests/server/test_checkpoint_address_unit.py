@@ -35,6 +35,7 @@ from takler.server.checkpoint import CheckpointManager
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _source_bunch(in_flight: bool) -> Bunch:
     """A bunch announcing ``login01:33083``.
 
@@ -62,10 +63,10 @@ def _source_bunch(in_flight: bool) -> Bunch:
 
 
 def _restore_into(
-        tmp_path: Path,
-        in_flight: bool,
-        host: str,
-        port: str,
+    tmp_path: Path,
+    in_flight: bool,
+    host: str,
+    port: str,
 ) -> CheckpointManager:
     """Snapshot a ``login01:33083`` bunch, then restore it into ``host:port``."""
     checkpoint_file = tmp_path / "takler.check"
@@ -109,6 +110,7 @@ def _address_lines(captured: str, level: str) -> list:
 # Same address (Requirement 6.18)
 # ---------------------------------------------------------------------------
 
+
 def test_matching_address_logs_exactly_one_info_with_host_and_port(tmp_path):
     manager = _restore_into(tmp_path, in_flight=True, host="login01", port="33083")
 
@@ -126,6 +128,7 @@ def test_matching_address_logs_exactly_one_info_with_host_and_port(tmp_path):
 # ---------------------------------------------------------------------------
 # Different address, nothing in flight (Requirements 6.19, 6.21)
 # ---------------------------------------------------------------------------
+
 
 def test_differing_address_without_in_flight_tasks_logs_one_warning(tmp_path):
     manager = _restore_into(tmp_path, in_flight=False, host="login02", port="44084")
@@ -153,6 +156,7 @@ def test_a_differing_port_alone_is_enough_to_warn(tmp_path):
 # Different address with in-flight tasks (Requirements 6.20, 6.21)
 # ---------------------------------------------------------------------------
 
+
 def test_differing_address_with_in_flight_tasks_logs_one_error(tmp_path):
     manager = _restore_into(tmp_path, in_flight=True, host="login02", port="44084")
 
@@ -178,6 +182,7 @@ def test_differing_address_with_in_flight_tasks_logs_one_error(tmp_path):
 # The comparison has no side effects (Requirements 6.21, 6.22)
 # ---------------------------------------------------------------------------
 
+
 def test_verification_never_writes_the_snapshot_address_back(tmp_path):
     manager = _restore_into(tmp_path, in_flight=True, host="login02", port="44084")
 
@@ -195,9 +200,7 @@ def test_verification_does_not_change_any_node_status(tmp_path):
 
     manager.restore()
     before = manager.bunch.find_flow("flow1").to_dict()
-    manager._verify_server_address(
-        manager._load_snapshot(manager.checkpoint_file)
-    )
+    manager._verify_server_address(manager._load_snapshot(manager.checkpoint_file))
 
     assert manager.bunch.find_flow("flow1").to_dict() == before
 
@@ -216,6 +219,7 @@ def test_a_snapshot_without_a_server_state_does_not_raise(tmp_path):
 # ---------------------------------------------------------------------------
 # _iter_restored_tasks
 # ---------------------------------------------------------------------------
+
 
 def test_iter_restored_tasks_yields_every_task_and_no_container(tmp_path):
     manager = _restore_into(tmp_path, in_flight=True, host="login01", port="33083")

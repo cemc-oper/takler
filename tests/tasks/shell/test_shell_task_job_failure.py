@@ -105,7 +105,8 @@ def test_on_job_failure_aborts_in_flight_task(tmp_path, status):
 
 
 @pytest.mark.parametrize(
-    "status", [NodeStatus.complete, NodeStatus.aborted, NodeStatus.queued, NodeStatus.unknown]
+    "status",
+    [NodeStatus.complete, NodeStatus.aborted, NodeStatus.queued, NodeStatus.unknown],
 )
 def test_on_job_failure_keeps_status_reported_by_child_command(tmp_path, status):
     """A task which already reported its own status must not be overwritten."""

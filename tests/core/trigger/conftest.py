@@ -4,7 +4,6 @@ import pytest
 from takler.core import Flow, Task, NodeContainer
 
 
-
 class StatusSimpleFlow(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

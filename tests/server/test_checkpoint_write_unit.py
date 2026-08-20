@@ -42,6 +42,7 @@ from takler.server.checkpoint import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_bunch() -> Bunch:
     """A bunch holding one flow with one task, enough to be recognizable."""
     bunch = Bunch(host="login01", port="33083")
@@ -75,6 +76,7 @@ def _temp_names(directory: Path) -> list:
 # ---------------------------------------------------------------------------
 # Payload layout (Requirements 5.11)
 # ---------------------------------------------------------------------------
+
 
 def test_build_payload_returns_a_json_string_with_the_expected_top_level():
     manager = CheckpointManager(bunch=_make_bunch())
@@ -118,6 +120,7 @@ def test_build_payload_reflects_later_bunch_changes():
 # ---------------------------------------------------------------------------
 # Writing (Requirements 5.1, 5.2)
 # ---------------------------------------------------------------------------
+
 
 def test_write_checkpoint_creates_a_complete_snapshot(tmp_path):
     manager = _make_manager(tmp_path)
@@ -180,6 +183,7 @@ def test_write_steps_are_in_the_documented_order(tmp_path):
 # Backup rotation (Requirement 5.3)
 # ---------------------------------------------------------------------------
 
+
 def test_second_write_moves_the_previous_snapshot_to_the_backup(tmp_path):
     manager = _make_manager(tmp_path)
     manager.write_checkpoint()
@@ -226,6 +230,7 @@ def test_checkpoint_file_is_never_absent_while_the_backup_is_made(tmp_path):
 # Parent directory (Requirement 7.7)
 # ---------------------------------------------------------------------------
 
+
 def test_write_creates_a_missing_parent_directory(tmp_path):
     target = tmp_path / "state" / "nested" / "takler.check"
     manager = CheckpointManager(bunch=_make_bunch(), checkpoint_file=target)
@@ -245,6 +250,7 @@ def test_write_works_with_a_relative_default_path(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # Failure handling (Requirement 5.8)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "step",
@@ -324,6 +330,7 @@ def test_unserializable_bunch_is_reported_not_raised(tmp_path):
 # ---------------------------------------------------------------------------
 # Async variant
 # ---------------------------------------------------------------------------
+
 
 def test_write_checkpoint_async_writes_the_same_snapshot(tmp_path):
     manager = _make_manager(tmp_path)

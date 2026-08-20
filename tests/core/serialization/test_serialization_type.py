@@ -6,6 +6,7 @@ checkpoint 复用 `SerializationType.Status`，不引入新的取值；本测试
 
 _Requirements: 6.17_
 """
+
 from takler.core.util import SerializationType
 
 

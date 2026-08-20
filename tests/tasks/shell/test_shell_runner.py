@@ -69,7 +69,9 @@ def test_failed_job_logs_error_then_triggers_state_change():
         await asyncio.sleep(0)
 
     with mock.patch.object(shell_runner_mod, "logger") as mock_logger:
-        mock_logger.error.side_effect = lambda message: events.append(("error", message))
+        mock_logger.error.side_effect = lambda message: events.append(
+            ("error", message)
+        )
         asyncio.run(scenario())
 
     assert [kind for kind, _ in events] == ["error", "on_failure"]

@@ -11,7 +11,7 @@ def test_repeat_date_to_dict():
         end_date="20221110",
         step=1,
         value=20221101,
-        class_type="RepeatDate"
+        class_type="RepeatDate",
     )
 
     repeat_date.increment()
@@ -22,7 +22,7 @@ def test_repeat_date_to_dict():
         end_date="20221110",
         step=1,
         value=20221102,
-        class_type="RepeatDate"
+        class_type="RepeatDate",
     )
 
 
@@ -32,10 +32,12 @@ def test_repeat_date_from_dict():
         start_date="20221101",
         end_date="20221110",
         step=1,
-        class_type="RepeatDate"
+        class_type="RepeatDate",
     )
 
-    assert RepeatDate.from_dict(d, method=SerializationType.Tree) == RepeatDate("TAKLER_DATE", "20221101", "20221110")
+    assert RepeatDate.from_dict(d, method=SerializationType.Tree) == RepeatDate(
+        "TAKLER_DATE", "20221101", "20221110"
+    )
 
     with pytest.raises(KeyError):
         RepeatDate.from_dict(d)
@@ -48,14 +50,16 @@ def test_repeat_date_from_dict():
         end_date="20221110",
         step=1,
         class_type="RepeatDate",
-        value=20221105
+        value=20221105,
     )
     repeat_date = RepeatDate("TAKLER_DATE", "20221101", "20221110")
     repeat_date.change(20221105)
 
     assert RepeatDate.from_dict(d) == repeat_date
     assert RepeatDate.from_dict(d, method=SerializationType.Status) == repeat_date
-    assert RepeatDate.from_dict(d, method=SerializationType.Tree) == RepeatDate("TAKLER_DATE", "20221101", "20221110")
+    assert RepeatDate.from_dict(d, method=SerializationType.Tree) == RepeatDate(
+        "TAKLER_DATE", "20221101", "20221110"
+    )
 
 
 def test_repeat_to_dict():
@@ -69,7 +73,7 @@ def test_repeat_to_dict():
             end_date="20221110",
             step=1,
             value=20221101,
-            class_type="RepeatDate"
+            class_type="RepeatDate",
         )
     )
 
@@ -81,11 +85,13 @@ def test_repeat_from_dict():
             start_date="20221101",
             end_date="20221110",
             step=1,
-            class_type="RepeatDate"
+            class_type="RepeatDate",
         )
     )
 
-    assert Repeat.from_dict(d, method=SerializationType.Tree) == Repeat(RepeatDate("TAKLER_DATE", "20221101", "20221110"))
+    assert Repeat.from_dict(d, method=SerializationType.Tree) == Repeat(
+        RepeatDate("TAKLER_DATE", "20221101", "20221110")
+    )
 
     with pytest.raises(KeyError):
         Repeat.from_dict(d)
@@ -99,7 +105,7 @@ def test_repeat_from_dict():
             end_date="20221110",
             step=1,
             class_type="RepeatDate",
-            value=20221105
+            value=20221105,
         )
     )
 
@@ -108,4 +114,6 @@ def test_repeat_from_dict():
 
     assert Repeat.from_dict(d) == repeat
     assert Repeat.from_dict(d, method=SerializationType.Status) == repeat
-    assert Repeat.from_dict(d, method=SerializationType.Tree) == Repeat(RepeatDate("TAKLER_DATE", "20221101", "20221110"))
+    assert Repeat.from_dict(d, method=SerializationType.Tree) == Repeat(
+        RepeatDate("TAKLER_DATE", "20221101", "20221110")
+    )

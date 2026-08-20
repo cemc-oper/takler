@@ -77,10 +77,10 @@ def test_requeue_on_complex_flow(complex_flow_for_requeue):
     meter1 = complex_flow_for_requeue.meter1
     task4 = complex_flow_for_requeue.task4
 
-    ymd.change('20260110')
-    task1.set_event('event1', True)
-    task2.set_meter('meter1', 50)
-    task4.free_dependencies('trigger')
+    ymd.change("20260110")
+    task1.set_event("event1", True)
+    task2.set_meter("meter1", 50)
+    task4.free_dependencies("trigger")
     assert event1.value
     assert meter1.value == 50
     assert ymd.value == 20260110

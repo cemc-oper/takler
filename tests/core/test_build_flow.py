@@ -158,9 +158,11 @@ def test_build_flow_using_with():
 
     verify_flow_structure(some_flow)
 
-#-----------------
+
+# -----------------
 # NodeContainer
-#-----------------
+# -----------------
+
 
 def test_node_container_add_container_error_type():
     container1 = NodeContainer("container1")

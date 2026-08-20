@@ -1,4 +1,3 @@
-
 def test_task_add_trigger_status_complex(trigger_simple_flow):
     flow1 = trigger_simple_flow.flow1
     task1 = trigger_simple_flow.task1
@@ -36,4 +35,3 @@ def test_task_add_trigger_status_complex(trigger_simple_flow):
     task2.complete()
     task3.complete()
     assert task10.evaluate_trigger()
-

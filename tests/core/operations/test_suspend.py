@@ -1,5 +1,3 @@
-
-
 def test_suspend_on_task(simple_flow_for_operation):
     task1 = simple_flow_for_operation.task1
     flow1 = simple_flow_for_operation.flow1

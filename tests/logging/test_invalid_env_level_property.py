@@ -95,8 +95,7 @@ def test_invalid_env_level_falls_back_to_info_with_warning(bad):
             f"expected a WARNING record in console output, got {output!r}"
         )
         assert bad in output, (
-            f"expected the invalid value {bad!r} named in the warning, "
-            f"got {output!r}"
+            f"expected the invalid value {bad!r} named in the warning, got {output!r}"
         )
     finally:
         # Restore os.environ exactly and reset configured state for isolation

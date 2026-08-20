@@ -166,7 +166,7 @@ def _walk_snapshot(node_dict: dict, path: str) -> Iterator[Tuple[str, dict]]:
 
 
 def _snapshot_expectations(
-        checkpoint_file: Path,
+    checkpoint_file: Path,
 ) -> Tuple[Dict[str, dict], Dict[str, bool]]:
     """Read the snapshot file and return what a correct restore must produce.
 
@@ -267,7 +267,7 @@ def _restart(checkpoint_file: Path, port: int) -> Tuple[TaklerServer, str]:
 
 
 def _kill9_then_restart(
-        tmp_path: Path,
+    tmp_path: Path,
 ) -> Tuple[Dict[str, dict], Dict[str, bool], TaklerServer, str]:
     """Run the whole scenario: snapshot, kill, restart on the same address.
 
@@ -331,8 +331,7 @@ def test_every_node_matches_the_snapshot_after_a_kill9(tmp_path: Path) -> None:
                 f"{path} came back on try {node.try_no}"
             )
             assert node.aborted_reason == expected["aborted_reason"], (
-                f"{path} came back with aborted_reason="
-                f"{node.aborted_reason!r}"
+                f"{path} came back with aborted_reason={node.aborted_reason!r}"
             )
 
 
@@ -351,8 +350,7 @@ def test_flow_state_and_begun_survive_the_kill(tmp_path: Path) -> None:
     assert sorted(server.bunch.flows) == sorted(expected_begun)
     for name, begun in expected_begun.items():
         assert server.bunch.find_flow(name).begun is begun, (
-            f"flow {name!r} came back with begun="
-            f"{server.bunch.find_flow(name).begun!r}"
+            f"flow {name!r} came back with begun={server.bunch.find_flow(name).begun!r}"
         )
 
     # Sanity check on the scenario itself: the mixed flow really did record a
@@ -369,7 +367,7 @@ def test_flow_state_and_begun_survive_the_kill(tmp_path: Path) -> None:
 
 
 def test_submitted_and_active_tasks_are_not_requeued_by_the_restore(
-        tmp_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Requirement 6.4: the restore does not touch jobs that are in flight.
 
@@ -403,7 +401,7 @@ def test_submitted_and_active_tasks_are_not_requeued_by_the_restore(
 
 
 def test_restarting_on_the_same_address_reports_a_matching_address(
-        tmp_path: Path,
+    tmp_path: Path,
 ) -> None:
     """Requirement 6.23: the snapshot's address is reused, so the check passes.
 

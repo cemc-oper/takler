@@ -38,7 +38,9 @@ def test_constants():
     assert DEFAULT_SINGLE_TIMEOUT == 10.0
     assert MAX_BACKOFF_SECONDS == 60.0
     assert set(CommandKind) == {
-        CommandKind.CHILD, CommandKind.CONTROL, CommandKind.QUERY
+        CommandKind.CHILD,
+        CommandKind.CONTROL,
+        CommandKind.QUERY,
     }
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CHILD] == 86400.0
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CONTROL] == 60.0
@@ -46,12 +48,14 @@ def test_constants():
 
 
 def test_status_code_classification_is_disjoint():
-    assert RETRYABLE_STATUS_CODES == frozenset({
-        grpc.StatusCode.UNAVAILABLE,
-        grpc.StatusCode.DEADLINE_EXCEEDED,
-        grpc.StatusCode.RESOURCE_EXHAUSTED,
-        grpc.StatusCode.UNKNOWN,
-    })
+    assert RETRYABLE_STATUS_CODES == frozenset(
+        {
+            grpc.StatusCode.UNAVAILABLE,
+            grpc.StatusCode.DEADLINE_EXCEEDED,
+            grpc.StatusCode.RESOURCE_EXHAUSTED,
+            grpc.StatusCode.UNKNOWN,
+        }
+    )
     assert NON_RETRYABLE_EXCEPTION_BY_STATUS == {
         grpc.StatusCode.INVALID_ARGUMENT: InvalidRequestError,
         grpc.StatusCode.NOT_FOUND: NodeNotFoundError,
@@ -65,30 +69,40 @@ def test_status_code_classification_is_disjoint():
 
 def test_backoff_sequence_and_cap():
     assert [backoff_seconds(n) for n in range(1, 8)] == [
-        1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 60.0
+        1.0,
+        2.0,
+        4.0,
+        8.0,
+        16.0,
+        32.0,
+        60.0,
     ]
     # Long lived child commands must not overflow or exceed the cap.
     assert backoff_seconds(10_000) == MAX_BACKOFF_SECONDS
 
 
-@pytest.mark.parametrize("raw, expected", [
-    ("0", 0.0),
-    ("1", 1.0),
-    ("300", 300.0),
-    (" 300 ", 300.0),
-])
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("0", 0.0),
+        ("1", 1.0),
+        ("300", 300.0),
+        (" 300 ", 300.0),
+    ],
+)
 def test_resolve_retry_window_accepts_non_negative_integers(raw, expected):
-    window = resolve_retry_window(
-        CommandKind.CONTROL, env={ENV_RETRY_WINDOW: raw}
-    )
+    window = resolve_retry_window(CommandKind.CONTROL, env={ENV_RETRY_WINDOW: raw})
     assert window == expected
 
 
-@pytest.mark.parametrize("kind, expected", [
-    (CommandKind.CHILD, 86400.0),
-    (CommandKind.CONTROL, 60.0),
-    (CommandKind.QUERY, 60.0),
-])
+@pytest.mark.parametrize(
+    "kind, expected",
+    [
+        (CommandKind.CHILD, 86400.0),
+        (CommandKind.CONTROL, 60.0),
+        (CommandKind.QUERY, 60.0),
+    ],
+)
 def test_resolve_retry_window_unset_uses_kind_default(kind, expected):
     assert resolve_retry_window(kind, env={}) == expected
 
@@ -134,16 +148,12 @@ def test_resolve_retry_window_valid_or_unset_is_silent(env):
 
 
 def test_next_delay_zero_window_means_single_attempt(fake_clock):
-    policy = RetryPolicy(
-        retry_window=0.0, clock=fake_clock, sleep=fake_clock.sleep
-    )
+    policy = RetryPolicy(retry_window=0.0, clock=fake_clock, sleep=fake_clock.sleep)
     assert policy.next_delay(attempt=1, elapsed=0.0) is None
 
 
 def test_next_delay_is_clipped_to_remaining_window(fake_clock):
-    policy = RetryPolicy(
-        retry_window=10.0, clock=fake_clock, sleep=fake_clock.sleep
-    )
+    policy = RetryPolicy(retry_window=10.0, clock=fake_clock, sleep=fake_clock.sleep)
     assert policy.next_delay(attempt=1, elapsed=0.0) == 1.0
     # 4 seconds of backoff but only 2.5 left in the window.
     assert policy.next_delay(attempt=3, elapsed=7.5) == 2.5
@@ -152,9 +162,7 @@ def test_next_delay_is_clipped_to_remaining_window(fake_clock):
 
 
 def test_accumulated_sleep_never_exceeds_window(fake_clock):
-    policy = RetryPolicy(
-        retry_window=5.0, clock=fake_clock, sleep=fake_clock.sleep
-    )
+    policy = RetryPolicy(retry_window=5.0, clock=fake_clock, sleep=fake_clock.sleep)
     started = policy.clock()
     attempt = 0
     while True:

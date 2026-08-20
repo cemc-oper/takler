@@ -3,9 +3,10 @@ import pytest
 from takler.core import Meter
 
 
-#-----------------------
+# -----------------------
 # Meter
-#-----------------------
+# -----------------------
+
 
 def test_meter_create():
     meter = Meter("forecast_hour", -1, 240)
@@ -48,9 +49,9 @@ def test_meter_reset():
     assert meter.value == -1
 
 
-#-----------------------
+# -----------------------
 # Flow
-#-----------------------
+# -----------------------
 
 
 def test_task_add_meter(simple_flow):

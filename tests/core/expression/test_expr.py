@@ -5,8 +5,12 @@ import pytest
 from takler.core import Flow, NodeContainer, Task, NodeStatus
 from takler.core.expression import Expression
 from takler.core.expression_ast import (
-    AstNodePath, AstNodeStatus, AstVariablePath, AstInteger,
-    AstOpGe, AstOpEq
+    AstNodePath,
+    AstNodeStatus,
+    AstVariablePath,
+    AstInteger,
+    AstOpGe,
+    AstOpEq,
 )
 
 
@@ -256,7 +260,9 @@ def test_or_expr(simple_flow):
     task3 = simple_flow.task3
 
     # task3 "/flow1/container1/task1:meter1 >=5 or /flow1/container1/task1==complete"
-    expr_string = "/flow1/container1/task1:meter1 >=5 or /flow1/container1/task1==complete"
+    expr_string = (
+        "/flow1/container1/task1:meter1 >=5 or /flow1/container1/task1==complete"
+    )
     expr = Expression(expr_string)
     expr.create_ast(task3)
 
@@ -364,4 +370,3 @@ def test_and_expr(simple_flow):
     assert expr_ast_meter.evaluate()
     assert expr_ast_status.evaluate()
     assert expr.evaluate()
-

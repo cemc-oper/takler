@@ -2,6 +2,7 @@ import pytest
 
 from takler.core import NodeStatus
 
+
 def test_default_node_status_on_task(simple_flow_for_operation):
     """
     |- flow1 [queued]
@@ -61,7 +62,6 @@ def test_default_node_status_on_container(simple_flow_for_operation):
     assert task2.state.node_status == NodeStatus.complete
     assert task3.state.node_status == NodeStatus.complete
     assert container3.state.node_status == NodeStatus.complete
-
 
 
 def test_set_default_node_status_on_task_with_error_status(simple_flow_for_operation):

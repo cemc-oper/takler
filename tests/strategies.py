@@ -111,7 +111,18 @@ VALID_TRIGGER_EXPRESSIONS: Tuple[str, ...] = (
 )
 
 #: Characters that are not part of the trigger grammar.
-_ILLEGAL_TRIGGER_CHARS: Tuple[str, ...] = ("#", "@", "!", "%", "&", "$", "?", "\\", "'", '"')
+_ILLEGAL_TRIGGER_CHARS: Tuple[str, ...] = (
+    "#",
+    "@",
+    "!",
+    "%",
+    "&",
+    "$",
+    "?",
+    "\\",
+    "'",
+    '"',
+)
 
 #: Every takler owned exception type, used by the Error_Code properties.
 TAKLER_EXCEPTION_TYPES: Tuple[Type[BaseException], ...] = tuple(
@@ -208,7 +219,9 @@ def _draw_attributes(draw, node: Node, allow_repeat: bool) -> None:
         )
 
 
-def _draw_subtree(draw, parent: NodeContainer, depth: int, allow_shell_tasks: bool) -> None:
+def _draw_subtree(
+    draw, parent: NodeContainer, depth: int, allow_shell_tasks: bool
+) -> None:
     """Fill ``parent`` with children, keeping the total depth <= MAX_TREE_DEPTH."""
     task_count = draw(st.integers(min_value=1, max_value=2))
     if depth + 1 < MAX_TREE_DEPTH:
@@ -219,7 +232,9 @@ def _draw_subtree(draw, parent: NodeContainer, depth: int, allow_shell_tasks: bo
     for index in range(task_count):
         name = _task_name(index)
         if allow_shell_tasks and draw(st.booleans()):
-            task = parent.add_task(ShellScriptTask(name, draw(st.sampled_from(SCRIPT_PATHS))))
+            task = parent.add_task(
+                ShellScriptTask(name, draw(st.sampled_from(SCRIPT_PATHS)))
+            )
         else:
             task = parent.add_task(Task(name))
         _draw_attributes(draw, task, allow_repeat=False)
@@ -227,7 +242,9 @@ def _draw_subtree(draw, parent: NodeContainer, depth: int, allow_shell_tasks: bo
     for index in range(container_count):
         container = parent.add_container(_container_name(index))
         _draw_attributes(draw, container, allow_repeat=True)
-        _draw_subtree(draw, container, depth=depth + 1, allow_shell_tasks=allow_shell_tasks)
+        _draw_subtree(
+            draw, container, depth=depth + 1, allow_shell_tasks=allow_shell_tasks
+        )
 
 
 def _draw_in_limits(draw, flow: Flow) -> None:
@@ -272,7 +289,9 @@ def _draw_runtime_state(draw, flow: Flow) -> None:
         for event in node.events:
             event.value = draw(st.booleans())
         for meter in node.meters:
-            meter.value = draw(st.integers(min_value=meter.min_value, max_value=meter.max_value))
+            meter.value = draw(
+                st.integers(min_value=meter.min_value, max_value=meter.max_value)
+            )
         for time_attr in node.times:
             if draw(st.booleans()):
                 time_attr.set_free()
@@ -296,7 +315,9 @@ def _draw_runtime_state(draw, flow: Flow) -> None:
 
         if isinstance(node, Task):
             node.try_no = draw(st.integers(min_value=0, max_value=3))
-            node.task_id = draw(st.one_of(st.none(), st.sampled_from(["1234", "job-1", "作业 1"])))
+            node.task_id = draw(
+                st.one_of(st.none(), st.sampled_from(["1234", "job-1", "作业 1"]))
+            )
             node.aborted_reason = draw(
                 st.one_of(st.none(), st.sampled_from(["", "exit 1", "作业 失败"]))
             )
@@ -322,7 +343,9 @@ def _draw_begun_and_calendar(draw, flow: Flow) -> None:
     flow.begin()
 
     for _ in range(draw(st.integers(min_value=0, max_value=3))):
-        delta = datetime.timedelta(seconds=draw(st.integers(min_value=1, max_value=7200)))
+        delta = datetime.timedelta(
+            seconds=draw(st.integers(min_value=1, max_value=7200))
+        )
         flow.update_calendar(flow.calendar.last_real_time + delta)
 
 
@@ -441,9 +464,9 @@ NON_BEGIN_OPERATIONS: Tuple[str, ...] = (
 
 
 def apply_flow_operation(
-        flow: Flow,
-        operation: FlowOperation,
-        ignore_rejected: bool = True,
+    flow: Flow,
+    operation: FlowOperation,
+    ignore_rejected: bool = True,
 ) -> Flow:
     """Apply ``operation`` to ``flow`` and return the flow to keep working on.
 
@@ -507,9 +530,9 @@ def apply_flow_operation(
 
 
 def apply_flow_operations(
-        flow: Flow,
-        operations: Iterable[FlowOperation],
-        ignore_rejected: bool = True,
+    flow: Flow,
+    operations: Iterable[FlowOperation],
+    ignore_rejected: bool = True,
 ) -> Flow:
     """Apply ``operations`` in order and return the resulting flow."""
     for operation in operations:
@@ -519,12 +542,12 @@ def apply_flow_operations(
 
 @st.composite
 def flow_operation_sequences(
-        draw,
-        include_begin: bool = True,
-        include_serialization: bool = True,
-        min_size: int = 1,
-        max_size: int = 6,
-        with_runtime_state: bool = True,
+    draw,
+    include_begin: bool = True,
+    include_serialization: bool = True,
+    min_size: int = 1,
+    max_size: int = 6,
+    with_runtime_state: bool = True,
 ) -> Tuple[Flow, List[FlowOperation]]:
     """Build a ``Flow`` together with a sequence of operations to replay on it.
 
@@ -558,7 +581,9 @@ def flow_operation_sequences(
     nodes = _iter_nodes(flow)
     node_paths = [node.node_path for node in nodes]
     task_paths = [node.node_path for node in nodes if isinstance(node, Task)]
-    event_refs = [(node.node_path, event.name) for node in nodes for event in node.events]
+    event_refs = [
+        (node.node_path, event.name) for node in nodes for event in node.events
+    ]
     meter_refs = [
         (node.node_path, meter.name, meter.min_value, meter.max_value)
         for node in nodes
@@ -567,7 +592,9 @@ def flow_operation_sequences(
 
     choices = [
         st.builds(
-            lambda path, reset_repeat: FlowOperation("requeue", path, {"reset_repeat": reset_repeat}),
+            lambda path, reset_repeat: FlowOperation(
+                "requeue", path, {"reset_repeat": reset_repeat}
+            ),
             st.sampled_from(node_paths),
             st.booleans(),
         ),
@@ -580,28 +607,34 @@ def flow_operation_sequences(
             st.sampled_from(node_paths),
         ),
         st.builds(
-            lambda path, dep_type: FlowOperation("free_dependencies", path, {"dep_type": dep_type}),
+            lambda path, dep_type: FlowOperation(
+                "free_dependencies", path, {"dep_type": dep_type}
+            ),
             st.sampled_from(node_paths),
             st.sampled_from([None, "all", "time", "trigger"]),
         ),
     ]
 
     if task_paths:
-        choices.extend([
-            st.builds(
-                lambda path: FlowOperation("run", path),
-                st.sampled_from(task_paths),
-            ),
-            st.builds(
-                lambda path: FlowOperation("complete", path),
-                st.sampled_from(task_paths),
-            ),
-            st.builds(
-                lambda path, reason: FlowOperation("abort", path, {"reason": reason}),
-                st.sampled_from(task_paths),
-                st.sampled_from(["", "exit 1", "作业 失败"]),
-            ),
-        ])
+        choices.extend(
+            [
+                st.builds(
+                    lambda path: FlowOperation("run", path),
+                    st.sampled_from(task_paths),
+                ),
+                st.builds(
+                    lambda path: FlowOperation("complete", path),
+                    st.sampled_from(task_paths),
+                ),
+                st.builds(
+                    lambda path, reason: FlowOperation(
+                        "abort", path, {"reason": reason}
+                    ),
+                    st.sampled_from(task_paths),
+                    st.sampled_from(["", "exit 1", "作业 失败"]),
+                ),
+            ]
+        )
 
     if event_refs:
         choices.append(
@@ -620,7 +653,10 @@ def flow_operation_sequences(
                 lambda ref, ratio: FlowOperation(
                     "set_meter",
                     ref[0],
-                    {"name": ref[1], "value": ref[2] + int(round(ratio * (ref[3] - ref[2])))},
+                    {
+                        "name": ref[1],
+                        "value": ref[2] + int(round(ratio * (ref[3] - ref[2]))),
+                    },
                 ),
                 st.sampled_from(meter_refs),
                 st.floats(min_value=0.0, max_value=1.0),
@@ -672,26 +708,33 @@ def invalid_node_paths() -> st.SearchStrategy[str]:
     not start with ``/``, plus ``/`` itself. The empty string, whitespace and
     non ASCII text are included.
     """
-    fixed = st.sampled_from([
-        "",
-        "/",
-        " ",
-        "flow1",
-        "flow1/task1",
-        "./task1",
-        "../flow1/task1",
-        "task1",
-        "流程/任务",
-        " /flow1/task1",
-    ])
+    fixed = st.sampled_from(
+        [
+            "",
+            "/",
+            " ",
+            "flow1",
+            "flow1/task1",
+            "./task1",
+            "../flow1/task1",
+            "task1",
+            "流程/任务",
+            " /flow1/task1",
+        ]
+    )
     generated = st.one_of(
         st.text(min_size=0, max_size=10),
-        st.builds(lambda parts: "/".join(parts), st.lists(_PATH_SEGMENTS, min_size=1, max_size=3)),
+        st.builds(
+            lambda parts: "/".join(parts),
+            st.lists(_PATH_SEGMENTS, min_size=1, max_size=3),
+        ),
     ).filter(_is_malformed_absolute_path)
     return st.one_of(fixed, generated)
 
 
-def nonexistent_node_paths(existing_paths: Iterable[str] = ()) -> st.SearchStrategy[str]:
+def nonexistent_node_paths(
+    existing_paths: Iterable[str] = (),
+) -> st.SearchStrategy[str]:
     """Well formed absolute node paths that are *not* in ``existing_paths``.
 
     The paths are syntactically valid, so a lookup reaches the "no such node"
@@ -738,12 +781,14 @@ def _mutated_trigger_expressions(draw) -> str:
     """Apply one destructive mutation to a valid trigger expression."""
     base = draw(st.sampled_from(VALID_TRIGGER_EXPRESSIONS))
     mutation = draw(
-        st.sampled_from(["drop_char", "truncate", "insert_char", "replace_char", "break_operator"])
+        st.sampled_from(
+            ["drop_char", "truncate", "insert_char", "replace_char", "break_operator"]
+        )
     )
 
     if mutation == "drop_char":
         index = draw(st.integers(min_value=0, max_value=len(base) - 1))
-        return base[:index] + base[index + 1:]
+        return base[:index] + base[index + 1 :]
 
     if mutation == "truncate":
         length = draw(st.integers(min_value=0, max_value=len(base) - 1))
@@ -757,7 +802,7 @@ def _mutated_trigger_expressions(draw) -> str:
     if mutation == "replace_char":
         index = draw(st.integers(min_value=0, max_value=len(base) - 1))
         char = draw(st.sampled_from(_ILLEGAL_TRIGGER_CHARS))
-        return base[:index] + char + base[index + 1:]
+        return base[:index] + char + base[index + 1 :]
 
     # break_operator: leave a dangling or malformed operator behind
     replacement = draw(st.sampled_from(["=", "=== ==", "and and", "or or", "+ +"]))

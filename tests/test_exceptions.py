@@ -62,15 +62,11 @@ class TestTaklerErrorBase:
 class TestRequiredSubclasses:
     """Requirement 1.2: the six named subclasses all derive from ``TaklerError``."""
 
-    @pytest.mark.parametrize(
-        "exc_type", REQUIRED_SUBCLASSES, ids=lambda t: t.__name__
-    )
+    @pytest.mark.parametrize("exc_type", REQUIRED_SUBCLASSES, ids=lambda t: t.__name__)
     def test_required_subclass_derives_from_takler_error(self, exc_type):
         assert issubclass(exc_type, TaklerError)
 
-    @pytest.mark.parametrize(
-        "exc_type", REQUIRED_SUBCLASSES, ids=lambda t: t.__name__
-    )
+    @pytest.mark.parametrize("exc_type", REQUIRED_SUBCLASSES, ids=lambda t: t.__name__)
     def test_required_subclass_is_caught_as_takler_error(self, exc_type):
         with pytest.raises(TaklerError):
             raise exc_type("boom")
@@ -78,9 +74,7 @@ class TestRequiredSubclasses:
     def test_required_subclasses_are_distinct_types(self):
         assert len(set(REQUIRED_SUBCLASSES)) == len(REQUIRED_SUBCLASSES)
 
-    @pytest.mark.parametrize(
-        "exc_type", OTHER_EXCEPTIONS, ids=lambda t: t.__name__
-    )
+    @pytest.mark.parametrize("exc_type", OTHER_EXCEPTIONS, ids=lambda t: t.__name__)
     def test_other_exported_exceptions_also_derive_from_takler_error(self, exc_type):
         assert issubclass(exc_type, TaklerError)
 

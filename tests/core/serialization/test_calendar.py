@@ -91,7 +91,9 @@ def test_calendar_from_dict_tree():
     d = create_calendar().to_dict()
 
     # all the six fields are runtime state, tree method keeps the initial values
-    assert_calendar_equal(Calendar.from_dict(d, method=SerializationType.Tree), Calendar())
+    assert_calendar_equal(
+        Calendar.from_dict(d, method=SerializationType.Tree), Calendar()
+    )
 
 
 def test_calendar_round_trip():

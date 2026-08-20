@@ -152,9 +152,9 @@ def test_node_find_node(simple_flow):
     do_tests(cases=test_cases)
 
 
-#------------------------
+# ------------------------
 # Bunch
-#------------------------
+# ------------------------
 
 
 def test_bunch_check_absolute_node_path():
@@ -168,15 +168,12 @@ def test_bunch_check_absolute_node_path():
         TestCase(node_path="/flow1/", check_result=True),
         TestCase(node_path="flow1", check_result=False),
         TestCase(node_path="flow1/", check_result=False),
-
         TestCase(node_path="/", check_result=False),
         TestCase(node_path="", check_result=False),
-
         TestCase(node_path="flow1/container1", check_result=False),
         TestCase(node_path="flow1/container1/", check_result=False),
         TestCase(node_path="/flow1/container1", check_result=True),
         TestCase(node_path="/flow1/container1/", check_result=True),
-
         TestCase(node_path="./container1", check_result=False),
         TestCase(node_path="./container1/", check_result=False),
         TestCase(node_path="./container1/task1", check_result=False),
@@ -185,9 +182,8 @@ def test_bunch_check_absolute_node_path():
         TestCase(node_path="../container1/", check_result=False),
         TestCase(node_path="../container1/task1", check_result=False),
         TestCase(node_path="../container1/task1/", check_result=False),
-
-        TestCase(node_path='./', check_result=False),
-        TestCase(node_path='../', check_result=False),
+        TestCase(node_path="./", check_result=False),
+        TestCase(node_path="../", check_result=False),
     ]
 
     for test_case in test_cases:
@@ -208,28 +204,24 @@ def test_bunch_check_node_path():
         TestCase(node_path="/flow1/", check_result=True),
         TestCase(node_path="flow1", check_result=False),
         TestCase(node_path="flow1/", check_result=False),
-
         TestCase(node_path="/", check_result=False),
         TestCase(node_path="", check_result=False),
-
         TestCase(node_path="flow1/container1", check_result=False),
         TestCase(node_path="flow1/container1/", check_result=False),
         TestCase(node_path="/flow1/container1", check_result=True),
         TestCase(node_path="/flow1/container1/", check_result=True),
-
-        TestCase(node_path='.', check_result=False),
-        TestCase(node_path='./', check_result=False),
-        TestCase(node_path='..', check_result=False),
-        TestCase(node_path='../', check_result=False),
-
-        TestCase(node_path='./container1', check_result=True),
-        TestCase(node_path='./container1/', check_result=True),
-        TestCase(node_path='./container1/task1', check_result=True),
-        TestCase(node_path='./container1/task1/', check_result=True),
-        TestCase(node_path='../container1', check_result=True),
-        TestCase(node_path='../container1/', check_result=True),
-        TestCase(node_path='../container1/task1', check_result=True),
-        TestCase(node_path='../container1/task1/', check_result=True),
+        TestCase(node_path=".", check_result=False),
+        TestCase(node_path="./", check_result=False),
+        TestCase(node_path="..", check_result=False),
+        TestCase(node_path="../", check_result=False),
+        TestCase(node_path="./container1", check_result=True),
+        TestCase(node_path="./container1/", check_result=True),
+        TestCase(node_path="./container1/task1", check_result=True),
+        TestCase(node_path="./container1/task1/", check_result=True),
+        TestCase(node_path="../container1", check_result=True),
+        TestCase(node_path="../container1/", check_result=True),
+        TestCase(node_path="../container1/task1", check_result=True),
+        TestCase(node_path="../container1/task1/", check_result=True),
     ]
 
     for test_case in test_cases:

@@ -54,6 +54,7 @@ class FakeClient:
         # Any command name (complete, requeue, ping, ...) replays the outcome.
         def command(**kwargs):
             return self._run(name, **kwargs)
+
         return command
 
 
@@ -183,7 +184,7 @@ def test_unexpected_exception_exits_three_without_traceback(fake_client):
 
 
 def test_unexpected_exception_traceback_goes_to_the_log_file(
-        fake_client, monkeypatch, tmp_path
+    fake_client, monkeypatch, tmp_path
 ):
     log_file = tmp_path / "client.log"
     monkeypatch.setenv("TAKLER_LOG_FILE", str(log_file))
@@ -205,14 +206,24 @@ def test_unexpected_exception_traceback_goes_to_the_log_file(
 # -- NO_TAKLER --------------------------------------------------------
 
 
-@pytest.mark.parametrize("args", [
-    ["init", "--task-id", "1", "--node-path", "/flow1/task1"],
-    ["complete", "--node-path", "/flow1/task1"],
-    ["abort", "--node-path", "/flow1/task1"],
-    ["event", "--node-path", "/flow1/task1", "--event-name", "e"],
-    ["meter", "--node-path", "/flow1/task1",
-     "--meter-name", "m", "--meter-value", "1"],
-])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["init", "--task-id", "1", "--node-path", "/flow1/task1"],
+        ["complete", "--node-path", "/flow1/task1"],
+        ["abort", "--node-path", "/flow1/task1"],
+        ["event", "--node-path", "/flow1/task1", "--event-name", "e"],
+        [
+            "meter",
+            "--node-path",
+            "/flow1/task1",
+            "--meter-name",
+            "m",
+            "--meter-value",
+            "1",
+        ],
+    ],
+)
 def test_no_takler_skips_the_server_call_and_exits_zero(fake_client, args):
     """Requirement 10.5: no communication happens, the process exits 0."""
     fake_client["outcome"] = ClientConnectionError("would have failed")

@@ -130,10 +130,10 @@ def complex_flow_for_requeue(simple_flow_for_operation):
     task2 = simple_flow_for_operation.task2
     task4 = simple_flow_for_operation.task4
 
-    ymd = flow1.add_repeat(RepeatDate('YMD', '20260101', '20260131'))
-    event1 = task1.add_event('event1')
-    meter1 = task2.add_meter('meter1', 0, 100)
-    task4.add_trigger('./task3 == complete')
+    ymd = flow1.add_repeat(RepeatDate("YMD", "20260101", "20260131"))
+    event1 = task1.add_event("event1")
+    meter1 = task2.add_meter("meter1", 0, 100)
+    task4.add_trigger("./task3 == complete")
 
     flow1.requeue()
 
@@ -143,4 +143,3 @@ def complex_flow_for_requeue(simple_flow_for_operation):
         event1=event1,
         meter1=meter1,
     )
-

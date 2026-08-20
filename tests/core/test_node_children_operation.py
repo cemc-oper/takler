@@ -7,14 +7,14 @@ def test_node_append_child():
     node1 = Node("node1")
     child1 = node1.append_child("child1")
     assert node1.children == [child1]
-    
+
     child2 = Node("child2")
     node1.append_child(child2)
     assert node1.children == [child1, child2]
 
 
 def test_node_append_child_error_type():
-    node = Node('node')
+    node = Node("node")
 
     with pytest.raises(TypeError):
         node.append_child(None)
@@ -35,7 +35,7 @@ def test_node_find_child_index():
 
     child2_standalone = Node("child2")
     assert node1.find_child_index(child2_standalone) == 1
-    
+
     child3 = Node("child3")
     assert node1.find_child_index(child3) == -1
     assert node1.find_child_index("child3") == -1

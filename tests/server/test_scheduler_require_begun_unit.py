@@ -4,6 +4,7 @@ Covers Requirement 8.10: requeue / run / force / free-dep on a node of a flow
 which has not begun raise a ``TaklerError`` subclass whose ``str()`` contains
 the flow name, and leave the node and all its descendants unchanged.
 """
+
 import pytest
 
 from takler.core import Bunch, Flow, NodeContainer, NodeStatus
@@ -159,7 +160,7 @@ def test_guarded_commands_work_after_begin(scheduler, flow):
 
 
 def test_suspend_and_resume_not_guarded(scheduler, flow):
-    """"suspend then begin" is a legitimate operator order, so it is not guarded."""
+    """ "suspend then begin" is a legitimate operator order, so it is not guarded."""
     scheduler.run_command_suspend("/flow1")
     assert flow.state.suspended is True
 

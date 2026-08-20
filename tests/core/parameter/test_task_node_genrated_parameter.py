@@ -1,8 +1,6 @@
 from takler.core import Parameter, Task, Flow
 from takler.core.task_node import TaskNodeGeneratedParameters
-from takler.core.parameter import (
-    TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
-)
+from takler.core.parameter import TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
 
 
 def test_task_node_generated_parameters_create():
@@ -52,7 +50,9 @@ def test_task_node_generated_parameters_find_parameter():
     gen_params.update_parameters()
 
     assert gen_params.find_parameter(TASK) == Parameter(TASK, "task1")
-    assert gen_params.find_parameter(TAKLER_NAME) == Parameter(TAKLER_NAME, "/flow1/task1")
+    assert gen_params.find_parameter(TAKLER_NAME) == Parameter(
+        TAKLER_NAME, "/flow1/task1"
+    )
     assert gen_params.find_parameter(TAKLER_RID) == Parameter(TAKLER_RID, "1001")
     assert gen_params.find_parameter(TAKLER_TRY_NO) == Parameter(TAKLER_TRY_NO, 0)
     assert gen_params.find_parameter("NO_EXIST") is None
@@ -69,5 +69,5 @@ def test_task_node_generated_parameters_generated_parameters():
         TASK: Parameter(TASK, "task1"),
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/task1"),
         TAKLER_RID: Parameter(TAKLER_RID, "1001"),
-        TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0)
+        TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
     }
