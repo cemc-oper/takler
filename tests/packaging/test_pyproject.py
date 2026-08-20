@@ -13,7 +13,10 @@ points from drifting back to names that clash with the Go client:
   is already ``>=3.11``, so such a marker is either dead or a hidden branch),
 * ``[project.scripts]`` declares exactly ``takler-server``,
   ``takler-client-py`` and ``takler-tui`` -- notably neither ``takler`` nor
-  ``takler_client``, the latter being the artifact name of the Go client.
+  ``takler_client``, the latter being the artifact name of the Go client,
+* dev tooling (ruff) stays in ``[dependency-groups] dev`` rather than in an
+  extra, and ``[tool.ruff.lint] select`` names the rule set instead of inheriting
+  whatever the installed ruff happens to default to.
 
 Only these properties are asserted. The file legitimately grows other tables
 (coverage configuration, for one), so nothing here claims a table set is
@@ -128,6 +131,65 @@ def test_dependency_groups_keeps_only_dev_tooling(pyproject: dict):
 
     assert "dev" in groups
     assert EXPECTED_EXTRAS.isdisjoint(groups)
+
+
+def test_ruff_is_dev_tooling_not_a_user_facing_extra(pyproject: dict):
+    """The linter belongs to ``[dependency-groups] dev``, not to any extra.
+
+    Two reasons, and the second one is the one that bit us: a user installing
+    ``takler[test]`` has no use for a linter, and dependency groups are locked by
+    ``uv.lock``, so CI (``uv sync --locked``) and a developer machine
+    (``uv run ruff``) get the byte-identical ruff. While ruff sat in the ``test``
+    extra with a ``>=0.5`` floor, CI resolved it freely and 0.16 changed the
+    default rule set under us.
+    """
+    dev_names = {
+        _distribution_name(req) for req in pyproject["dependency-groups"]["dev"]
+    }
+    extra_names = {
+        _distribution_name(req)
+        for requirements in pyproject["project"]["optional-dependencies"].values()
+        for req in requirements
+    }
+
+    assert "ruff" in dev_names
+    assert "ruff" not in extra_names
+
+
+def test_every_dev_group_requirement_declares_a_lower_bound_or_is_bare(
+    pyproject: dict,
+):
+    """Dev tooling may be unpinned, but a declared bound must be a lower one.
+
+    ``uv.lock`` is what actually pins these, so a bare name (``build``,
+    ``ipython``) is fine here; what must not appear is an upper bound only,
+    which would let a resolver walk backwards.
+    """
+    upper_only = [
+        req
+        for req in pyproject["dependency-groups"]["dev"]
+        if _specifier_part(req) != _distribution_name(req) and not _has_lower_bound(req)
+    ]
+
+    assert upper_only == []
+
+
+# ---------------------------------------------------------------------------
+# Ruff configuration (guards the 0.16 default-rule-set change)
+# ---------------------------------------------------------------------------
+
+
+def test_ruff_lint_rule_set_is_declared_explicitly(pyproject: dict):
+    """``[tool.ruff.lint] select`` freezes the rule set across ruff versions.
+
+    Without ``select``, the enabled rules are whatever the installed ruff
+    defaults to, and 0.16.0 raised that from 59 rules to 413. The value is not
+    asserted -- adopting more rules is a legitimate decision -- only that a
+    decision was written down.
+    """
+    select = pyproject["tool"]["ruff"]["lint"]["select"]
+
+    assert select, select
 
 
 # ---------------------------------------------------------------------------

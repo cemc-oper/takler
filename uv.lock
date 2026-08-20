@@ -1384,7 +1384,6 @@ test = [
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "ruff" },
 ]
 tui = [
     { name = "rich" },
@@ -1396,6 +1395,7 @@ dev = [
     { name = "build" },
     { name = "grpcio-tools" },
     { name = "ipython" },
+    { name = "ruff" },
     { name = "twine" },
 ]
 
@@ -1413,7 +1413,6 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=5.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", marker = "extra == 'tui'", specifier = ">=13.0" },
-    { name = "ruff", marker = "extra == 'test'", specifier = ">=0.5" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=0.60" },
     { name = "typer", specifier = ">=0.26" },
 ]
@@ -1424,6 +1423,7 @@ dev = [
     { name = "build" },
     { name = "grpcio-tools", specifier = ">=1.83" },
     { name = "ipython" },
+    { name = "ruff", specifier = ">=0.15" },
     { name = "twine" },
 ]
 

@@ -8,6 +8,13 @@ looks for commands or values, never for exact whitespace or step ordering, so
 reformatting the workflow (or reordering unrelated steps) does not break these
 tests.
 
+One invariant here is not cosmetic: the environment comes from ``uv.lock`` via
+``uv sync --locked``, and every tool runs through ``uv run``. Letting a resolver
+pick versions at CI time is what produced a green local ``ruff check`` next to a
+red CI one (``ruff>=0.5`` resolved to 0.16, which enables 413 rules by default
+instead of 59), so ``--locked`` and the ``uv run`` prefix are asserted rather
+than left to convention.
+
 Two YAML details are worth naming, because both are easy to trip over:
 
 * under YAML 1.1 the key ``on:`` parses as the boolean ``True``, not as the
@@ -25,7 +32,6 @@ Validates: Requirements 16.1, 16.2, 16.3, 16.4, 16.5, 16.6
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
@@ -41,10 +47,18 @@ WORKFLOW_PATH = (
 EXPECTED_PYTHON_VERSIONS = {"3.11", "3.12"}
 EXPECTED_EXTRAS = {"tui", "log", "test"}
 
+#: Actions that may be responsible for providing the interpreter.
+PYTHON_SETUP_ACTIONS = ("setup-uv", "setup-python")
+
+#: Tools that must not be invoked bare, i.e. from whatever is on ``PATH``.
+#: Each of them has to come from the environment ``uv sync --locked`` built.
+LOCKED_TOOLS = frozenset({"ruff", "pytest", "coverage"})
+
+#: The prefix that runs a command inside the locked environment.
+RUNNER_PREFIX = ("uv", "run")
+
 #: ``on:`` is read back as the boolean ``True`` by a YAML 1.1 loader.
 ON_KEYS = (True, "on")
-
-_EXTRAS_PATTERN = re.compile(r"\[([^\]]*)\]")
 
 
 @pytest.fixture(scope="module")
@@ -90,15 +104,33 @@ def _command_lines(job: dict[str, Any]) -> list[str]:
     ]
 
 
+def _invoked_tokens(line: str) -> list[str]:
+    """Return the tokens of ``line`` with a leading ``uv run`` removed.
+
+    ``uv run ruff check .`` is an invocation *of ruff*, so the runner prefix (and
+    any options it carries, e.g. ``uv run --frozen``) is stripped before the
+    tokens are matched. ``uv sync ...`` is left alone: there ``uv`` is the
+    command being invoked.
+    """
+    tokens = line.split()
+    if tokens[: len(RUNNER_PREFIX)] != list(RUNNER_PREFIX):
+        return tokens
+    rest = tokens[len(RUNNER_PREFIX) :]
+    while rest and rest[0].startswith("-"):
+        rest = rest[1:]
+    return rest
+
+
 def _steps_running(job: dict[str, Any], executable: str, *args: str) -> list[str]:
     """Return the command lines that invoke ``executable`` with all of ``args``.
 
     Matching is token based so that ``ruff check`` cannot be satisfied by
-    ``ruff format --check``, and argument order is irrelevant.
+    ``ruff format --check``, and argument order is irrelevant. A leading
+    ``uv run`` does not hide the executable behind it.
     """
     matches = []
     for line in _command_lines(job):
-        tokens = line.split()
+        tokens = _invoked_tokens(line)
         if not tokens or tokens[0] != executable:
             continue
         if all(arg in tokens[1:] for arg in args):
@@ -141,17 +173,29 @@ def test_job_name_identifies_the_python_version(test_job: dict[str, Any]):
     assert "matrix.python-version" in test_job["name"]
 
 
-def test_setup_python_uses_the_matrix_version(test_job: dict[str, Any]):
-    """The interpreter actually installed is the matrix one, not a fixed one."""
+def test_the_interpreter_comes_from_the_matrix_version(test_job: dict[str, Any]):
+    """The interpreter actually installed is the matrix one, not a fixed one.
+
+    Either ``astral-sh/setup-uv`` or ``actions/setup-python`` may provide it;
+    what matters is that the version it is given is the matrix value. The
+    ``setup-uv`` ``python-version`` input overrides the project's
+    ``requires-python`` / ``.python-version`` pin, which is what makes the two
+    matrix branches actually differ.
+    """
     setup_steps = [
         step
         for step in test_job["steps"]
-        if "setup-python" in str(step.get("uses", ""))
+        if any(action in str(step.get("uses", "")) for action in PYTHON_SETUP_ACTIONS)
     ]
 
     assert setup_steps, test_job["steps"]
-    for step in setup_steps:
-        assert "matrix.python-version" in str(step["with"]["python-version"])
+    from_matrix = [
+        step
+        for step in setup_steps
+        if "matrix.python-version"
+        in str(step.get("with", {}).get("python-version", ""))
+    ]
+    assert from_matrix, setup_steps
 
 
 # ---------------------------------------------------------------------------
@@ -161,17 +205,47 @@ def test_setup_python_uses_the_matrix_version(test_job: dict[str, Any]):
 
 def test_install_step_pulls_the_tui_log_and_test_extras(test_job: dict[str, Any]):
     """The three optional dependency groups are installed before the tests."""
-    installs = [
+    syncs = _steps_running(test_job, "uv", "sync")
+    extras: set[str] = set()
+    for line in syncs:
+        tokens = line.split()
+        if "--all-extras" in tokens:
+            extras |= EXPECTED_EXTRAS
+        for index, token in enumerate(tokens):
+            if token == "--extra" and index + 1 < len(tokens):
+                extras.add(tokens[index + 1])
+            elif token.startswith("--extra="):
+                extras.add(token.split("=", 1)[1])
+
+    assert syncs, _command_lines(test_job)
+    assert EXPECTED_EXTRAS <= extras, syncs
+
+
+def test_install_step_restores_the_locked_environment(test_job: dict[str, Any]):
+    """``uv sync --locked`` installs exactly what ``uv.lock`` pins.
+
+    Without ``--locked`` a stale lockfile is silently re-resolved, so CI would
+    again be free to pick versions a developer never ran against.
+    """
+    assert _steps_running(test_job, "uv", "sync", "--locked")
+
+
+def test_no_step_installs_dependencies_with_pip(test_job: dict[str, Any]):
+    """A stray ``pip install`` would resolve outside the lockfile."""
+    pip_installs = [line for line in _command_lines(test_job) if "pip install" in line]
+
+    assert pip_installs == []
+
+
+def test_every_tool_runs_inside_the_locked_environment(test_job: dict[str, Any]):
+    """ruff / pytest / coverage are invoked via ``uv run``, not bare from PATH."""
+    bare = [
         line
         for line in _command_lines(test_job)
-        if line.startswith("pip install") or "pip install" in line
+        if line.split() and line.split()[0] in LOCKED_TOOLS
     ]
-    extras: set[str] = set()
-    for line in installs:
-        for group in _EXTRAS_PATTERN.findall(line):
-            extras.update(name.strip() for name in group.split(","))
 
-    assert EXPECTED_EXTRAS <= extras, installs
+    assert bare == []
 
 
 # ---------------------------------------------------------------------------
