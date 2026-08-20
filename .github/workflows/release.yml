@@ -1,0 +1,178 @@
+# 发布流程：打 tag（`v*`）后构建 sdist + wheel，检查通过后上传到 PyPI。
+#
+# 使用方式：
+#     git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
+# 也可以在 Actions 页面手动触发（workflow_dispatch），输入已存在的 tag 名重跑一次发布。
+#
+# 一次性准备工作（PyPI 侧，用 Trusted Publishing，不需要在仓库里存 API token）：
+#   在 https://pypi.org/manage/project/takler/settings/publishing/ 添加一个
+#   GitHub publisher：
+#     Owner / Repository: 本仓库（即 `github.repository` 的值）
+#     Workflow name:      release.yml
+#     Environment name:   pypi
+#   项目还没在 PyPI 上创建时，用 "pending publisher"（同样的四项）即可，首次发布会
+#   自动建好项目。
+# 如果不用 Trusted Publishing，把 publish 步骤换成 `password: ${{ secrets.PYPI_API_TOKEN }}`。
+
+name: release
+
+on:
+  push:
+    tags:
+      # 只匹配 `v` 前缀的版本 tag，其它 tag（如 doc-*）不触发发布。
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag，例如 v0.2.0（必须已经推送到远端）"
+        required: true
+        type: string
+
+# 默认只读；发布需要的 id-token 单独在 publish job 里放开，避免构建阶段拿到多余权限。
+permissions:
+  contents: read
+
+env:
+  # tag 推送时取 github.ref_name，手动触发时取输入值，后面各步骤统一用这个变量。
+  TAG_NAME: ${{ inputs.tag || github.ref_name }}
+
+# 同一个 tag 只跑一份发布流程，避免重复推送 tag 时并发上传同一个版本。
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build distributions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+          # setuptools_scm 从 git 历史和 tag 推导版本号，浅克隆（默认 depth=1）会
+          # 拿不到 tag，导致版本变成 0.1.dev0+... 因此必须取完整历史。
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # 纯 Python 包（`py3-none-any` wheel），用受支持区间里较新的版本构建即可。
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      # PyPI 会拒收 README 渲染不了的包，twine check 提前在本地把这类问题拦下来。
+      - name: Check metadata with twine
+        run: twine check --strict dist/*
+
+      # setuptools_scm 的版本号来自 git 描述：如果 tag 指向的提交与构建的提交不一致，
+      # 或者工作区不干净，版本会带上 `.devN+g<hash>` 后缀（本地版本号，PyPI 直接拒收）。
+      # 这一步把包版本和 tag 名对齐，防止发出一个版本号与 tag 不符的包。
+      # 比较用 packaging 的 Version 而不是字符串，因为打包时版本号会按 PEP 440 归一化
+      # （例如 tag `v1.0.0-beta1` 对应的包版本是 `1.0.0b1`）。
+      - name: Verify package version matches tag
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import sys
+
+          from packaging.version import InvalidVersion, Version
+
+          # 从环境变量读 tag，而不是把 ${{ }} 表达式插进脚本里，避免 tag 名参与代码拼接。
+          tag = os.environ["TAG_NAME"]
+          # wheel 文件名形如 takler-0.2.0-py3-none-any.whl，第二段就是包版本。
+          built = sorted(pathlib.Path("dist").glob("*.whl"))[0].name.split("-")[1]
+          try:
+              expected = Version(tag.removeprefix("v"))
+          except InvalidVersion:
+              print(f"::error::tag '{tag}' is not a PEP 440 version")
+              sys.exit(1)
+          print(f"tag={tag} expected={expected} built={built}")
+          if Version(built) != expected:
+              print(f"::error::built version '{built}' does not match tag '{tag}'")
+              sys.exit(1)
+          if Version(built).local is not None:
+              print(f"::error::version '{built}' has a local segment, PyPI rejects it")
+              sys.exit(1)
+          PY
+
+      # wheel 里只应有 takler 包和 dist-info：setuptools 的自动发现一旦漏配
+      # `[tool.setuptools.packages.find] include`，就会把仓库根下的 tests / doc 也
+      # 打成顶层包，装到用户环境里污染这些通用名字。
+      - name: Check wheel contents
+        run: |
+          python - <<'PY'
+          import pathlib
+          import sys
+          import zipfile
+
+          wheel = sorted(pathlib.Path("dist").glob("*.whl"))[0]
+          top_level = sorted(
+              {name.split("/")[0] for name in zipfile.ZipFile(wheel).namelist()}
+              - {"takler"}
+          )
+          unexpected = [name for name in top_level if not name.endswith(".dist-info")]
+          if unexpected:
+              print(f"::error::unexpected top level entries in {wheel.name}: {unexpected}")
+              sys.exit(1)
+          print(f"{wheel.name}: top level entries ok")
+          PY
+
+      # 冒烟测试：装上刚构建的 wheel（而不是源码目录），确认包能导入、入口脚本可用。
+      # 这样能挡住打包漏文件之类的问题，避免发到 PyPI 上一装就报错。
+      - name: Smoke test the wheel
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --upgrade pip
+          /tmp/smoke/bin/pip install "$(ls dist/*.whl)"
+          /tmp/smoke/bin/python -c "import takler; from takler._version import version; print(version)"
+          /tmp/smoke/bin/takler-server --help > /dev/null
+          /tmp/smoke/bin/takler-client-py --help > /dev/null
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+
+    # Trusted Publishing 用 OIDC 换取上传凭据，需要 id-token 写权限；不需要读仓库内容。
+    permissions:
+      id-token: write
+
+    # environment 与 PyPI publisher 配置里的 Environment name 对应，也方便在仓库
+    # 设置里给发布加审批/保护规则。
+    environment:
+      name: pypi
+      url: https://pypi.org/p/takler
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      # 官方 action：读取 dist/ 下的包，用 OIDC 身份上传，并附带 PEP 740 来源证明。
+      # 换成 TestPyPI 时加上 `repository-url: https://test.pypi.org/legacy/`。
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # 手动重跑同一个 tag（或上次只上传了一半）时，已存在的文件跳过而不是整个 job
+          # 失败。action 文档建议对 PyPI 让重复上传直接报错，这里更看重 workflow_dispatch
+          # 重跑的幂等；版本与 tag 的一致性已经在 build job 里校验过，不靠上传报错兜底。
+          skip-existing: true

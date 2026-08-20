@@ -1,8 +1,8 @@
 # takler
 
 [![Documentation Status](https://readthedocs.org/projects/takler/badge/?version=latest)](https://takler.readthedocs.io/zh_CN/latest/?badge=latest)
-![test](https://github.com/perillaroc/takler/actions/workflows/test.yml/badge.svg)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/0b6a58c078cb4af8a8745d034d456eaf)](https://app.codacy.com/gh/perillaroc/takler/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+![test](https://github.com/cemc-oper/takler/actions/workflows/test.yml/badge.svg)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/0b6a58c078cb4af8a8745d034d456eaf)](https://app.codacy.com/gh/cemc-oper/takler/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 > :construction: takler is under construction.
 

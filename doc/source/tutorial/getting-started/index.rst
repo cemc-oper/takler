@@ -8,8 +8,8 @@
 
 本教程使用 Takler 项目的两个软件包：
 
-* `takler <https://github.com/perillaroc/takler>`_：takler 核心项目 (Python)，用于创建工作流并运行 Takler 服务
-* `takler-client <https://github.com/perillaroc/takler-client>`_：takler 命令行客户端 (Golang)，用于与 Takler 服务进行交互
+* `takler <https://github.com/cemc-oper/takler>`_：takler 核心项目 (Python)，用于创建工作流并运行 Takler 服务
+* `takler-client <https://github.com/cemc-oper/takler-client>`_：takler 命令行客户端 (Golang)，用于与 Takler 服务进行交互
 
 
 CMA-HPC2023-SC3
@@ -31,7 +31,7 @@ CMA-HPC2023-SC3
 
 .. code-block:: bash
 
-    git clone https://github.com/perillaroc/takler
+    git clone https://github.com/cemc-oper/takler
     cd takler
     pip install .
 
@@ -42,7 +42,7 @@ CMA-HPC2023-SC3
 
 .. code-block:: bash
 
-    git clone https://github.com/perillaroc/takler-client
+    git clone https://github.com/cemc-oper/takler-client
     cd takler-client
     make
 

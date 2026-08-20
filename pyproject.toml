@@ -70,8 +70,9 @@ takler-client-py = "takler.client.cli:app"
 takler-tui = "takler.tui.__main__:app"
 
 [project.urls]
-Homepage = "https://github.com/perillaroc/takler"
-Repository = "https://github.com/perillaroc/takler.git"
+Homepage = "https://github.com/cemc-oper/takler"
+Repository = "https://github.com/cemc-oper/takler.git"
+Documentation = "https://takler.readthedocs.io/"
 
 [dependency-groups]
 dev = [
@@ -102,6 +103,9 @@ markers = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+# 只打包 takler 自身：不加 include 时自动发现会把仓库根下的 `tests` 和 `doc` 也当作
+# 顶层包装进 wheel，装到 site-packages 后会占用（并可能遮蔽）这两个通用名字。
+include = ["takler*"]
 
 [tool.setuptools]
 include-package-data = true
