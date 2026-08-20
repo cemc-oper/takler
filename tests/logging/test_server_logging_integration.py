@@ -107,10 +107,18 @@ def _make_hermetic_server() -> TaklerServer:
     its ``start``), and replacing both collaborators with ``AsyncMock`` means
     ``await server.start()`` / ``await server.stop()`` perform no real network
     work -- only the logging behavior under test runs.
+
+    The checkpoint manager is mocked out for the same reason: ``start`` restores
+    a snapshot and launches the periodic snapshot task, and ``stop`` writes the
+    final snapshot to ``takler.check`` in the current working directory, none of
+    which belongs in a logging test. ``restore`` is synchronous, so it gets a
+    plain ``MagicMock`` while the two lifecycle coroutines stay awaitable.
     """
     server = TaklerServer(host="localhost", port=33999)
     server.scheduler = mock.AsyncMock()
     server.network_service = mock.AsyncMock()
+    server.checkpoint_manager = mock.AsyncMock()
+    server.checkpoint_manager.restore = mock.MagicMock(return_value=False)
     return server
 
 

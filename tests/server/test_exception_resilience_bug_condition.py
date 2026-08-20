@@ -76,6 +76,9 @@ class RecordingFlow:
 
     def __init__(self, name: str):
         self.name = name
+        # The main loop only processes begun flows (Requirement 8.9), so the
+        # stub presents itself as begun.
+        self.begun = True
         self.calendar_updates = 0
         self.dependency_resolutions = 0
 
@@ -96,6 +99,9 @@ class ThrowingFlow:
 
     def __init__(self, name: str, throw_in: str, exc_type: type):
         self.name = name
+        # The main loop only processes begun flows (Requirement 8.9), so the
+        # stub presents itself as begun.
+        self.begun = True
         self._throw_in = throw_in
         self._exc_type = exc_type
 

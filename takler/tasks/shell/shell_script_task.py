@@ -3,9 +3,10 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from takler.core import Task, Parameter, Flow
+from takler.core import Task, Parameter, Flow, NodeStatus, SerializationType
 from takler.core.node import Node
 from takler.core.parameter import TAKLER_HOME
+from takler.exceptions import JobSubmissionError
 from takler.logging import get_logger
 from takler.visitor import pre_order_travel, NodeVisitor
 
@@ -40,6 +41,31 @@ class ShellScriptTask(Task):
 
         self.shell_generated_parameters = ShellScriptTaskGeneratedParameters(node=self)
 
+    # Serialization ---------------------------------------------
+
+    def to_dict(self) -> Dict:
+        result = super().to_dict()
+        result.update(dict(
+            script_path=None if self.script_path is None else str(self.script_path),
+        ))
+
+        return result
+
+    @classmethod
+    def fill_from_dict(
+            cls,
+            d: Dict,
+            node: "ShellScriptTask",
+            method: SerializationType = SerializationType.Status
+    ) -> "ShellScriptTask":
+        Task.fill_from_dict(d=d, node=node, method=method)
+
+        # ``script_path`` belongs to the flow definition instead of the runtime status,
+        # so it is restored with both ``Tree`` and ``Status`` methods.
+        node.script_path = d.get("script_path", None)
+
+        return node
+
     # Parameter -------------------------------------------------
 
     def update_generated_parameters(self):
@@ -67,9 +93,16 @@ class ShellScriptTask(Task):
     def do_run(self) -> bool:
         """
         run shell command
+
+        Job submission failures (script rendering or job spawning) surface as
+        ``JobSubmissionError``. They are logged as ERROR with the node path and
+        the description text, and the task is set to aborted.
         """
-        if not self.submit():
-            self.abort()
+        try:
+            self.submit()
+        except JobSubmissionError as exc:
+            logger.error(f"job submission failed: {self.node_path}: {exc}")
+            self.abort(f"JobSubmissionError: {exc}")
             return False
         return True
 
@@ -78,13 +111,45 @@ class ShellScriptTask(Task):
     def submit(self) -> bool:
         """
         Generate job script and run job command.
+
+        Raises
+        ------
+        JobSubmissionError
+            When the job script cannot be rendered, or the job process cannot
+            be spawned.
         """
         run_command = self.create_job_script()
 
         # run command
         shell_runner = ShellRunner()
-        shell_runner.spwan(command=run_command)
+        shell_runner.spwan(
+            command=run_command,
+            node_path=self.node_path,
+            on_failure=self.on_job_failure,
+        )
         return True
+
+    def on_job_failure(self, exc: BaseException) -> None:
+        """
+        Set the task to aborted after ``ShellRunner`` has logged the job failure.
+
+        The task is only aborted when it is still ``submitted`` or ``active``:
+        a task which has already reported ``complete`` / ``aborted`` with a
+        child command must not be overwritten by the job wrapper's exit code.
+
+        Parameters
+        ----------
+        exc
+            The exception the job task ended with.
+        """
+        if self.state.node_status not in (NodeStatus.submitted, NodeStatus.active):
+            logger.info(
+                f"skip abort on job failure, task is {self.state.node_status.name}: "
+                f"{self.node_path}"
+            )
+            return
+
+        self.abort(f"{type(exc).__name__}: {exc}")
 
     def create_job_script(self) -> str:
         """
@@ -94,26 +159,38 @@ class ShellScriptTask(Task):
         -------
         str
             run command string.
+
+        Raises
+        ------
+        JobSubmissionError
+            When the job script cannot be rendered. The message contains the
+            node path and the reason.
         """
+        try:
+            self.update_generated_parameters()
 
-        self.update_generated_parameters()
+            # get script path from TAKLER_SCRIPT
+            script_param = self.find_parameter(TAKLER_SCRIPT)
+            if script_param is None:
+                raise ValueError("script param is empty")
+            script_path = script_param.value
 
-        # get script path from TAKLER_SCRIPT
-        script_param = self.find_parameter(TAKLER_SCRIPT)
-        if script_param is None:
-            raise ValueError("script param is empty")
-        script_path = script_param.value
+            # render job script
+            shell_script = ShellRender(self)
 
-        # render job script
-        shell_script = ShellRender(self)
+            job_script_path = shell_script.render_script(script_path)
+            job_script_path.chmod(0o755)
+            logger.info(f"Job generation success: {job_script_path}")
 
-        job_script_path = shell_script.render_script(script_path)
-        job_script_path.chmod(0o755)
-        logger.info(f"Job generation success: {job_script_path}")
-
-        # get run command
-        run_command = shell_script.render_job_command()
-        logger.info(f"Render run command success: {run_command}")
+            # get run command
+            run_command = shell_script.render_job_command()
+            logger.info(f"Render run command success: {run_command}")
+        except JobSubmissionError:
+            raise
+        except Exception as exc:
+            raise JobSubmissionError(
+                f"render job script failed for {self.node_path}: {exc}"
+            ) from exc
         return run_command
 
     def check_job_creation(self) -> bool:

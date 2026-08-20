@@ -213,7 +213,42 @@ class InLimitManager:
         self.in_limit_list.append(in_limit)
 
     def delete_in_limit(self, name: str) -> bool:
-        raise NotImplementedError()
+        """
+        Delete the :py:class:`~takler.core.limit.InLimit` with limit name ``name``.
+
+        The matched ``InLimit`` is removed from ``in_limit_list`` **first**, and then the tokens
+        occupied by the current node on the corresponding ``Limit`` are released. Doing it in this
+        order keeps ``in_limit()`` from seeing an item whose tokens have already been released while
+        the item itself is still in the list.
+
+        Parameters
+        ----------
+        name
+            name of the Limit used by the ``InLimit``.
+
+        Returns
+        -------
+        bool
+            ``True`` if an ``InLimit`` is found and removed, no matter whether it is occupying
+            tokens of the ``Limit``. ``False`` if there is no such ``InLimit``, and in that case
+            ``in_limit_list`` is left unchanged.
+        """
+        target: Optional[InLimit] = None
+        for index, item in enumerate(self.in_limit_list):
+            if item.limit_name == name:
+                target = self.in_limit_list.pop(index)
+                break
+
+        if target is None:
+            return False
+
+        if target.limit is None:
+            self.resolve_in_limit(target)
+
+        if target.limit is not None:
+            target.limit.decrement(target.tokens, self.node.node_path)
+
+        return True
 
     def has_in_limit(self, in_limit: InLimit) -> bool:
         """

@@ -15,6 +15,9 @@ option go_package = "github.com/perillaroc/takler-client/takler_protocol";
 package takler_protocol;
 
 message ServiceResponse{
+  // 错误分类码（Error_Code）。0 表示成功，非 0 表示失败并标识错误分类。
+  // 取值表见 takler/server/protocol/error_code.py（ERROR_NAME_BY_CODE）。
+  // 只判断 flag != 0 的客户端无需改动。
   int32 flag = 1;
   string message = 2;
 }
@@ -98,6 +101,12 @@ message LoadCommand {
   bytes flow = 2;
 }
 
+message BeginCommand {
+  // 空串表示对 Bunch 中全部 flow 执行 begin。
+  string flow_name = 1;
+  bool force = 2;
+}
+
 //----------------------------------------
 // query command
 
@@ -156,6 +165,8 @@ service TaklerServer {
   rpc RunCommandFreeDep(FreeDepCommand) returns (ServiceResponse) {}
 
   rpc RunCommandLoad(LoadCommand) returns (ServiceResponse) {}
+
+  rpc RunCommandBegin(BeginCommand) returns (ServiceResponse) {}
 
 
   // query command

@@ -7,6 +7,13 @@ from typing import Callable, Optional
 
 from takler.core import Bunch, Task, NodeStatus, Event, Flow, SerializationType
 from takler.core.node import Node
+from takler.exceptions import (
+    FlowStateError,
+    InvalidRequestError,
+    NodeNotFoundError,
+    NodeTypeError,
+    UnsupportedValueError,
+)
 from takler.logging import get_logger
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
 
@@ -170,8 +177,53 @@ class Scheduler:
         time_now
             current time used to update the flow's calendar.
         """
+        if not flow.begun:
+            # Requirement 8.9: an unbegun flow is skipped entirely, both its
+            # calendar update and its dependency resolution.
+            #
+            # This is required, not merely an optimization: the calendar of a
+            # flow which has not begun has all its fields set to ``None``, so
+            # ``Calendar.update`` would raise ``TypeError`` on
+            # ``self.flow_time += self.increment``. Since ``run_command_load``
+            # no longer requeues the flow (Requirement 8.8), "in bunch but not
+            # begun" is a regular state (between ``load`` and ``begin``) rather
+            # than an edge case.
+            return
         flow.update_calendar(time_now)
         flow.resolve_dependencies()
+
+    def _require_begun(self, node: Optional[Node]):
+        """Reject control operations on a node whose flow has not begun.
+
+        The main loop skips un-begun flows (see :meth:`_process_flow`), so
+        rewriting the status of their nodes would never be resolved: a silent
+        no-op. This guard turns that into an explicit error (Requirement 8.10).
+
+        It must be called **after the node is located and before any status is
+        written**, which makes "the node and all its descendants keep their
+        status" hold by construction, without rollback logic.
+
+        A node whose root is not a ``Flow`` (``get_flow()`` returns ``None``, a
+        bare node tree) is not guarded.
+
+        Parameters
+        ----------
+        node
+            the node the operation targets. ``None`` is a no-op, so callers may
+            pass an optional lookup result.
+
+        Raises
+        ------
+        FlowStateError
+            If the node belongs to a flow which has not begun.
+        """
+        if node is None:
+            return
+        flow = node.get_flow()
+        if flow is not None and not flow.begun:
+            raise FlowStateError(
+                f"flow is not begun: {flow.name}", flow_name=flow.name
+            )
 
     def travel_bunch(self):
         """
@@ -201,7 +253,9 @@ class Scheduler:
 
         Raises
         ------
-        ValueError
+        NodeNotFoundError
+            If node is not found.
+        NodeTypeError
             If node is not a ``Task``.
 
         Notes
@@ -210,12 +264,12 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
 
         if isinstance(node, Task):
             node.init(task_id)
         else:
-            raise ValueError(f"node must be Task: {node_path}")
+            raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
 
     def run_command_complete(self, node_path: str):
         """
@@ -228,7 +282,9 @@ class Scheduler:
 
         Raises
         ------
-        ValueError
+        NodeNotFoundError
+            If node is not found.
+        NodeTypeError
             If node is not a ``Task``.
 
         Returns
@@ -237,12 +293,12 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
 
         if isinstance(node, Task):
             node.complete()
         else:
-            raise ValueError(f"node must be Task: {node_path}")
+            raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
 
     def run_command_abort(self, node_path: str, reason: Optional[str] = None):
         """
@@ -257,7 +313,9 @@ class Scheduler:
             describe why task is aborted.
         Raises
         ------
-        ValueError
+        NodeNotFoundError
+            If node is not found.
+        NodeTypeError
             If node is not a ``Task``.
 
         Returns
@@ -266,12 +324,12 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
 
         if isinstance(node, Task):
             node.abort(reason)
         else:
-            raise ValueError(f"node must be Task: {node_path}")
+            raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
 
     def run_command_event(self, node_path: str, event_name: str):
         """
@@ -290,7 +348,7 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
 
         node.set_event(event_name, True)
 
@@ -313,7 +371,7 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
 
         node.set_meter(meter_name, int(meter_value))
 
@@ -330,8 +388,10 @@ class Scheduler:
 
         Raises
         ------
-        ValueError
+        NodeNotFoundError
             If node is not found.
+        FlowStateError
+            If the node belongs to a flow which has not begun (Requirement 8.10).
 
         Returns
         -------
@@ -339,7 +399,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+
+        self._require_begun(node)
 
         node.requeue()
 
@@ -354,7 +416,7 @@ class Scheduler:
 
         Raises
         ------
-        ValueError
+        NodeNotFoundError
             If node is not found.
 
         Returns
@@ -363,7 +425,7 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
 
         node.suspend()
 
@@ -378,7 +440,7 @@ class Scheduler:
 
         Raises
         ------
-        ValueError
+        NodeNotFoundError
             If node is not found.
 
         Returns
@@ -387,7 +449,7 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
 
         node.resume()
 
@@ -405,8 +467,10 @@ class Scheduler:
 
         Raises
         ------
-        ValueError
-            If node is not a ``Task``.
+        NodeNotFoundError
+            If node is not found.
+        FlowStateError
+            If the node belongs to a flow which has not begun (Requirement 8.10).
 
         Returns
         -------
@@ -414,6 +478,11 @@ class Scheduler:
             return True if call task's run method.
         """
         node = self.bunch.find_node(node_path)
+        if node is None:
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+
+        self._require_begun(node)
+
         if not isinstance(node, Task):
             logger.warning(f"node path is not a Task: {node_path}")
             return False
@@ -450,8 +519,14 @@ class Scheduler:
 
         Raises
         ------
-        ValueError
-            If variable path is an ``Event`` and state is not `set` or `clear`.
+        NodeNotFoundError
+            If variable path is not found.
+        UnsupportedValueError
+            If state is not a ``NodeStatus`` name for a node, or is not `set`
+            or `clear` for an ``Event``.
+        FlowStateError
+            If the host node belongs to a flow which has not begun
+            (Requirement 8.10).
 
         Returns
         -------
@@ -459,12 +534,27 @@ class Scheduler:
         """
         variable = self.bunch.find_path(variable_path)
         if variable is None:
-            return False
+            raise NodeNotFoundError(
+                f"path is not found: {variable_path}", node_path=variable_path
+            )
+
+        # ``variable_path`` may point at an event or a meter, which carry no
+        # back-reference to their owner, so the host node is resolved from the
+        # node part of the path and the guard is applied to it.
         if isinstance(variable, Node):
-            # if state in NodeStatus:
-            node_status = NodeStatus[state]
-            # else:
-            #     raise ValueError(f"state {state} is not supported for Node")
+            host_node = variable
+        else:
+            host_node = self.bunch.find_node(variable_path.split(":")[0])
+        self._require_begun(host_node)
+
+        if isinstance(variable, Node):
+            try:
+                node_status = NodeStatus[state]
+            except KeyError as exc:
+                raise UnsupportedValueError(
+                    f"state {state} is not supported for Node: {variable_path}",
+                    value=state,
+                ) from exc
             if recursive:
                 variable.sink_status_change(node_status)
             else:
@@ -476,7 +566,9 @@ class Scheduler:
             elif state == "clear":
                 variable.value = False
             else:
-                raise ValueError(f"state {state} is not supported for Event")
+                raise UnsupportedValueError(
+                    f"state {state} is not supported for Event", value=state
+                )
             return True
         return True
 
@@ -490,13 +582,23 @@ class Scheduler:
         dep_type
             sell ``Node.free_dependencies``
 
+        Raises
+        ------
+        NodeNotFoundError
+            If node is not found.
+        FlowStateError
+            If the node belongs to a flow which has not begun (Requirement 8.10).
+
         Returns
         -------
 
         """
         node: Node = self.bunch.find_node(node_path)
         if node is None:
-            raise ValueError(f"node is not found: {node_path}")
+            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+
+        self._require_begun(node)
+
         node.free_dependencies(dep_type)
 
     def run_command_load(self, flow_type: str, flow_bytes: bytes):
@@ -513,21 +615,93 @@ class Scheduler:
         flow_bytes
             string bytes of flow's definition.
 
+        Raises
+        ------
+        UnsupportedValueError
+            If ``flow_type`` is not supported.
+        InvalidRequestError
+            If the flow definition is not valid json.
+
         Returns
         -------
         None
         """
         if flow_type == "json":
             logger.info("load json flow...")
-            flow_dict = json.loads(flow_bytes)
+            try:
+                flow_dict = json.loads(flow_bytes)
+            except json.JSONDecodeError as exc:
+                raise InvalidRequestError(
+                    f"flow definition is not valid json: {exc}"
+                ) from exc
             flow: Flow = Flow.from_dict(d=flow_dict, method=SerializationType.Tree)
             self.bunch.add_flow(flow)
-            # TODO: should use begin to start flow running.
-            flow.requeue()
+            # The flow is deliberately left un-begun (Requirement 8.8): loading
+            # only registers the definition, ``run_command_begin`` starts it.
             logger.info(f"load json flow...done [flow name: {flow.name}]")
         else:
             logger.warning(f"flow type {flow_type} is not supported for command load.")
-            raise RuntimeError(f"flow type {flow_type} is not supported for command load.")
+            raise UnsupportedValueError(
+                f"flow type {flow_type} is not supported for command load.",
+                value=flow_type,
+            )
+
+    def run_command_begin(self, flow_name: Optional[str] = None, force: bool = False):
+        """
+        Begin one flow, or all flows in bunch.
+
+        Beginning a flow starts its calendar with the current time, resets its node
+        tree and marks it as begun. Only a begun flow is processed by the main loop
+        (see :meth:`_process_flow`).
+
+        Parameters
+        ----------
+        flow_name
+            name of the flow to begin. ``None`` or an empty string means all flows
+            in bunch (Requirement 8.1).
+        force
+            begin again a flow which has already begun.
+
+        Raises
+        ------
+        NodeNotFoundError
+            If ``flow_name`` is given but is not a flow of the bunch (Requirement 8.13).
+        FlowStateError
+            If any target flow has already begun and ``force`` is not set
+            (Requirement 8.11).
+
+        Notes
+        -----
+        The "all flows" form is all-or-nothing: every target flow is checked
+        before any of them is begun, so a single already-begun flow makes the
+        whole command fail without changing any node status (Requirement 8.11
+        requires the node status of the offending flow to be unchanged, and
+        failing atomically avoids leaving the bunch half begun). Use ``force``
+        to (re)begin flows regardless of their current begun state
+        (Requirement 8.12).
+        """
+        if flow_name:
+            flow = self.bunch.find_flow(flow_name)
+            if flow is None:
+                raise NodeNotFoundError(
+                    f"flow is not found: {flow_name}", node_path=f"/{flow_name}"
+                )
+            flows = [flow]
+        else:
+            flows = list(self.bunch.flows.values())
+
+        if not force:
+            # Check every flow first so the command either begins all its
+            # targets or changes nothing at all.
+            for flow in flows:
+                if flow.begun:
+                    raise FlowStateError(
+                        f"flow is already begun: {flow.name}", flow_name=flow.name
+                    )
+
+        for flow in flows:
+            logger.info(f"begin flow [flow name: {flow.name}, force: {force}]")
+            flow.begin(force=force)
 
     # Query -------------------------------------------------
 

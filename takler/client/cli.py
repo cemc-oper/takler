@@ -1,11 +1,44 @@
+"""The ``takler-client-py`` command line interface (Client_CLI).
+
+Every subcommand runs its body through :func:`_run_command`, which owns the
+contract a job script relies on (requirements 10.1 ~ 10.6):
+
+* success exits with ``0``;
+* a response carrying a non zero ``flag`` prints one stderr line holding the
+  Error_Code classification name and the server ``message``, then exits with the
+  code that Error_Code maps to;
+* a client side failure (typically the Call_Wrapper giving up after the
+  Retry_Window) prints one stderr line and exits with the code its exception
+  type maps to;
+* nothing ever puts a Python traceback in front of the caller.
+
+The last point is what makes the exit codes usable at all: the job script
+wrapper uses ``set -e``, so a traceback on stderr is noise the script cannot act
+on, while the exit code is the only signal it can branch on. An unexpected
+exception is still diagnosable -- its traceback goes to the log file, never to
+stderr (see :func:`_log_unexpected_error`).
+
+Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6.
+"""
+
 import os
+import traceback
 import warnings
-from typing import Optional, List, Union, Tuple
+from typing import Any, Callable, Optional, List, Union, Tuple
 
 import typer
 
+import takler.logging
+from takler.client.exit_code import (
+    exit_code_for_error_code,
+    exit_code_for_exception,
+)
 from takler.client.service_client import TaklerServiceClient
+from takler.exceptions import TaklerError
+from takler.logging import get_logger
+from takler.logging.config import resolve_config
 from takler.server.connect_config import load_connect_config, TAKLER_CONNECT_FILE
+from takler.server.protocol.error_code import SUCCESS, error_name_for_code
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 
 
@@ -17,8 +50,137 @@ NO_TAKLER = "NO_TAKLER"
 HOST_HELP_STRING = f"takler service host, or use env var {TAKLER_HOST}"
 PORT_HELP_STRING = f"takler service port, or use env var {TAKLER_PORT}"
 
+#: Component name used for the CLI's own log records.
+LOGGER_NAME = "client.cli"
+
 
 app = typer.Typer()
+
+
+# Exit code and error reporting -------------------------------------
+
+
+def _echo_error(message: str) -> None:
+    """Print ``message`` on stderr as exactly one line.
+
+    Embedded newlines are folded into spaces: a server ``message`` may be
+    multi line, and a caller parsing stderr has a much easier time with one
+    record per line (requirements 10.2, 10.3, 10.4).
+    """
+    typer.echo(" ".join(message.splitlines()), err=True)
+
+
+def _log_unexpected_error(exc: BaseException) -> None:
+    """Record the traceback of an unexpected failure in the log file.
+
+    Requirement 10.6 forbids handing a traceback to the caller, and requirement
+    10.2 ~ 10.4 fix stderr at one line, so the traceback cannot go through the
+    console sink -- which is enabled by default. It is therefore written only
+    when a log file is configured (``TAKLER_LOG_FILE``), with the console sink
+    switched off for this record. The process is about to exit, so turning the
+    console off here has no further effect on the run.
+
+    Without a log file there is nowhere to put the traceback that does not
+    violate the stderr contract, so it is dropped; the one line diagnosis
+    printed by :func:`_fail` still names the exception type and its description.
+    """
+    if resolve_config({}, os.environ).log_file is None:
+        return
+
+    takler.logging.configure(console=False)
+    detail = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__)
+    )
+    get_logger(LOGGER_NAME).error(
+        f"unexpected error while running a takler client command: "
+        f"{type(exc).__name__}: {exc}\n{detail}"
+    )
+
+
+def _fail(message: str, exit_code: int) -> None:
+    """Report ``message`` on stderr and end the process with ``exit_code``."""
+    _echo_error(message)
+    raise typer.Exit(code=exit_code)
+
+
+def _check_response(response: Any) -> Any:
+    """Turn a non zero ``flag`` into a stderr line plus an exit code.
+
+    A business failure comes back as a response, not as an exception
+    (requirement 9.7 keeps the Call_Wrapper from retrying it), so the Error_Code
+    in ``flag`` is translated here (requirements 10.2, 10.3). Query responses
+    carry no ``flag`` at all and are treated as success.
+    """
+    flag = getattr(response, "flag", SUCCESS)
+    if flag == SUCCESS:
+        return response
+
+    message = getattr(response, "message", "")
+    _fail(
+        f"{error_name_for_code(flag)}: {message}",
+        exit_code_for_error_code(flag),
+    )
+
+
+def _run_command(command: Callable[[], Any]) -> Any:
+    """Run ``command`` translating its outcome into the CLI's exit contract.
+
+    Parameters
+    ----------
+    command
+        A zero argument callable performing one client command. It returns the
+        server response, or ``None`` for commands without one.
+
+    Returns
+    -------
+    The value returned by ``command`` when the command succeeded.
+
+    Raises
+    ------
+    typer.Exit
+        With the exit code of the failure (requirements 10.2, 10.3, 10.4). The
+        exception is the CLI's normal way out, so this is not an error path for
+        the caller of :func:`_run_command`.
+    """
+    try:
+        response = command()
+    except (typer.Exit, typer.Abort):
+        # Raised by the command itself, already carrying its own exit code.
+        raise
+    except TaklerError as exc:
+        # A classified failure: its type already says what went wrong, so the
+        # type name plus the description is the whole diagnosis. For
+        # ClientConnectionError the description holds the server address and the
+        # total number of attempts (requirement 10.4).
+        _fail(f"{type(exc).__name__}: {exc}", exit_code_for_exception(exc))
+    except Exception as exc:  # noqa: BLE001 - the CLI is the last boundary
+        _log_unexpected_error(exc)
+        _fail(f"{type(exc).__name__}: {exc}", exit_code_for_exception(exc))
+
+    return _check_response(response)
+
+
+def _create_client(
+        host: Optional[str] = None,
+        port: Optional[Union[str, int]] = None,
+) -> TaklerServiceClient:
+    """Resolve the server address and build a client for it."""
+    resolved_host, resolved_port = get_host_and_prot(host, port)
+    return TaklerServiceClient(host=resolved_host, port=resolved_port)
+
+
+def _run_client_command(
+        host: Optional[str],
+        port: Optional[Union[str, int]],
+        body: Callable[[TaklerServiceClient], Any],
+) -> Any:
+    """Run ``body`` against a freshly built client under :func:`_run_command`.
+
+    Address resolution is inside the wrapper on purpose: a broken
+    ``TAKLER_CONNECT_FILE`` must land on the same one line plus exit code
+    contract as any other failure, not on a traceback.
+    """
+    return _run_command(lambda: body(_create_client(host, port)))
 
 
 # Child command -----------------------------------------------------
@@ -39,9 +201,10 @@ def init(
     if NO_TAKLER in os.environ:
         typer.echo("ignore because NO_TAKLER is set.")
         return
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.init(node_path=node_path, task_id=task_id)
+    _run_client_command(
+        host, port,
+        lambda client: client.init(node_path=node_path, task_id=task_id),
+    )
 
 
 @app.command()
@@ -58,9 +221,10 @@ def complete(
     if NO_TAKLER in os.environ:
         typer.echo("ignore because NO_TAKLER is set.")
         return
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.complete(node_path=node_path)
+    _run_client_command(
+        host, port,
+        lambda client: client.complete(node_path=node_path),
+    )
 
 
 @app.command()
@@ -78,9 +242,10 @@ def abort(
     if NO_TAKLER in os.environ:
         typer.echo("ignore because NO_TAKLER is set.")
         return
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.abort(node_path=node_path, reason=reason)
+    _run_client_command(
+        host, port,
+        lambda client: client.abort(node_path=node_path, reason=reason),
+    )
 
 
 @app.command()
@@ -98,9 +263,10 @@ def event(
     if NO_TAKLER in os.environ:
         typer.echo("ignore because NO_TAKLER is set.")
         return
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.event(node_path=node_path, event_name=event_name)
+    _run_client_command(
+        host, port,
+        lambda client: client.event(node_path=node_path, event_name=event_name),
+    )
 
 
 @app.command()
@@ -119,9 +285,14 @@ def meter(
     if NO_TAKLER in os.environ:
         typer.echo("ignore because NO_TAKLER is set.")
         return
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.meter(node_path=node_path, meter_name=meter_name, meter_value=meter_value)
+    _run_client_command(
+        host, port,
+        lambda client: client.meter(
+            node_path=node_path,
+            meter_name=meter_name,
+            meter_value=meter_value,
+        ),
+    )
 
 
 # Control command --------------------------------------------------------
@@ -136,9 +307,10 @@ def requeue(
     """
     [control] requeue given node(s).
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.requeue(node_path=node_path)
+    _run_client_command(
+        host, port,
+        lambda client: client.requeue(node_path=node_path),
+    )
 
 
 @app.command()
@@ -150,9 +322,10 @@ def suspend(
     """
     [control] suspend the node(s). prevent job creation for the node and all its children nodes.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.suspend(node_path=node_path)
+    _run_client_command(
+        host, port,
+        lambda client: client.suspend(node_path=node_path),
+    )
 
 
 @app.command()
@@ -164,9 +337,10 @@ def resume(
     """
     [control] resume the node(s) from suspended status.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.resume(node_path=node_path)
+    _run_client_command(
+        host, port,
+        lambda client: client.resume(node_path=node_path),
+    )
 
 
 @app.command()
@@ -179,9 +353,10 @@ def run(
     """
     [control] run the task.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.run(node_path=node_path, force=force)
+    _run_client_command(
+        host, port,
+        lambda client: client.run(node_path=node_path, force=force),
+    )
 
 
 @app.command()
@@ -195,9 +370,12 @@ def force(
     """
     [control] change the node's state force, ignore whatever state it is now.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.force(variable_paths=variable_path, state=state, recursive=recursive)
+    _run_client_command(
+        host, port,
+        lambda client: client.force(
+            variable_paths=variable_path, state=state, recursive=recursive
+        ),
+    )
 
 
 @app.command()
@@ -210,9 +388,10 @@ def free_dep(
     """
     [control] free dependencies for the node(s).
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.free_dep(node_paths=node_path, dep_type=dep_type)
+    _run_client_command(
+        host, port,
+        lambda client: client.free_dep(node_paths=node_path, dep_type=dep_type),
+    )
 
 
 @app.command()
@@ -225,9 +404,30 @@ def load(
     """
     [control] load flow from file to server.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.load(flow_file_path=flow_file_path)
+    _run_client_command(
+        host, port,
+        lambda client: client.load(flow_file_path=flow_file_path),
+    )
+
+
+@app.command()
+def begin(
+        host: str = typer.Option(None, help=HOST_HELP_STRING),
+        port: str = typer.Option(None, help=PORT_HELP_STRING),
+        flow_name: str = typer.Argument(
+            "", help="flow name, omit it to begin all flows"
+        ),
+        force: bool = typer.Option(False, help="begin an already begun flow again"),
+):
+    """
+    [control] begin the flow(s): start the calendar and reset the node tree.
+
+    Omitting FLOW_NAME sends an empty name, which means all flows.
+    """
+    _run_client_command(
+        host, port,
+        lambda client: client.begin(flow_name=flow_name, force=force),
+    )
 
 
 # Query command --------------------------------------------------------
@@ -247,9 +447,6 @@ def show(
     """
     [query] print bunch tree.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-
     if show_all:
         show_trigger = True
         show_parameter = True
@@ -257,12 +454,15 @@ def show(
         show_event = True
         show_meter = True
 
-    client.show(
-        show_trigger=show_trigger,
-        show_parameter=show_parameter,
-        show_limit=show_limit,
-        show_event=show_event,
-        show_meter=show_meter,
+    _run_client_command(
+        host, port,
+        lambda client: client.show(
+            show_trigger=show_trigger,
+            show_parameter=show_parameter,
+            show_limit=show_limit,
+            show_event=show_event,
+            show_meter=show_meter,
+        ),
     )
 
 
@@ -274,9 +474,7 @@ def ping(
     """
     [query] check the server is running with given host and hort.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.ping()
+    _run_client_command(host, port, lambda client: client.ping())
 
 
 @app.command()
@@ -287,9 +485,7 @@ def coroutine(
     """
     [show] print current coroutine in server. for debug.
     """
-    host, port = get_host_and_prot(host, port)
-    client = TaklerServiceClient(host=host, port=port)
-    client.coroutine()
+    _run_client_command(host, port, lambda client: client.coroutine())
 
 
 # ----------------------------

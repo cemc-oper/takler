@@ -2,9 +2,10 @@ from dataclasses import dataclass
 from typing import Union, Type
 
 import pytest
-from lark import UnexpectedCharacters
+from lark.exceptions import LarkError
 
 from takler.core import NodeStatus
+from takler.exceptions import ExpressionSyntaxError
 from takler.core.expression_parser import parse_trigger
 from takler.core.expression_ast import (
     AstOpEq, AstOpGt, AstOpGe,
@@ -31,11 +32,17 @@ def test_node_path():
 
 def test_invalid_node_path():
     expr_cases = [
-        "task1 == complete",
+        # expression string, reported line, reported column
+        ("task1 == complete", 1, 1),
     ]
-    for expr_string in expr_cases:
-        with pytest.raises(UnexpectedCharacters):
+    for expr_string, line, column in expr_cases:
+        with pytest.raises(ExpressionSyntaxError) as exc_info:
             parse_trigger(expr_string)
+        error = exc_info.value
+        assert not isinstance(error, LarkError)
+        assert error.expression == expr_string
+        assert error.line == line
+        assert error.column == column
 
 
 def test_node_status():
@@ -55,13 +62,39 @@ def test_node_status():
 
 def test_invalid_node_status():
     expr_cases = [
-        "./task1 == unknown",
-        "./task1 == queued",
-        "./task1 == submitted",
+        # expression string, reported line, reported column
+        ("./task1 == unknown", 1, 12),
+        ("./task1 == queued", 1, 12),
+        ("./task1 == submitted", 1, 12),
+    ]
+    for expr_string, line, column in expr_cases:
+        with pytest.raises(ExpressionSyntaxError) as exc_info:
+            parse_trigger(expr_string)
+        error = exc_info.value
+        assert not isinstance(error, LarkError)
+        assert error.expression == expr_string
+        assert error.line == line
+        assert error.column == column
+
+
+def test_invalid_expression_without_position():
+    """
+    The underlying parser reports no position for an unexpected end of input,
+    so ``line`` / ``column`` are ``None`` while ``expression`` is still kept.
+    """
+    expr_cases = [
+        "/flow1/task1 ==",
+        "(/flow1/task1 == complete",
+        "",
     ]
     for expr_string in expr_cases:
-        with pytest.raises(UnexpectedCharacters):
+        with pytest.raises(ExpressionSyntaxError) as exc_info:
             parse_trigger(expr_string)
+        error = exc_info.value
+        assert not isinstance(error, LarkError)
+        assert error.expression == expr_string
+        assert error.line is None
+        assert error.column is None
 
 
 def test_variable_path():

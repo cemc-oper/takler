@@ -140,8 +140,37 @@ class Server(BaseModel):
     address: Address
 
 
+class CheckpointSettings(BaseModel):
+    """Checkpoint related settings of the :class:`ConnectConfig` file.
+
+    Both fields are optional and default to ``None``, which means "not
+    configured": the ``Checkpoint_Manager`` then falls back to its built-in
+    defaults (120 seconds and ``takler.check`` in the current working
+    directory). Keeping ``None`` as the "absent" marker -- instead of baking
+    the defaults into the model -- lets the manager apply the config-source
+    precedence ``explicit argument > Connect_Config file > built-in default``
+    (Requirements 7.1, 7.2, 7.3, 7.5).
+
+    Attributes:
+        interval: Snapshot period in seconds.
+        file: Checkpoint_File path.
+    """
+
+    interval: Optional[float] = None
+    file: Optional[str] = None
+
+
 class ConnectConfig(BaseModel):
+    """Content of the ``connect.yaml`` file shared by server and clients.
+
+    The ``checkpoint`` section carries a default value, so a legacy
+    ``connect.yaml`` holding only the ``server`` section is still loadable and
+    yields an all-``None`` :class:`CheckpointSettings`; newly written files
+    gain an extra ``checkpoint`` section (Requirement 7.1).
+    """
+
     server: Server
+    checkpoint: CheckpointSettings = CheckpointSettings()
 
 
 def generate_connect_config() -> ConnectConfig:

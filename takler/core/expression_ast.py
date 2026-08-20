@@ -5,6 +5,7 @@ from .state import NodeStatus
 from .event import Event
 from .meter import Meter
 from .parameter import Parameter
+from takler.exceptions import ExpressionSyntaxError, NodeNotFoundError
 from takler.logging import get_logger
 
 if TYPE_CHECKING:
@@ -93,7 +94,10 @@ class AstNodePath(AstBase):
         self.parent_node = node
         ref_node = self.get_reference_node()
         if ref_node is None:
-            raise ValueError(f"node path '{self.node_path}' is not found from node '{self.parent_node.node_path}'")
+            raise NodeNotFoundError(
+                f"node path '{self.node_path}' is not found from node '{self.parent_node.node_path}'",
+                node_path=self.node_path,
+            )
 
     def value(self) -> NodeStatus:
         ref_node = self.get_reference_node()
@@ -126,7 +130,9 @@ class AstVariablePath(AstBase):
 
         node_variable = self.get_variable()
         if node_variable is None:
-            raise ValueError(f"variable path '{self.node.node_path}:{self.variable_name}' is not found")
+            raise ExpressionSyntaxError(
+                f"variable path '{self.node.node_path}:{self.variable_name}' is not found"
+            )
 
     def value(self) -> Optional[int]:
         v = self.get_variable()
@@ -143,7 +149,9 @@ class AstVariablePath(AstBase):
         elif isinstance(v, Parameter):
             return v.value
         else:
-            raise NotImplementedError(f"{v} is not support")
+            raise ExpressionSyntaxError(
+                f"variable '{self.node.node_path}:{self.variable_name}' has unsupported type: {type(v).__name__}"
+            )
 
     def get_variable(self) -> Optional[Event]:
         # NOTE: delete following codes to retrieve variable when trigger is evaluated,

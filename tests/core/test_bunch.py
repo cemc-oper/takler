@@ -1,6 +1,7 @@
 import pytest
 
 from takler.core import Bunch, NodeStatus
+from takler.exceptions import InvalidNodePathError, NodeNotFoundError
 
 
 @pytest.fixture
@@ -65,6 +66,31 @@ def test_bunch_delete_flow(simple_bunch, simple_flow, simple_flow_2):
     assert bunch.flows == {
         "flow2": flow2
     }
+
+
+def test_bunch_find_node_with_relative_path(simple_bunch):
+    """A path which does not start with "/" is malformed."""
+    bunch = simple_bunch
+    relative_path = "flow1/container1/task2"
+
+    with pytest.raises(InvalidNodePathError) as exc_info:
+        bunch.find_node(relative_path)
+
+    assert exc_info.value.node_path == relative_path
+    assert relative_path in str(exc_info.value)
+    # transitional ValueError compatibility
+    assert isinstance(exc_info.value, ValueError)
+
+
+def test_bunch_delete_flow_not_exist(simple_bunch):
+    bunch = simple_bunch
+
+    with pytest.raises(NodeNotFoundError) as exc_info:
+        bunch.delete_flow("not_exist_flow")
+
+    assert exc_info.value.node_path == "/not_exist_flow"
+    assert "not_exist_flow" in str(exc_info.value)
+    assert isinstance(exc_info.value, ValueError)
 
 
 def test_node_get_bunch(simple_bunch, simple_flow, simple_flow_2):

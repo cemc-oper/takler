@@ -77,7 +77,16 @@ def test_flow_node(flow_case):
                     )
                 ]
             )
-        ]
+        ],
+        begun=False,
+        calendar=dict(
+            initial_time=None,
+            flow_time=None,
+            duration=None,
+            increment=None,
+            initial_real_time=None,
+            last_real_time=None,
+        ),
     )
 
 

@@ -3,9 +3,11 @@ from typing import TYPE_CHECKING, Optional, Dict
 
 from pydantic import BaseModel, ConfigDict
 
+from ..exceptions import FlowStateError
 from .node_container import NodeContainer
 from .calendar import Calendar
 from .parameter import Parameter, DATE, TIME
+from .util import SerializationType
 
 if TYPE_CHECKING:
     from .bunch import Bunch
@@ -17,8 +19,55 @@ class Flow(NodeContainer):
 
         self.bunch: Optional[Bunch] = None
         self.calendar: Calendar = Calendar()
+        self.begun: bool = False
 
         self.generated_parameters: FlowGeneratedParameters = FlowGeneratedParameters(flow=self)
+
+    # Serialization ------------------------------------
+
+    def to_dict(self) -> Dict:
+        """
+        Serialize the flow, adding ``begun`` and ``calendar`` to ``NodeContainer.to_dict()``.
+
+        Returns
+        -------
+        Dict
+        """
+        result = super(Flow, self).to_dict()
+        result["begun"] = self.begun
+        result["calendar"] = self.calendar.to_dict()
+        return result
+
+    @classmethod
+    def fill_from_dict(cls, d: Dict, node: "Flow",
+                       method: SerializationType = SerializationType.Status) -> "Flow":
+        """
+        Fill a ``Flow`` from a dictionary.
+
+        ``begun`` and the calendar are runtime state, so they are only restored when ``method`` is
+        ``SerializationType.Status``. With ``SerializationType.Tree`` both keep the initial values of
+        a newly created ``Flow`` (``begun`` is ``False``, all calendar fields are ``None``).
+        Missing keys are tolerated.
+
+        Parameters
+        ----------
+        d
+        node
+        method
+
+        Returns
+        -------
+        Flow
+        """
+        node = super(Flow, cls).fill_from_dict(d, node, method=method)
+
+        if method == SerializationType.Status:
+            node.begun = bool(d.get("begun", False))
+            calendar_dict = d.get("calendar")
+            if calendar_dict is not None:
+                node.calendar = Calendar.from_dict(calendar_dict, method=method)
+
+        return node
 
     # Node access --------------------------------------
 
@@ -79,9 +128,31 @@ class Flow(NodeContainer):
         return params
 
     # Node Operation ---------------------------------------
-    def requeue(self, reset_repeat: bool = True):
+
+    # ``requeue`` is deliberately not overridden: it falls back to
+    # ``NodeContainer.requeue``, which resets the node tree only and leaves the
+    # calendar untouched. The calendar is started by ``begin()`` alone.
+
+    def begin(self, force: bool = False):
+        """
+        Begin the flow: start its calendar with current time and reset its node tree.
+
+        Parameters
+        ----------
+        force
+            Begin again a flow which has already begun.
+
+        Raises
+        ------
+        FlowStateError
+            The flow has already begun and ``force`` is not set.
+        """
+        if self.begun and not force:
+            raise FlowStateError(f"flow is already begun: {self.name}", flow_name=self.name)
+
         self.requeue_calendar()
-        super(Flow, self).requeue(reset_repeat=reset_repeat)
+        super(Flow, self).requeue()
+        self.begun = True
 
 
 class FlowGeneratedParameters(BaseModel):

@@ -90,6 +90,10 @@ def _make_service_with_tasks(task_names) -> TaklerService:
     for name in task_names:
         flow.add_task(name)
     bunch.add_flow(flow)
+    # The flow is begun so control commands (requeue / run / force / free-dep)
+    # are valid requests: the ``_require_begun`` guard rejects them on an
+    # un-begun flow (Requirement 8.10).
+    flow.begin()
     scheduler = Scheduler(bunch=bunch)
     return TaklerService(scheduler=scheduler, host="[::]", port=33999)
 
@@ -120,6 +124,9 @@ class RecordingFlow:
 
     def __init__(self, name: str):
         self.name = name
+        # The main loop only processes begun flows (Requirement 8.9), so the
+        # stub presents itself as begun.
+        self.begun = True
         self.calendar_updates = 0
         self.dependency_resolutions = 0
 
@@ -456,26 +463,51 @@ def _run_start_then_stop(server: TaklerServer):
     suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
 )
 @given(flow_names=_unique_names(min_size=0, max_size=2))
-def test_stop_shuts_down_cleanly_without_raising(flow_names):
+def test_stop_shuts_down_cleanly_without_raising(flow_names, tmp_path):
     """``TaklerServer.stop()`` cleanly stops scheduler and network service.
 
     Preservation -- Requirement 3.4: stopping the server must tear down the
     scheduler and the gRPC network service without raising, regardless of how
     many (error-free) flows are loaded.
     """
-    server = TaklerServer(host="localhost", port=_free_port())
+    # A clean shutdown writes the final snapshot (Requirement 5.9), and the
+    # default Checkpoint_File path is ``takler.check`` relative to the current
+    # working directory -- point it at ``tmp_path`` so the suite does not drop
+    # snapshots into the source tree.
+    server = TaklerServer(
+        host="localhost",
+        port=_free_port(),
+        checkpoint_file=tmp_path / "takler.check",
+    )
     # Use a tiny interval so the main loop notices ``should_stop`` promptly.
     server.scheduler.interval_main_loop = 0.01
 
+    tasks = []
     for name in flow_names:
         flow = Flow(name)
-        flow.add_task("task1")
+        task = flow.add_task("task1")
         server.bunch.add_flow(flow)
-        # requeue begins the calendar so error-free iterations are guaranteed.
-        flow.requeue()
+        # begin starts the calendar so error-free iterations are guaranteed.
+        flow.begin()
+        assert task.state.node_status == NodeStatus.queued
+        tasks.append(task)
 
     error = _run_start_then_stop(server)
 
     assert error is None, f"stop() raised during clean shutdown: {error!r}"
     # After a clean shutdown the scheduler's stop flag has been unset again.
     assert server.scheduler.should_stop is False
+    # The main loop skips flows which have not begun (Requirement 8.9), so a
+    # test whose flows were never begun would still shut down cleanly while
+    # doing nothing at all. Assert the expected status progression to prove the
+    # loop really processed these flows: a dependency-free queued task is
+    # submitted on the first pass.
+    for task in tasks:
+        assert task.state.node_status == NodeStatus.submitted, (
+            f"main loop did not process {task.node_path}: status is "
+            f"{task.state.node_status!r}, expected submitted"
+        )
+        assert task.try_no == 1, (
+            f"main loop did not run {task.node_path} exactly once: "
+            f"try_no is {task.try_no}"
+        )

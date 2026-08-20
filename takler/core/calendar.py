@@ -1,5 +1,43 @@
 import datetime
-from typing import Optional
+from typing import Dict, Optional
+
+from .util import SerializationType
+
+
+def _datetime_to_dict_value(time: Optional[datetime.datetime]) -> Optional[str]:
+    """
+    Convert a datetime to an ISO 8601 string. ``None`` is kept as ``None`` (``null`` in JSON).
+    """
+    if time is None:
+        return None
+    return time.isoformat()
+
+
+def _datetime_from_dict_value(value: Optional[str]) -> Optional[datetime.datetime]:
+    """
+    Convert an ISO 8601 string back to a datetime. ``None`` is kept as ``None``.
+    """
+    if value is None:
+        return None
+    return datetime.datetime.fromisoformat(value)
+
+
+def _timedelta_to_dict_value(duration: Optional[datetime.timedelta]) -> Optional[float]:
+    """
+    Convert a timedelta to total seconds. ``None`` is kept as ``None`` (``null`` in JSON).
+    """
+    if duration is None:
+        return None
+    return duration.total_seconds()
+
+
+def _timedelta_from_dict_value(value: Optional[float]) -> Optional[datetime.timedelta]:
+    """
+    Convert seconds back to a timedelta. ``None`` is kept as ``None``.
+    """
+    if value is None:
+        return None
+    return datetime.timedelta(seconds=value)
 
 
 class Calendar:
@@ -132,3 +170,58 @@ class Calendar:
         self.duration = time_now - self.initial_real_time
         self.flow_time += self.increment
         self.last_real_time = time_now
+
+    # Serialization ----------------------------------------------
+
+    def to_dict(self) -> Dict:
+        """
+        Serialize the calendar's six fields.
+
+        ``initial_time`` / ``flow_time`` / ``initial_real_time`` / ``last_real_time`` are written as
+        ISO 8601 strings, ``duration`` / ``increment`` as seconds in float.
+        Each field is written as ``null`` when it is ``None``.
+
+        Returns
+        -------
+        Dict
+        """
+        result = dict(
+            initial_time=_datetime_to_dict_value(self.initial_time),
+            flow_time=_datetime_to_dict_value(self.flow_time),
+            duration=_timedelta_to_dict_value(self.duration),
+            increment=_timedelta_to_dict_value(self.increment),
+            initial_real_time=_datetime_to_dict_value(self.initial_real_time),
+            last_real_time=_datetime_to_dict_value(self.last_real_time),
+        )
+        return result
+
+    @classmethod
+    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "Calendar":
+        """
+        Create a ``Calendar`` from a dictionary.
+
+        All the six fields are runtime state, so they are only restored when ``method`` is
+        ``SerializationType.Status``. Otherwise a fresh calendar (all fields ``None``) is returned.
+        Missing keys are tolerated and treated as ``None``.
+
+        Parameters
+        ----------
+        d
+        method
+
+        Returns
+        -------
+        Calendar
+        """
+        calendar = cls()
+        if method != SerializationType.Status:
+            return calendar
+
+        calendar.initial_time = _datetime_from_dict_value(d.get("initial_time"))
+        calendar.flow_time = _datetime_from_dict_value(d.get("flow_time"))
+        calendar.duration = _timedelta_from_dict_value(d.get("duration"))
+        calendar.increment = _timedelta_from_dict_value(d.get("increment"))
+        calendar.initial_real_time = _datetime_from_dict_value(d.get("initial_real_time"))
+        calendar.last_real_time = _datetime_from_dict_value(d.get("last_real_time"))
+
+        return calendar

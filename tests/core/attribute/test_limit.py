@@ -495,3 +495,84 @@ def test_flow_limit(flow_with_limit):
     task5.complete()
     assert total_limit.value == 0
     assert section_limit.value == 0
+
+#-------------------------------
+# InLimitManager.delete_in_limit
+#-------------------------------
+
+def test_in_limit_manager_delete_in_limit_without_tokens():
+    limit_one = Limit("limit1", 2)
+
+    in_limit_manager = InLimitManager(Task("task1"))
+    in_limit_one = InLimit("limit1")
+    in_limit_one.set_limit(limit_one)
+    in_limit_manager.add_in_limit(in_limit_one)
+    in_limit_two = InLimit("limit2")
+    in_limit_manager.add_in_limit(in_limit_two)
+
+    assert in_limit_manager.delete_in_limit("limit1")
+    assert in_limit_manager.in_limit_list == [in_limit_two]
+    assert limit_one.value == 0
+    assert len(limit_one.node_paths) == 0
+
+
+def test_in_limit_manager_delete_in_limit_not_found():
+    in_limit_manager = InLimitManager(Task("task1"))
+    in_limit_one = InLimit("limit1")
+    in_limit_manager.add_in_limit(in_limit_one)
+    in_limit_two = InLimit("limit2")
+    in_limit_manager.add_in_limit(in_limit_two)
+
+    assert not in_limit_manager.delete_in_limit("nonexist_limit")
+    assert in_limit_manager.in_limit_list == [in_limit_one, in_limit_two]
+
+
+def test_in_limit_manager_delete_in_limit_with_tokens():
+    limit_one = Limit("limit1", 4)
+    limit_two = Limit("limit2", 4)
+
+    task = Task("task1")
+    node_path = task.node_path
+    in_limit_manager = InLimitManager(task)
+    in_limit_one = InLimit("limit1", tokens=2)
+    in_limit_one.set_limit(limit_one)
+    in_limit_manager.add_in_limit(in_limit_one)
+    in_limit_two = InLimit("limit2")
+    in_limit_two.set_limit(limit_two)
+    in_limit_manager.add_in_limit(in_limit_two)
+
+    in_limit_manager.increment_in_limit(set(), node_path)
+    assert limit_one.value == 2
+    assert node_path in limit_one.node_paths
+
+    assert in_limit_manager.delete_in_limit("limit1")
+    assert in_limit_manager.in_limit_list == [in_limit_two]
+
+    # tokens of the deleted InLimit are released
+    assert limit_one.value == 0
+    assert node_path not in limit_one.node_paths
+
+    # the other Limit is untouched
+    assert limit_two.value == 1
+    assert node_path in limit_two.node_paths
+
+
+def test_node_delete_in_limit_releases_tokens(flow_with_limit):
+    flow1 = flow_with_limit.flow1
+    container1 = flow_with_limit.container1
+    task1 = flow_with_limit.task1
+    total_limit = flow_with_limit.total_limit
+    section_limit = flow_with_limit.section_limit
+
+    flow1.requeue()
+    task1.run()
+    assert total_limit.value == 1
+    assert section_limit.value == 1
+
+    # container1 holds the section_limit InLimit, but the token is occupied with task1's path,
+    # so deleting on container1 does not release task1's token.
+    assert container1.in_limit_manager.delete_in_limit("section_limit")
+    assert container1.in_limit_manager.in_limit_list == []
+    assert section_limit.value == 1
+
+    assert not container1.in_limit_manager.delete_in_limit("section_limit")

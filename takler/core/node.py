@@ -7,6 +7,8 @@ from pathlib import PurePosixPath
 from collections import defaultdict
 from abc import ABC
 
+from takler.exceptions import NodeNotFoundError, UnsupportedValueError
+
 from .state import State, NodeStatus
 from .parameter import Parameter
 from .event import Event
@@ -21,6 +23,7 @@ from .util import SerializationType
 if TYPE_CHECKING:
     from .bunch import Bunch
     from .calendar import Calendar
+    from .flow import Flow
 
 
 # def compute_node_status(node: Node, immediate: bool) -> NodeStatus:
@@ -175,6 +178,8 @@ class Node(ABC):
             result["trigger"] = self.trigger_expression.expression_str
         if self.complete_trigger_expression is not None:
             result['complete_trigger'] = self.complete_trigger_expression.expression_str
+        if self.is_complete_triggered:
+            result["is_complete_triggered"] = self.is_complete_triggered
         if len(self.events) != 0:
             result["events"] = [event.to_dict() for event in self.events]
         if len(self.meters) != 0:
@@ -253,6 +258,10 @@ class Node(ABC):
             trigger = d["complete_trigger"]
             node.add_complete_trigger(trigger, parse=False)
 
+        if method == SerializationType.Status:
+            # the complete trigger latch is a runtime state, and it is not recomputed after restoring.
+            node.is_complete_triggered = d.get("is_complete_triggered", False)
+
         if "events" in d:
             events = d["events"]
             for event in events:
@@ -265,7 +274,7 @@ class Node(ABC):
         if "limits" in d:
             limits = d["limits"]
             for limit in limits:
-                node.add_limit(limit["name"], limit=limit["limit"])
+                node.add_limit_object(Limit.from_dict(limit, method=method))
 
         if "in_limit_manager" in d:
             in_limit_manager = d["in_limit_manager"]
@@ -278,7 +287,7 @@ class Node(ABC):
         if "times" in d:
             times = d["times"]
             for time_attr in times:
-                node.add_time(time_attr["time"])
+                node.add_time_attribute(TimeAttribute.from_dict(time_attr, method=method))
 
         if "children" in d:
             for child in d["children"]:
@@ -321,7 +330,10 @@ class Node(ABC):
 
         child_index = self.find_child_index(child)
         if child_index == -1:
-            raise ValueError(f"child {child} is not found")
+            raise NodeNotFoundError(
+                f"child {child} is not found",
+                node_path=f"{self.node_path}/{child if isinstance(child, str) else child.name}",
+            )
 
         old_child = self.children[child_index]
         new_child_node.parent = self
@@ -331,7 +343,10 @@ class Node(ABC):
     def delete_child(self, child: Union[str, Node]) -> Node:
         child_node_index = self.find_child_index(child)
         if child_node_index == -1:
-            raise ValueError(f"{child} does not exist")
+            raise NodeNotFoundError(
+                f"{child} does not exist",
+                node_path=f"{self.node_path}/{child if isinstance(child, str) else child.name}",
+            )
         child_node = self.children.pop(child_node_index)
         child_node.delete_children()
         return child_node
@@ -389,6 +404,22 @@ class Node(ABC):
             return self.parent.get_bunch()
         else:
             return None
+
+    def get_flow(self) -> "Optional[Flow]":
+        """
+        get the ``Flow`` which the node belongs to.
+
+        Returns
+        -------
+        Flow or None
+            the root node if it is a ``Flow``, otherwise ``None``.
+        """
+        from .flow import Flow
+
+        root = self.get_root()
+        if isinstance(root, Flow):
+            return root
+        return None
 
     def find_node(self, a_path: str) -> Optional[Node]:
         """
@@ -526,9 +557,10 @@ class Node(ABC):
         """
         allowed = (NodeStatus.queued, NodeStatus.complete)
         if node_status not in allowed:
-            raise ValueError(
+            raise UnsupportedValueError(
                 f"default node status {node_status} is not supported. "
-                f"Only {', '.join(s.name for s in allowed)} are allowed."
+                f"Only {', '.join(s.name for s in allowed)} are allowed.",
+                value=getattr(node_status, "value", str(node_status)),
             )
         self.default_node_status = node_status
 
@@ -596,16 +628,35 @@ class Node(ABC):
         parse
             If set, trigger is parsed to create an AST immediately.
             If not set, trigger is just store as a string in expression and is not parsed.
+
+        Raises
+        ------
+        TypeError
+            If ``trigger`` is neither a ``str`` nor an ``Expression``.
+        ExpressionSyntaxError
+            If ``parse`` is set and the expression can not be parsed.
+            The node's ``trigger_expression`` and ``complete_trigger_expression``
+            are left exactly as they were before the call.
+
+        Notes
+        -----
+        When ``parse`` is set, the expression is validated **before** being assigned
+        to the node, so a failing parse never leaves the node partially mutated.
+
+        When an ``Expression`` instance is passed in, that very instance is stored on
+        the node (identity is preserved), which keeps the existing behaviour.
         """
         if isinstance(trigger, str):
-            self.trigger_expression = Expression(trigger)
+            expression = Expression(trigger)
         elif isinstance(trigger, Expression):
-            self.trigger_expression = trigger
+            expression = trigger
         else:
             raise TypeError("trigger only supports str or Expression.")
 
         if parse:
-            self.trigger_expression.create_ast(self)
+            expression.create_ast(self)
+
+        self.trigger_expression = expression
 
     def evaluate_trigger(self) -> bool:
         """
@@ -633,15 +684,44 @@ class Node(ABC):
         return self.trigger_expression.evaluate()
 
     def add_complete_trigger(self, trigger: Union[str, Expression], parse: bool = False):
+        """
+        Add complete trigger to node.
+
+        Parameters
+        ----------
+        trigger
+        parse
+            If set, trigger is parsed to create an AST immediately.
+            If not set, trigger is just store as a string in expression and is not parsed.
+
+        Raises
+        ------
+        TypeError
+            If ``trigger`` is neither a ``str`` nor an ``Expression``.
+        ExpressionSyntaxError
+            If ``parse`` is set and the expression can not be parsed.
+            The node's ``trigger_expression`` and ``complete_trigger_expression``
+            are left exactly as they were before the call.
+
+        Notes
+        -----
+        When ``parse`` is set, the expression is validated **before** being assigned
+        to the node, so a failing parse never leaves the node partially mutated.
+
+        When an ``Expression`` instance is passed in, that very instance is stored on
+        the node (identity is preserved), which keeps the existing behaviour.
+        """
         if isinstance(trigger, str):
-            self.complete_trigger_expression = Expression(trigger)
+            expression = Expression(trigger)
         elif isinstance(trigger, Expression):
-            self.complete_trigger_expression = trigger
+            expression = trigger
         else:
             raise TypeError("trigger only supports str or Expression.")
 
         if parse:
-            self.complete_trigger_expression.create_ast(self)
+            expression.create_ast(self)
+
+        self.complete_trigger_expression = expression
 
     def evaluate_complete_trigger(self) -> bool:
         if self.complete_trigger_expression is None:
@@ -981,6 +1061,35 @@ class Node(ABC):
         self.limits.append(item)
         return item
 
+    def add_limit_object(self, limit: Limit) -> Limit:
+        """
+        Add an already created ``Limit`` object to node.
+
+        Unlike ``add_limit``, the ``Limit`` object is attached as it is, so runtime states
+        (``value`` and ``node_paths``) carried by the object are kept.
+        This is used by deserialization, where a ``Limit`` is created by ``Limit.from_dict``.
+
+        Parameters
+        ----------
+        limit
+            The ``Limit`` object to be attached to this node.
+
+        Returns
+        -------
+        Limit
+            The ``limit`` passed in.
+
+        Raises
+        ------
+        RuntimeError
+            If this node already has a ``Limit`` with the same name.
+        """
+        if self.find_limit(limit.name) is not None:
+            raise RuntimeError(f"add_limit_object failed: duplicate limit {limit.name} for node {self.node_path}")
+        limit.set_node(self)
+        self.limits.append(limit)
+        return limit
+
     def find_limit(self, name: str) -> Optional[Limit]:
         """
         Find Limit in this node.
@@ -1104,6 +1213,28 @@ class Node(ABC):
         self.times.append(time_attr)
         return time_attr
 
+    def add_time_attribute(self, time_attr: TimeAttribute) -> TimeAttribute:
+        """
+        Add an already created ``TimeAttribute`` object to Node.
+
+        Unlike ``add_time``, the ``TimeAttribute`` object is attached as it is, so the runtime
+        ``free`` latch carried by the object is kept.
+        This is used by deserialization, where a ``TimeAttribute`` is created by
+        ``TimeAttribute.from_dict``.
+
+        Parameters
+        ----------
+        time_attr
+            The ``TimeAttribute`` object to be attached to this node.
+
+        Returns
+        -------
+        TimeAttribute
+            The ``time_attr`` passed in.
+        """
+        self.times.append(time_attr)
+        return time_attr
+
     def resolve_time_dependencies(self) -> bool:
         """
         Check if there has one time dependency which is satisfied.
@@ -1206,7 +1337,10 @@ class Node(ABC):
             dep_type = "all"
 
         if dep_type not in ("all", "time", "trigger"):
-            raise ValueError(f"dependency type {dep_type} is not supported.")
+            raise UnsupportedValueError(
+                f"dependency type {dep_type} is not supported.",
+                value=str(dep_type),
+            )
 
         free_time = False
         free_trigger = False
@@ -1221,6 +1355,8 @@ class Node(ABC):
                 time_attr.set_free()
 
         if free_trigger:
-            self.trigger_expression.set_free()
+            # Freeing the trigger of a node without a trigger is a no-op.
+            if self.trigger_expression is not None:
+                self.trigger_expression.set_free()
 
         return

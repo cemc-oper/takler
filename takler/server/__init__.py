@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+from pathlib import Path
 from typing import Union, Optional
 
 from takler.core import Bunch, NodeStatus
@@ -7,7 +8,8 @@ from takler.logging import configure, get_logger
 
 from .scheduler import Scheduler
 from .network_service import TaklerService
-from .connect_config import ExceptionPolicy, resolve_exception_policy
+from .checkpoint import CheckpointManager
+from .connect_config import ConnectConfig, ExceptionPolicy, resolve_exception_policy
 
 
 logger = get_logger("server")
@@ -20,13 +22,34 @@ class TaklerServer:
     * bunch: A bunch for flows.
     * scheduler: A scheduler to check dependencies in loop.
     * network service: A gRPC server to receive client command.
+    * checkpoint manager: owns the Checkpoint_File of this server process.
     """
     def __init__(
         self,
         host: Optional[str] = None,
         port: Optional[Union[str, int]] = None,
         exception_policy: "Optional[Union[str, ExceptionPolicy]]" = None,
+        connect_config: "Optional[ConnectConfig]" = None,
+        checkpoint_file: Optional[Union[str, Path]] = None,
+        checkpoint_interval: Optional[float] = None,
     ):
+        """Build the bunch and the three services that operate on it.
+
+        Args:
+            host: Host name announced to clients and to job scripts.
+            port: Port the gRPC service listens on.
+            exception_policy: Explicit exception-handling policy, highest
+                precedence (Requirement 2.6).
+            connect_config: Loaded ``connect.yaml``, consulted for the snapshot
+                settings when the explicit arguments below are not provided
+                (Requirement 7.5).
+            checkpoint_file: Explicit Checkpoint_File path, highest precedence.
+                ``None`` leaves the resolution to ``CheckpointManager``, which
+                falls back to ``connect_config`` and then to ``takler.check``
+                relative to the current working directory (Requirement 7.3).
+            checkpoint_interval: Explicit snapshot period in seconds, highest
+                precedence (Requirement 7.2).
+        """
         # Resolve the effective exception-handling policy following the source
         # precedence: explicit argument > ``TAKLER_EXCEPTION_POLICY`` env var >
         # built-in default ``RESILIENT`` (Requirement 2.6).
@@ -56,6 +79,15 @@ class TaklerServer:
             exception_policy=self.exception_policy,
             fatal_shutdown=self._trigger_fatal_shutdown,
         )
+        # The manager keeps a reference to the same live bunch the scheduler and
+        # the network service hold, so a restored snapshot is visible to both
+        # without any of them being re-wired (Requirements 5.1, 6.1).
+        self.checkpoint_manager: CheckpointManager = CheckpointManager(
+            bunch=self.bunch,
+            checkpoint_file=checkpoint_file,
+            interval=checkpoint_interval,
+            connect_config=connect_config,
+        )
 
     def _trigger_fatal_shutdown(self):
         """Signal that the server must exit (the ``FAIL_FAST`` path).
@@ -71,8 +103,16 @@ class TaklerServer:
         Start services:
 
         * configure logging
+        * restore the bunch from the Checkpoint_File
         * start scheduler
         * start network service
+        * start the periodic snapshot task
+
+        The order is the contract. ``restore()`` runs synchronously before the
+        scheduler is started, so the very first dependency resolution already
+        sees the restored node tree (Requirement 6.1), and the periodic snapshot
+        task is created last, so its first write cannot race the restore
+        (Requirement 5.1).
         """
         # Configure logging before the first server record is emitted so that
         # startup, command, and shutdown activity is captured at the configured
@@ -100,8 +140,13 @@ class TaklerServer:
             )
 
         logger.info("start server...")
+        # Restore before the scheduler main loop exists (Requirement 6.1).
+        # ``restore()`` never raises: an unusable snapshot degrades to the backup
+        # file and then to an empty bunch, so startup always proceeds.
+        self.checkpoint_manager.restore()
         await self.scheduler.start()
         await self.network_service.start()
+        await self.checkpoint_manager.start()
         logger.info("start server...done")
 
     async def run(self):
@@ -145,9 +190,15 @@ class TaklerServer:
         """
         Clean shutdown flow shared by :meth:`stop` and :meth:`run`.
 
-        Stops the network service and scheduler without raising. Guarded by
-        ``self._stopped`` so it runs at most once even when both an external
-        ``stop()`` call and ``run()`` reach it (Requirement 3.4).
+        Stops the network service, the scheduler and the checkpoint manager
+        without raising. Guarded by ``self._stopped`` so it runs at most once
+        even when both an external ``stop()`` call and ``run()`` reach it
+        (Requirement 3.4).
+
+        The checkpoint manager is stopped last on purpose: its ``stop()`` writes
+        the final snapshot, and by then no RPC handler and no scheduler pass can
+        still change the bunch, so that snapshot is a consistent view of a
+        quiesced tree (Requirement 5.9).
         """
         if self._stopped:
             return
@@ -155,6 +206,8 @@ class TaklerServer:
         logger.info("stop server...")
         await self.network_service.stop()
         await self.scheduler.stop()
+        # Cancels the periodic task and writes the last snapshot; never raises.
+        await self.checkpoint_manager.stop()
         logger.info("stop server...done")
 
     async def stop(self):
@@ -190,7 +243,7 @@ async def run_server_until_complete(server: TaklerServer, check_interval: int = 
     >>> flow = Flow("flow1")
     >>> task1 = flow.add_task("task1")
     >>> server.bunch.add_flow(flow)
-    >>> flow.requeue()
+    >>> flow.begin()
     >>> asyncio.run(run_server_until_complete(server))
 
     """

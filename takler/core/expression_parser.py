@@ -1,5 +1,9 @@
-from lark import Lark, Transformer
+from typing import Optional
 
+from lark import Lark, Transformer
+from lark.exceptions import LarkError
+
+from ..exceptions import ExpressionSyntaxError
 from .expression_ast import (
     AstNodePath,
     AstOpEq, AstOpAnd,
@@ -198,6 +202,21 @@ trigger_parser: Lark = Lark(r"""
 """, start="expression")
 
 
+def _position_of(exc: BaseException, attribute_name: str) -> Optional[int]:
+    """
+    Read a position attribute reported by the underlying parser.
+
+    ``lark``'s ``UnexpectedInput`` subclasses carry ``line`` / ``column``, while
+    other ``LarkError`` subclasses do not. ``UnexpectedEOF`` sets both to the
+    sentinel ``-1`` because the position is unknown. Anything that is not a
+    1-based position means "not reported" and maps to ``None``.
+    """
+    value = getattr(exc, attribute_name, None)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return None
+    return value
+
+
 def parse_trigger(trigger_text: str) -> AstRoot:
     """
     Parse trigger expression string and return expression's AST.
@@ -210,7 +229,23 @@ def parse_trigger(trigger_text: str) -> AstRoot:
     Returns
     -------
     AstRoot
+
+    Raises
+    ------
+    ExpressionSyntaxError
+        If ``trigger_text`` does not conform to the trigger syntax. The original
+        expression is available as ``expression``, and the position reported by
+        the underlying parser as ``line`` / ``column`` (``None`` when the
+        underlying parser reports no position).
     """
-    tree = trigger_parser.parse(trigger_text)
-    expression_ast = ExpressionTransformer().transform(tree)
+    try:
+        tree = trigger_parser.parse(trigger_text)
+        expression_ast = ExpressionTransformer().transform(tree)
+    except LarkError as exc:
+        raise ExpressionSyntaxError(
+            f"invalid trigger expression {trigger_text!r}: {exc}",
+            expression=trigger_text,
+            line=_position_of(exc, "line"),
+            column=_position_of(exc, "column"),
+        ) from exc
     return expression_ast

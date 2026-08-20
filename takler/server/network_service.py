@@ -5,6 +5,7 @@ import inspect
 import grpc
 
 from takler.server.protocol import takler_pb2, takler_pb2_grpc
+from takler.server.protocol.error_code import error_code_for_exception
 from takler.logging import get_logger
 from takler.server.scheduler import Scheduler
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
@@ -20,9 +21,16 @@ def _command_error_response(exc: Exception) -> "takler_pb2.ServiceResponse":
     into a ``ServiceResponse`` with a non-zero ``flag`` and a descriptive
     ``message`` (Requirement 2.3), reusing the existing response type without
     touching ``takler.proto``.
+
+    ``flag`` carries the Error_Code that classifies ``exc``: an
+    Exception_Hierarchy type maps to its dedicated non-zero code, a
+    ``TaklerError`` without a dedicated code maps to the generic code 1, and
+    anything else maps to the internal-server-error code (Requirements 3.4,
+    3.5). Success responses keep ``flag=0`` (Requirement 3.3), and failures stay
+    non-zero for clients that only test ``flag != 0``.
     """
     return takler_pb2.ServiceResponse(
-        flag=1,
+        flag=error_code_for_exception(exc),
         message=f"{type(exc).__name__}: {exc}",
     )
 
@@ -339,6 +347,19 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
 
         return await self._handle_command(
             "RunCommandFreeDep", f"path={list(paths)}, dep_type={dep_type}", op
+        )
+
+    async def RunCommandBegin(self, request: takler_pb2.BeginCommand, context):
+        flow_name = request.flow_name
+        force = request.force
+
+        def op():
+            logger.info(f"Begin: {flow_name} force={force}")
+            self.scheduler.run_command_begin(flow_name, force=force)
+            return takler_pb2.ServiceResponse(flag=0, message="")
+
+        return await self._handle_command(
+            "RunCommandBegin", f"flow_name={flow_name}, force={force}", op
         )
 
     async def RunCommandLoad(self, request: takler_pb2.LoadCommand, context):

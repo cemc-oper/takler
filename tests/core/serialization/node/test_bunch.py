@@ -1,6 +1,7 @@
 import pytest
 
 from takler.core import Flow, Bunch
+from takler.core.parameter import TAKLER_HOST, TAKLER_PORT
 
 from .util import get_node_tree_print_string
 
@@ -110,7 +111,16 @@ def test_bunch_to_dict(bunch_case):
                             )
                         ]
                     )
-                ]
+                ],
+                begun=False,
+                calendar=dict(
+                    initial_time=None,
+                    flow_time=None,
+                    duration=None,
+                    increment=None,
+                    initial_real_time=None,
+                    last_real_time=None,
+                ),
             ),
             dict(
                 name="flow2",
@@ -152,7 +162,16 @@ def test_bunch_to_dict(bunch_case):
                             )
                         ]
                     )
-                ]
+                ],
+                begun=False,
+                calendar=dict(
+                    initial_time=None,
+                    flow_time=None,
+                    duration=None,
+                    increment=None,
+                    initial_real_time=None,
+                    last_real_time=None,
+                ),
             )
         ]
     )
@@ -269,3 +288,33 @@ def test_bunch_from_dict(bunch_case):
     bunch_text = get_node_tree_print_string(test_bunch)
     expected_bunch_text = get_node_tree_print_string(bunch)
     assert bunch_text == expected_bunch_text
+
+
+def test_bunch_from_dict_flow_back_reference(bunch_case):
+    """
+    ``Bunch.from_dict`` must register flows through ``add_flow`` so restored flows
+    keep the back reference to the bunch and can resolve the server parameters.
+    """
+    bunch = bunch_case.bunch
+
+    restored_bunch = Bunch.from_dict(bunch.to_dict())
+
+    for flow_name in ("flow1", "flow2"):
+        flow = restored_bunch.find_flow(flow_name)
+        assert flow is not None
+        assert flow.get_bunch() is restored_bunch
+
+        host_param = flow.find_parent_parameter(TAKLER_HOST)
+        assert host_param is not None
+        assert host_param.value == "host1"
+
+        port_param = flow.find_parent_parameter(TAKLER_PORT)
+        assert port_param is not None
+        assert port_param.value == "port1"
+
+    # descendant nodes reach the server parameters through the inheritance chain too
+    task1 = restored_bunch.find_node("/flow1/container1/task1")
+    assert task1 is not None
+    assert task1.get_bunch() is restored_bunch
+    assert task1.find_parent_parameter(TAKLER_HOST).value == "host1"
+    assert task1.find_parent_parameter(TAKLER_PORT).value == "port1"

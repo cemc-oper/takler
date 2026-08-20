@@ -4,6 +4,7 @@ from typing import Optional, Dict, Union, List
 from pydantic import BaseModel, field_validator, ConfigDict
 
 from takler import constant
+from takler.exceptions import InvalidNodePathError, NodeNotFoundError
 
 from .node_container import NodeContainer
 from .flow import Flow
@@ -40,10 +41,14 @@ class Bunch(NodeContainer):
         class_module = importlib.import_module(class_module)
         class_object = getattr(class_module, class_name)
         bunch = class_object(name=d["name"])
+        bunch.server_state = ServerState.from_dict(d["server_state"])
         for flow in d["flows"]:
             flow = Flow.from_dict(flow)
-            bunch.flows[flow.name] = flow
-        bunch.server_state = ServerState.from_dict(d["server_state"])
+            # go through ``add_flow`` so that the flow gets its back reference to
+            # the bunch, which makes ``get_bunch()`` non ``None`` and lets the
+            # parameter inheritance chain reach the server parameters
+            # (``TAKLER_HOST`` / ``TAKLER_PORT``).
+            bunch.add_flow(flow)
         return bunch
 
     # Attr ------------------------------------------------
@@ -82,7 +87,10 @@ class Bunch(NodeContainer):
             flow_name = flow
 
         if flow_name not in self.flows:
-            raise ValueError(f"flow is not in Bunch: {flow_name}")
+            raise NodeNotFoundError(
+                f"flow is not in Bunch: {flow_name}",
+                node_path=f"/{flow_name}",
+            )
 
         flow = self.flows.pop(flow_name)
 
@@ -103,7 +111,10 @@ class Bunch(NodeContainer):
         Optional[Node]
         """
         if not Node.check_absolute_node_path(a_path):
-            raise ValueError(f"absolute node path is illegal: {a_path}")
+            raise InvalidNodePathError(
+                f"absolute node path is illegal: {a_path}",
+                node_path=a_path,
+            )
         tokens = a_path.split("/")
         assert len(tokens) > 1
         flow_name = tokens[1]
