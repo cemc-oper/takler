@@ -86,7 +86,7 @@ jobs:
 
           from packaging.version import InvalidVersion, Version
 
-          # 从环境变量读 tag，而不是把 ${{ }} 表达式插进脚本里，避免 tag 名参与代码拼接。
+          # 从环境变量读 tag，而不是把 GitHub 表达式插值进脚本里，避免 tag 名参与代码拼接。
           tag = os.environ["TAG_NAME"]
           # wheel 文件名形如 takler-0.2.0-py3-none-any.whl，第二段就是包版本。
           built = sorted(pathlib.Path("dist").glob("*.whl"))[0].name.split("-")[1]
