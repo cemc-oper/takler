@@ -19,6 +19,16 @@ Two things are asserted beyond "exit code is 0":
   by a recorder, so a regression that starts serving while merely printing help
   fails here instead of hanging the suite.
 
+Where rendered help *is* searched for a name, it goes through ``_plain`` first.
+``typer`` prints help through ``rich``, and as soon as colour is enabled -- which
+is what happens on CI, where the runner forces it on -- each highlighted run
+becomes its own escape sequence delimited segment. ``rich``'s option highlighter
+emits the leading dash of a long option separately, so ``--host`` reaches stdout
+as ``\\x1b[1;36m-\\x1b[0m\\x1b[1;36m-host\\x1b[0m`` and a plain ``in`` test fails
+on a help screen that is in fact correct. Stripping the SGR sequences makes the
+assertions depend on the text a user reads instead of on whether the surrounding
+environment asked for colour.
+
 Requirement 15.6 pins the Client_CLI surface to what it was before M1: the
 baseline lists below are the subcommands and option names of the pre-M1
 ``takler/client/cli.py``. Additions are allowed, renames and removals are not,
@@ -32,6 +42,7 @@ Validates: Requirements 15.2, 15.3, 15.4, 15.5, 15.6
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -102,10 +113,22 @@ SERVER_OTHER_OPTIONS = {
 #: Wide enough that no option name gets wrapped when help text is rendered.
 WIDE_TERMINAL = {"COLUMNS": "200"}
 
+#: ANSI SGR sequences, i.e. the colour and style codes ``rich`` writes.
+_ANSI_SGR = re.compile(r"\x1b\[[0-9;]*m")
+
 
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
+
+
+def _plain(text: str) -> str:
+    """Return ``text`` without the colour codes ``rich`` may have added.
+
+    Needed because a styled run is emitted as its own escape delimited segment,
+    which splits option names such as ``--host`` when colour is on.
+    """
+    return _ANSI_SGR.sub("", text)
 
 
 def _click_command(app: typer.Typer) -> Any:
@@ -145,8 +168,9 @@ def test_client_help_lists_commands_and_exits_zero(runner: CliRunner):
     result = runner.invoke(app, ["--help"], env=WIDE_TERMINAL)
 
     assert result.exit_code == 0, result.output
-    missing = [name for name in PRE_M1_CLIENT_COMMANDS if name not in result.output]
-    assert missing == [], result.output
+    rendered = _plain(result.output)
+    missing = [name for name in PRE_M1_CLIENT_COMMANDS if name not in rendered]
+    assert missing == [], rendered
 
 
 def test_client_help_of_each_command_exits_zero(runner: CliRunner):
@@ -174,12 +198,13 @@ def test_server_help_shows_startup_options_and_exits_zero(runner: CliRunner):
     result = runner.invoke(server_cli.app, ["--help"], env=WIDE_TERMINAL)
 
     assert result.exit_code == 0, result.output
+    rendered = _plain(result.output)
     missing = [
         option
         for option in SERVER_ADDRESS_OPTIONS | SERVER_OTHER_OPTIONS
-        if option not in result.output
+        if option not in rendered
     ]
-    assert missing == [], result.output
+    assert missing == [], rendered
 
 
 def test_server_console_script_help_exits_zero_without_serving(
@@ -202,7 +227,7 @@ def test_server_console_script_help_exits_zero_without_serving(
 
     assert exc_info.value.code == 0
     assert calls == []
-    assert "--host" in capsys.readouterr().out
+    assert "--host" in _plain(capsys.readouterr().out)
 
 
 def test_server_entry_accepts_host_port_and_config_options():
@@ -229,7 +254,7 @@ def test_tui_help_exits_zero(runner: CliRunner):
 
     result = runner.invoke(tui_app, ["--help"], env=WIDE_TERMINAL)
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 0, _plain(result.output)
     # The entry is the existing TUI launcher, so it offers its connection
     # options rather than a subcommand list.
     assert {"--host", "--port", "--connect-file"} <= _option_names(
