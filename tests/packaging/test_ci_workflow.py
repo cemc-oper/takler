@@ -32,6 +32,7 @@ Validates: Requirements 16.1, 16.2, 16.3, 16.4, 16.5, 16.6
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,32 @@ def test_workflow_declares_push_and_pull_request_triggers(workflow: dict[str, An
     triggers = _triggers(workflow)
 
     assert {"push", "pull_request"} <= set(triggers)
+
+
+# ---------------------------------------------------------------------------
+# Action references
+# ---------------------------------------------------------------------------
+
+
+def test_astral_actions_are_not_pinned_to_a_bare_major_tag(workflow: dict[str, Any]):
+    """``astral-sh/setup-uv`` must be referenced by an exact version or a SHA.
+
+    Unlike ``actions/*``, astral-sh stopped publishing floating major tags after
+    ``v7``: ``v8``, ``v9`` and ``v10`` exist only as ``v8.3.2``, ``v9.0.0``,
+    ``v10.0.1`` and so on. Writing ``@v10`` therefore fails the run before any
+    step executes, with "unable to resolve action ... unable to find version".
+    """
+    bare_major = []
+    for job in workflow["jobs"].values():
+        for step in job["steps"]:
+            uses = str(step.get("uses", ""))
+            if not uses.startswith("astral-sh/"):
+                continue
+            _, _, ref = uses.partition("@")
+            if re.fullmatch(r"v\d+", ref):
+                bare_major.append(uses)
+
+    assert bare_major == []
 
 
 # ---------------------------------------------------------------------------

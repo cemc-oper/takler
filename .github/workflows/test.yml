@@ -43,7 +43,12 @@ jobs:
         # tag，`uv sync` 构建本项目时就会得到一个与仓库状态无关的版本号。
         fetch-depth: 0
     - name: Install uv and set up Python ${{ matrix.python-version }}
-      uses: astral-sh/setup-uv@v9
+      # 必须写精确版本：setup-uv 从 v8 起不再维护浮动的大版本 tag（`v1`..`v7` 有，
+      # `v8`/`v9`/`v10` 没有），`@v10` 这类写法会以
+      # "unable to resolve action ... unable to find version" 失败。
+      # 想要更强的供应链保证可以改成 commit SHA 加版本注释，即上游文档的写法：
+      #     astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      uses: astral-sh/setup-uv@v10.0.1
       with:
         # setup-uv 设置的 Python 版本会覆盖 `pyproject.toml` / `.python-version` 里的
         # 取值，这样矩阵的每个分支才真的跑在各自的解释器上。
