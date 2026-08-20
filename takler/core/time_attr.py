@@ -18,9 +18,10 @@ class TimeAttribute:
     free
         if marked true, time attributes is ignored.
     """
+
     def __init__(self, time: Union[datetime.time, str]):
         if isinstance(time, str):
-            time = datetime.datetime.strptime(time, '%H:%M').time()
+            time = datetime.datetime.strptime(time, "%H:%M").time()
         self.time: datetime.time = time
         self.free: bool = False
 
@@ -100,7 +101,9 @@ class TimeAttribute:
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "TimeAttribute":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "TimeAttribute":
         time_string = d["time"]
         time_attr = TimeAttribute(time=time_string)
         if method == SerializationType.Status:

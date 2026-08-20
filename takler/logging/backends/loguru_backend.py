@@ -112,7 +112,9 @@ class LoguruNamedLogger(NamedLogger):
         # ``{extra[takler_name]}`` resolves to this exact name.
         self._logger = _loguru_logger.bind(takler_name=component)
 
-    def log(self, level: LogLevel, message: str, *args: object, **kwargs: object) -> None:
+    def log(
+        self, level: LogLevel, message: str, *args: object, **kwargs: object
+    ) -> None:
         """Emit a record at ``level`` attributed to this logger's component.
 
         The canonical level is mapped onto loguru's level name and forwarded to

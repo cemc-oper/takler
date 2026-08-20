@@ -112,14 +112,15 @@ class TaklerServiceClient:
 
     Or use GOLANG version client.
     """
+
     def __init__(
-            self,
-            host: str = DEFAULT_HOST,
-            port: Union[int, str] = DEFAULT_PORT,
-            single_timeout: float = DEFAULT_SINGLE_TIMEOUT,
-            retry_window: Optional[float] = None,
-            clock: Callable[[], float] = time.monotonic,
-            sleep: Callable[[float], None] = time.sleep,
+        self,
+        host: str = DEFAULT_HOST,
+        port: Union[int, str] = DEFAULT_PORT,
+        single_timeout: float = DEFAULT_SINGLE_TIMEOUT,
+        retry_window: Optional[float] = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ):
         """
         Parameters
@@ -158,7 +159,7 @@ class TaklerServiceClient:
         """
         str: gRPC server's listen address
         """
-        return f'{self.host}:{self.port}'
+        return f"{self.host}:{self.port}"
 
     def create_channel(self):
         self.channel = grpc.insecure_channel(self.listen_address)
@@ -205,11 +206,11 @@ class TaklerServiceClient:
         )
 
     def _call(
-            self,
-            operation_name: str,
-            rpc: Callable[..., T],
-            request: Any,
-            kind: CommandKind,
+        self,
+        operation_name: str,
+        rpc: Callable[..., T],
+        request: Any,
+        kind: CommandKind,
     ) -> T:
         """Invoke ``rpc`` with timeout, retry and error mapping.
 
@@ -321,7 +322,7 @@ class TaklerServiceClient:
                 child_options=takler_pb2.ChildCommandOptions(
                     node_path=node_path,
                 ),
-                task_id=task_id
+                task_id=task_id,
             ),
             CommandKind.CHILD,
         )
@@ -329,9 +330,7 @@ class TaklerServiceClient:
         return response
 
     def complete(self, node_path: str):
-        return self._guarded(
-            lambda: self.run_command_complete(node_path=node_path)
-        )
+        return self._guarded(lambda: self.run_command_complete(node_path=node_path))
 
     def run_command_complete(self, node_path: str):
         response = self._call(
@@ -360,7 +359,7 @@ class TaklerServiceClient:
                 child_options=takler_pb2.ChildCommandOptions(
                     node_path=node_path,
                 ),
-                reason=reason
+                reason=reason,
             ),
             CommandKind.CHILD,
         )
@@ -369,9 +368,7 @@ class TaklerServiceClient:
 
     def event(self, node_path: str, event_name: str):
         return self._guarded(
-            lambda: self.run_command_event(
-                node_path=node_path, event_name=event_name
-            )
+            lambda: self.run_command_event(node_path=node_path, event_name=event_name)
         )
 
     def run_command_event(self, node_path: str, event_name: str):
@@ -417,51 +414,39 @@ class TaklerServiceClient:
     # Control command ----------------------------------------------------
 
     def requeue(self, node_path: List[str]):
-        return self._guarded(
-            lambda: self.run_command_requeue(node_path=node_path)
-        )
+        return self._guarded(lambda: self.run_command_requeue(node_path=node_path))
 
     def run_command_requeue(self, node_path: List[str]):
         response = self._call(
             "requeue",
             self.stub.RunCommandRequeue,
-            takler_pb2.RequeueCommand(
-                node_path=node_path
-            ),
+            takler_pb2.RequeueCommand(node_path=node_path),
             CommandKind.CONTROL,
         )
         self._print_response(response)
         return response
 
     def suspend(self, node_path: List[str]):
-        return self._guarded(
-            lambda: self.run_command_suspend(node_path=node_path)
-        )
+        return self._guarded(lambda: self.run_command_suspend(node_path=node_path))
 
     def run_command_suspend(self, node_path: List[str]):
         response = self._call(
             "suspend",
             self.stub.RunCommandSuspend,
-            takler_pb2.SuspendCommand(
-                node_path=node_path
-            ),
+            takler_pb2.SuspendCommand(node_path=node_path),
             CommandKind.CONTROL,
         )
         self._print_response(response)
         return response
 
     def resume(self, node_path: List[str]):
-        return self._guarded(
-            lambda: self.run_command_resume(node_path=node_path)
-        )
+        return self._guarded(lambda: self.run_command_resume(node_path=node_path))
 
     def run_command_resume(self, node_path: List[str]):
         response = self._call(
             "resume",
             self.stub.RunCommandResume,
-            takler_pb2.SuspendCommand(
-                node_path=node_path
-            ),
+            takler_pb2.SuspendCommand(node_path=node_path),
             CommandKind.CONTROL,
         )
         self._print_response(response)
@@ -476,10 +461,7 @@ class TaklerServiceClient:
         response = self._call(
             "run",
             self.stub.RunCommandRun,
-            takler_pb2.RunCommand(
-                force=force,
-                node_path=node_path
-            ),
+            takler_pb2.RunCommand(force=force, node_path=node_path),
             CommandKind.CONTROL,
         )
         self._print_response(response)
@@ -510,9 +492,7 @@ class TaklerServiceClient:
 
     def free_dep(self, node_paths: List[str], dep_type: str):
         return self._guarded(
-            lambda: self.run_command_free_dep(
-                node_paths=node_paths, dep_type=dep_type
-            )
+            lambda: self.run_command_free_dep(node_paths=node_paths, dep_type=dep_type)
         )
 
     def run_command_free_dep(self, node_paths: List[str], dep_type: str):
@@ -540,10 +520,7 @@ class TaklerServiceClient:
         response = self._call(
             "load",
             self.stub.RunCommandLoad,
-            takler_pb2.LoadCommand(
-                flow_type=flow_type,
-                flow=flow_bytes
-            ),
+            takler_pb2.LoadCommand(flow_type=flow_type, flow=flow_bytes),
             CommandKind.CONTROL,
         )
         self._print_response(response)
@@ -576,12 +553,12 @@ class TaklerServiceClient:
     # Query command ----------------------------------------------------
 
     def show(
-            self,
-            show_parameter: bool = False,
-            show_trigger: bool = True,
-            show_limit: bool = True,
-            show_event: bool = True,
-            show_meter: bool = True,
+        self,
+        show_parameter: bool = False,
+        show_trigger: bool = True,
+        show_limit: bool = True,
+        show_event: bool = True,
+        show_meter: bool = True,
     ):
         return self._guarded(
             lambda: self.run_request_show(
@@ -594,12 +571,12 @@ class TaklerServiceClient:
         )
 
     def run_request_show(
-            self,
-            show_trigger: bool,
-            show_parameter: bool,
-            show_limit: bool,
-            show_event: bool,
-            show_meter: bool
+        self,
+        show_trigger: bool,
+        show_parameter: bool,
+        show_limit: bool,
+        show_event: bool,
+        show_meter: bool,
     ):
         """
         Print the server's bunch tree.
@@ -627,28 +604,28 @@ class TaklerServiceClient:
 
         output = response.output
         if output.startswith(SHOW_ERROR_PREFIX):
-            raise ServerResponseError(
-                f"server returned an error for show: {output}"
-            )
+            raise ServerResponseError(f"server returned an error for show: {output}")
 
         try:
             bunch_dict = json.loads(output)
         except json.JSONDecodeError as exc:
             raise ServerResponseError(
-                f"show response is not valid json: "
-                f"{output[:SHOW_SNIPPET_LENGTH]}"
+                f"show response is not valid json: {output[:SHOW_SNIPPET_LENGTH]}"
             ) from exc
 
         bunch = Bunch.from_dict(bunch_dict)
         for name, flow in bunch.flows.items():
-            pre_order_travel(flow, PrintVisitor(
-                stream=sys.stdout,
-                show_parameter=show_parameter,
-                show_trigger=show_trigger,
-                show_limit=show_limit,
-                show_event=show_event,
-                show_meter=show_meter,
-            ))
+            pre_order_travel(
+                flow,
+                PrintVisitor(
+                    stream=sys.stdout,
+                    show_parameter=show_parameter,
+                    show_trigger=show_trigger,
+                    show_limit=show_limit,
+                    show_event=show_event,
+                    show_meter=show_meter,
+                ),
+            )
         return response
 
     def ping(self):

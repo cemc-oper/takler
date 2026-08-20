@@ -24,6 +24,7 @@ class TaklerServer:
     * network service: A gRPC server to receive client command.
     * checkpoint manager: owns the Checkpoint_File of this server process.
     """
+
     def __init__(
         self,
         host: Optional[str] = None,
@@ -53,7 +54,9 @@ class TaklerServer:
         # Resolve the effective exception-handling policy following the source
         # precedence: explicit argument > ``TAKLER_EXCEPTION_POLICY`` env var >
         # built-in default ``RESILIENT`` (Requirement 2.6).
-        self.exception_policy: ExceptionPolicy = resolve_exception_policy(exception_policy)
+        self.exception_policy: ExceptionPolicy = resolve_exception_policy(
+            exception_policy
+        )
 
         # Shared fatal-error signal. In ``FAIL_FAST`` mode the scheduler / service
         # request a clean server exit by triggering this event; ``run()`` waits on
@@ -135,8 +138,7 @@ class TaklerServer:
                 # configuration lazily on first use, so logging still works.
                 pass
             get_logger("server").warning(
-                f"logging configuration failed, falling back to console at "
-                f"INFO: {exc}"
+                f"logging configuration failed, falling back to console at INFO: {exc}"
             )
 
         logger.info("start server...")
@@ -163,9 +165,13 @@ class TaklerServer:
         clean shutdown path (Requirements 2.4, 2.5, 3.4).
         """
         loop = asyncio.get_running_loop()
-        loop.create_task(self.network_service.run(), name="takler.server.network_service")
+        loop.create_task(
+            self.network_service.run(), name="takler.server.network_service"
+        )
 
-        scheduler_task = loop.create_task(self.scheduler.run(), name="takler.server.scheduler")
+        scheduler_task = loop.create_task(
+            self.scheduler.run(), name="takler.server.scheduler"
+        )
         # ``asyncio.wait`` requires awaitables wrapped as tasks/futures, so wrap
         # the event wait in its own task and wait for whichever finishes first.
         fatal_task = asyncio.ensure_future(self._fatal_error_event.wait())
@@ -299,7 +305,9 @@ async def stop_server(server: TaklerServer, seconds_before_stop: int = 10):
     seconds_before_stop
         sleep seconds before stop the server.
     """
-    logger.info(f"all flows are complete, about to exit, sleep for {seconds_before_stop} seconds...")
+    logger.info(
+        f"all flows are complete, about to exit, sleep for {seconds_before_stop} seconds..."
+    )
     await asyncio.sleep(seconds_before_stop)
     logger.info("stop server...")
     await server.stop()

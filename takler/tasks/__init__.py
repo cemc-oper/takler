@@ -1,5 +1,3 @@
 from .shell import ShellScriptTask
 
-__all__ = [
-    "ShellScriptTask"
-]
+__all__ = ["ShellScriptTask"]

@@ -38,10 +38,10 @@ class ShellRunner:
         self._job_context: Dict[asyncio.Task, Tuple[str, str, Optional[OnFailure]]] = {}
 
     def spwan(
-            self,
-            command: str,
-            node_path: str = "",
-            on_failure: Optional[OnFailure] = None,
+        self,
+        command: str,
+        node_path: str = "",
+        on_failure: Optional[OnFailure] = None,
     ) -> asyncio.Task:
         """
         Run command in a subprocess using ``anyio.run_process``.
@@ -74,6 +74,7 @@ class ShellRunner:
             When the job task cannot be created, for example when there is no
             running event loop or the system refuses the call.
         """
+
         async def run_shell_command():
             await run_process(["/bin/sh", "-c", command])
 
@@ -91,11 +92,11 @@ class ShellRunner:
         return task
 
     def _on_job_done(
-            self,
-            task: asyncio.Task,
-            command: Optional[str] = None,
-            node_path: Optional[str] = None,
-            on_failure: Optional[OnFailure] = None,
+        self,
+        task: asyncio.Task,
+        command: Optional[str] = None,
+        node_path: Optional[str] = None,
+        on_failure: Optional[OnFailure] = None,
     ) -> None:
         """
         Done callback of a job task: log the failure first, then trigger the

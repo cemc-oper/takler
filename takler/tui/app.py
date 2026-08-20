@@ -16,6 +16,7 @@ The visible pieces live in dedicated widgets:
 * :mod:`takler.tui.tabs` — the right-hand info / parameters / script /
   job / output panes.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -197,9 +198,7 @@ class TaklerTuiApp(App):
 
     # -- Toolbar messages -------------------------------------------
 
-    def on_toolbar_refresh_requested(
-        self, event: Toolbar.RefreshRequested
-    ) -> None:
+    def on_toolbar_refresh_requested(self, event: Toolbar.RefreshRequested) -> None:
         event.stop()
         self.action_refresh()
 
@@ -250,11 +249,7 @@ class TaklerTuiApp(App):
         """Apply a freshly-fetched snapshot to the UI (main thread)."""
         self._snapshot = snapshot
         self._tree.rebuild(snapshot)
-        node = (
-            snapshot.get(self._selected_path)
-            if self._selected_path
-            else None
-        )
+        node = snapshot.get(self._selected_path) if self._selected_path else None
         self._render_tabs(node)
         self._toolbar.set_bunch(snapshot.bunch.name)
         self._toolbar.set_refreshed(datetime.now())
@@ -520,9 +515,7 @@ class TaklerTuiApp(App):
     @work(thread=True, group="control")
     def action_ping(self) -> None:
         ok, msg = self.service.ping()
-        self.call_from_thread(
-            self._set_status, msg, "green" if ok else "bold red"
-        )
+        self.call_from_thread(self._set_status, msg, "green" if ok else "bold red")
 
     def action_requeue(self) -> None:
         self._run_control("requeue", lambda p: self.service.requeue([p]))
@@ -544,9 +537,7 @@ class TaklerTuiApp(App):
                 style="yellow",
             )
             return
-        self._run_control(
-            "run", lambda p: self.service.run([p], force=False)
-        )
+        self._run_control("run", lambda p: self.service.run([p], force=False))
 
     def action_force_menu(self) -> None:
         """Open the per-state submenu under the selected node.
@@ -581,9 +572,7 @@ class TaklerTuiApp(App):
         """
         self._run_control(
             "force_complete",
-            lambda p: self.service.force_state(
-                [p], state="complete", recursive=False
-            ),
+            lambda p: self.service.force_state([p], state="complete", recursive=False),
         )
 
     def _on_force_menu_dismissed(self, state: Optional[str]) -> None:
@@ -615,9 +604,7 @@ class TaklerTuiApp(App):
                 self._set_status, f"Force {state} failed: {exc}", "bold red"
             )
             return
-        self.call_from_thread(
-            self._set_status, f"Force {state}: {path}", "green"
-        )
+        self.call_from_thread(self._set_status, f"Force {state}: {path}", "green")
         self.call_from_thread(self.action_refresh)
 
     def action_free_dep(self) -> None:

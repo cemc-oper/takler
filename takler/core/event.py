@@ -17,16 +17,17 @@ class Event:
         current value of Event
 
     """
+
     def __init__(self, name: str, initial_value: bool = False):
         self.name: str = name
         self.initial_value: bool = initial_value
         self._value: bool = self.initial_value
 
     def __eq__(self, other: "Event") -> bool:
-        return(
-                self.name == other.name
-                and self.value == other.value
-                and self.initial_value == other.initial_value
+        return (
+            self.name == other.name
+            and self.value == other.value
+            and self.initial_value == other.initial_value
         )
 
     def __repr__(self):
@@ -90,7 +91,9 @@ class Event:
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "Event":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "Event":
         """
         Create an Event from dict object.
 

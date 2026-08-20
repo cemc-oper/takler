@@ -10,6 +10,7 @@ where ``node_path`` already starts with ``/`` so it concatenates
 directly onto ``TAKLER_HOME``. Centralising the derivation here keeps
 the two tabs from drifting apart.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

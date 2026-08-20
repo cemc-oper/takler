@@ -13,6 +13,7 @@ lookup, etc.) instead of reimplementing them on top of dicts.
 :class:`ShowSnapshot` wraps the ``Bunch`` and provides path-based
 lookups expected by the TUI.
 """
+
 from __future__ import annotations
 
 import json

@@ -108,6 +108,7 @@ class Node(ABC):
     repeat
     times
     """
+
     def __init__(self, name: str):
         self.name: str = name
 
@@ -115,7 +116,9 @@ class Node(ABC):
         self.state: State = State()
 
         # 默认状态，requeue 时节点会重置为该状态
-        self.default_node_status: Literal[NodeStatus.queued, NodeStatus.complete] = NodeStatus.queued
+        self.default_node_status: Literal[NodeStatus.queued, NodeStatus.complete] = (
+            NodeStatus.queued
+        )
 
         # 树形结构
         self.parent: Optional["Node"] = None
@@ -163,28 +166,27 @@ class Node(ABC):
         result = dict(
             name=self.name,
             state=self.state.to_dict(),
-            class_type=dict(
-                module=self.__module__,
-                name=self.__class__.__name__
-            )
+            class_type=dict(module=self.__module__, name=self.__class__.__name__),
         )
         if self.default_node_status != NodeStatus.queued:
             result["default_node_status"] = self.default_node_status.value
         if len(self.children) != 0:
             result["children"] = [child.to_dict() for child in self.children]
         if len(self.user_parameters) != 0:
-            result["user_parameters"] = [param.to_dict() for key, param in self.user_parameters.items()]
+            result["user_parameters"] = [
+                param.to_dict() for key, param in self.user_parameters.items()
+            ]
         if self.trigger_expression is not None:
             result["trigger"] = self.trigger_expression.expression_str
         if self.complete_trigger_expression is not None:
-            result['complete_trigger'] = self.complete_trigger_expression.expression_str
+            result["complete_trigger"] = self.complete_trigger_expression.expression_str
         if self.is_complete_triggered:
             result["is_complete_triggered"] = self.is_complete_triggered
         if len(self.events) != 0:
             result["events"] = [event.to_dict() for event in self.events]
         if len(self.meters) != 0:
             result["meters"] = [meter.to_dict() for meter in self.meters]
-        if len(self.limits) !=0:
+        if len(self.limits) != 0:
             result["limits"] = [limit.to_dict() for limit in self.limits]
         if len(self.in_limit_manager.in_limit_list) != 0:
             result["in_limit_manager"] = self.in_limit_manager.to_dict()
@@ -196,7 +198,9 @@ class Node(ABC):
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict,  method: SerializationType = SerializationType.Status) -> "Node":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "Node":
         """
         Create ``Node`` based object from dictionary. Use ``d["class_type"]`` to determine which class is to be created.
 
@@ -220,7 +224,9 @@ class Node(ABC):
         return node
 
     @classmethod
-    def fill_from_dict(cls, d: Dict, node: "Node", method: SerializationType = SerializationType.Status) -> "Node":
+    def fill_from_dict(
+        cls, d: Dict, node: "Node", method: SerializationType = SerializationType.Status
+    ) -> "Node":
         """
         Fill a ``Node`` based object from dictionary.
 
@@ -287,7 +293,9 @@ class Node(ABC):
         if "times" in d:
             times = d["times"]
             for time_attr in times:
-                node.add_time_attribute(TimeAttribute.from_dict(time_attr, method=method))
+                node.add_time_attribute(
+                    TimeAttribute.from_dict(time_attr, method=method)
+                )
 
         if "children" in d:
             for child in d["children"]:
@@ -350,7 +358,6 @@ class Node(ABC):
         child_node = self.children.pop(child_node_index)
         child_node.delete_children()
         return child_node
-
 
     def delete_children(self):
         while len(self.children) > 0:
@@ -541,7 +548,9 @@ class Node(ABC):
         self.set_node_status_only(node_status)
         self.handle_status_change()
 
-    def set_default_node_status(self, node_status: Literal[NodeStatus.queued, NodeStatus.complete]):
+    def set_default_node_status(
+        self, node_status: Literal[NodeStatus.queued, NodeStatus.complete]
+    ):
         """
         Set the default node status. ``requeue`` will reset the node to this status
         instead of ``NodeStatus.queued``.
@@ -683,7 +692,9 @@ class Node(ABC):
 
         return self.trigger_expression.evaluate()
 
-    def add_complete_trigger(self, trigger: Union[str, Expression], parse: bool = False):
+    def add_complete_trigger(
+        self, trigger: Union[str, Expression], parse: bool = False
+    ):
         """
         Add complete trigger to node.
 
@@ -798,9 +809,11 @@ class Node(ABC):
     # Parameter ------------------------------------------------------
 
     def add_parameter(
-            self,
-            param: Union[dict[str, Union[str, float, int, bool]], list[Parameter], str, Parameter],
-            value: Optional[Union[str, float, int, bool]] = None
+        self,
+        param: Union[
+            dict[str, Union[str, float, int, bool]], list[Parameter], str, Parameter
+        ],
+        value: Optional[Union[str, float, int, bool]] = None,
     ) -> Optional[Parameter]:
         """
         Add ``Parameter``(s) to this node.
@@ -927,9 +940,7 @@ class Node(ABC):
         user_params = self.user_parameters_only()
         generated_params = self.generated_parameters_only()
 
-        params = {
-            **user_params
-        }
+        params = {**user_params}
         for key, p in generated_params.items():
             if key not in params:
                 params[key] = p
@@ -957,7 +968,9 @@ class Node(ABC):
 
     # Event ----------------------------------------------------------
 
-    def add_event(self, name: str, initial_value: bool = False, check: bool = True) -> Event:
+    def add_event(
+        self, name: str, initial_value: bool = False, check: bool = True
+    ) -> Event:
         if check:
             if self.find_event(name):
                 raise RuntimeError(f"add event failed: event name is duplicate: {name}")
@@ -974,7 +987,10 @@ class Node(ABC):
 
         return False
 
-    def find_event(self, name: str, ) -> Optional[Event]:
+    def find_event(
+        self,
+        name: str,
+    ) -> Optional[Event]:
         for event in self.events:
             if event.name == name:
                 return event
@@ -1019,7 +1035,9 @@ class Node(ABC):
 
     # Limit ----------------------------------------------------------
 
-    def add_in_limit(self, limit_name: str, node_path: Optional[str] = None, tokens: int = 1) -> InLimit:
+    def add_in_limit(
+        self, limit_name: str, node_path: Optional[str] = None, tokens: int = 1
+    ) -> InLimit:
         """
         Add InLimit to this node's InLimitManager.
 
@@ -1055,7 +1073,9 @@ class Node(ABC):
         Limit
         """
         if self.find_limit(name) is not None:
-            raise RuntimeError(f"add_limit failed: duplicate limit {name} for node {self.node_path}")
+            raise RuntimeError(
+                f"add_limit failed: duplicate limit {name} for node {self.node_path}"
+            )
         item = Limit(name, limit)
         item.set_node(self)
         self.limits.append(item)
@@ -1085,7 +1105,9 @@ class Node(ABC):
             If this node already has a ``Limit`` with the same name.
         """
         if self.find_limit(limit.name) is not None:
-            raise RuntimeError(f"add_limit_object failed: duplicate limit {limit.name} for node {self.node_path}")
+            raise RuntimeError(
+                f"add_limit_object failed: duplicate limit {limit.name} for node {self.node_path}"
+            )
         limit.set_node(self)
         self.limits.append(limit)
         return limit
@@ -1317,7 +1339,9 @@ class Node(ABC):
         """
         self.state.suspended = False
 
-    def free_dependencies(self, dep_type: Optional[Literal["all", "time", "trigger"]] = None):
+    def free_dependencies(
+        self, dep_type: Optional[Literal["all", "time", "trigger"]] = None
+    ):
         """
         Ignore some type of dependencies in Node. Including:
 

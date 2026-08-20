@@ -122,8 +122,7 @@ def resolve_connect_config(config: Optional[Path] = None) -> Optional[ConnectCon
         return load_connect_config(env_path)
     except Exception as exc:  # noqa: BLE001 - a stale env var must not abort start-up
         logger.warning(
-            f"ignoring {TAKLER_CONNECT_FILE}={env_path!r}: "
-            f"{type(exc).__name__}: {exc}"
+            f"ignoring {TAKLER_CONNECT_FILE}={env_path!r}: {type(exc).__name__}: {exc}"
         )
         return None
 

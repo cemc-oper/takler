@@ -59,6 +59,7 @@ class Calendar:
     last_real_time
         最后一次更新的真实时间
     """
+
     def __init__(self):
         self.initial_time: Optional[datetime.datetime] = None
         self.flow_time: Optional[datetime.datetime] = None
@@ -196,7 +197,9 @@ class Calendar:
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "Calendar":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "Calendar":
         """
         Create a ``Calendar`` from a dictionary.
 
@@ -221,7 +224,9 @@ class Calendar:
         calendar.flow_time = _datetime_from_dict_value(d.get("flow_time"))
         calendar.duration = _timedelta_from_dict_value(d.get("duration"))
         calendar.increment = _timedelta_from_dict_value(d.get("increment"))
-        calendar.initial_real_time = _datetime_from_dict_value(d.get("initial_real_time"))
+        calendar.initial_real_time = _datetime_from_dict_value(
+            d.get("initial_real_time")
+        )
         calendar.last_real_time = _datetime_from_dict_value(d.get("last_real_time"))
 
         return calendar

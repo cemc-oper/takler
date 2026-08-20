@@ -26,6 +26,7 @@ class Limit:
         list of node path that is occupying the Limit.
 
     """
+
     def __init__(self, name: str, limit: int):
         self.name: str = name
         self.limit: int = limit
@@ -36,10 +37,7 @@ class Limit:
     def __eq__(self, other):
         if not isinstance(other, Limit):
             return False
-        return (
-            self.name == other.name
-            and self.limit == other.limit
-        )
+        return self.name == other.name and self.limit == other.limit
 
     def __hash__(self):
         return hash((self.name, self.limit))
@@ -110,12 +108,14 @@ class Limit:
             name=self.name,
             limit=self.limit,
             node_paths=sorted(list(self.node_paths)),
-            value=self.value
+            value=self.value,
         )
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "Limit":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "Limit":
         name = d["name"]
         limit = d["limit"]
         limit = Limit(name=name, limit=limit)
@@ -144,7 +144,10 @@ class InLimit:
     limit
         the :py:class:`~takler.core.limit.Limit` object
     """
-    def __init__(self, limit_name: str, node_path: Optional[str] = None, tokens: int = 1):
+
+    def __init__(
+        self, limit_name: str, node_path: Optional[str] = None, tokens: int = 1
+    ):
         self.limit_name: str = limit_name
         self.tokens: int = tokens
 
@@ -177,7 +180,9 @@ class InLimit:
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "InLimit":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "InLimit":
         limit_name = d["limit_name"]
         tokens = d["tokens"]
         node_path = d["node_path"]
@@ -197,19 +202,22 @@ class InLimitManager:
     in_limit_list : List[InLimit]
         list of :py:class:`~takler.core.limit.InLimit`
     """
+
     def __init__(self, node: "Node"):
         self.node: "Node" = node
 
         self.in_limit_list: List[InLimit] = list()
 
     def __eq__(self, other):
-        return all([a == b for a,b in zip(self.in_limit_list, other.in_limit_list)])
+        return all([a == b for a, b in zip(self.in_limit_list, other.in_limit_list)])
 
     # Access ----------------------------------------
 
     def add_in_limit(self, in_limit: InLimit):
         if self.has_in_limit(in_limit):
-            raise RuntimeError(f"add_in_limit failed: duplicate InLimit in node: {self.node.node_path}")
+            raise RuntimeError(
+                f"add_in_limit failed: duplicate InLimit in node: {self.node.node_path}"
+            )
         self.in_limit_list.append(in_limit)
 
     def delete_in_limit(self, name: str) -> bool:
@@ -266,8 +274,11 @@ class InLimitManager:
         """
         for item in self.in_limit_list:
             if (
-                    ((item.limit_name is None and in_limit.limit_name is None) or (item.limit_name == in_limit.limit_name))
-                    and ((item.node_path is None and in_limit.node_path is None) or (item.node_path == in_limit.node_path))
+                (item.limit_name is None and in_limit.limit_name is None)
+                or (item.limit_name == in_limit.limit_name)
+            ) and (
+                (item.node_path is None and in_limit.node_path is None)
+                or (item.node_path == in_limit.node_path)
             ):
                 return True
         return False
@@ -398,7 +409,9 @@ class InLimitManager:
         return result
 
     @classmethod
-    def fill_from_dict(cls, d: Dict, node: "Node", method: SerializationType = SerializationType.Status) -> "InLimitManager":
+    def fill_from_dict(
+        cls, d: Dict, node: "Node", method: SerializationType = SerializationType.Status
+    ) -> "InLimitManager":
         in_limit_list = d["in_limit_list"]
         for in_limit in in_limit_list:
             node.add_in_limit(

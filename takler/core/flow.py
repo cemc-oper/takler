@@ -21,7 +21,9 @@ class Flow(NodeContainer):
         self.calendar: Calendar = Calendar()
         self.begun: bool = False
 
-        self.generated_parameters: FlowGeneratedParameters = FlowGeneratedParameters(flow=self)
+        self.generated_parameters: FlowGeneratedParameters = FlowGeneratedParameters(
+            flow=self
+        )
 
     # Serialization ------------------------------------
 
@@ -39,8 +41,9 @@ class Flow(NodeContainer):
         return result
 
     @classmethod
-    def fill_from_dict(cls, d: Dict, node: "Flow",
-                       method: SerializationType = SerializationType.Status) -> "Flow":
+    def fill_from_dict(
+        cls, d: Dict, node: "Flow", method: SerializationType = SerializationType.Status
+    ) -> "Flow":
         """
         Fill a ``Flow`` from a dictionary.
 
@@ -148,7 +151,9 @@ class Flow(NodeContainer):
             The flow has already begun and ``force`` is not set.
         """
         if self.begun and not force:
-            raise FlowStateError(f"flow is already begun: {self.name}", flow_name=self.name)
+            raise FlowStateError(
+                f"flow is already begun: {self.name}", flow_name=self.name
+            )
 
         self.requeue_calendar()
         super(Flow, self).requeue()
@@ -168,13 +173,12 @@ class FlowGeneratedParameters(BaseModel):
     time
         current time
     """
+
     flow: Flow
     date: Parameter = Parameter(DATE, None)
     time: Parameter = Parameter(TIME, None)
 
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def update_parameters(self):
         """

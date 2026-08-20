@@ -7,6 +7,7 @@ scanning ``TAKLER_HOME`` for ``.job<n>`` files), but the widget layout
 and the read-on-a-worker-thread rendering are identical; this base
 captures the common parts.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

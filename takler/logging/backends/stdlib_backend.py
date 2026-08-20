@@ -260,7 +260,9 @@ class _StdlibNamedLogger(NamedLogger):
         super().__init__(component)
         self._logger = logger
 
-    def log(self, level: LogLevel, message: str, *args: object, **kwargs: object) -> None:
+    def log(
+        self, level: LogLevel, message: str, *args: object, **kwargs: object
+    ) -> None:
         numeric_level = int(level.value)
 
         # Merge any caller-supplied ``extra`` with the bound component name so

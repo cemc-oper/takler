@@ -9,6 +9,7 @@ Connection resolution (highest priority first):
 2. ``--host`` / ``--port`` (or ``$TAKLER_HOST`` / ``$TAKLER_PORT``).
 3. defaults from :mod:`takler.constant`.
 """
+
 from __future__ import annotations
 
 import os

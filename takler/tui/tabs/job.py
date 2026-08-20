@@ -9,6 +9,7 @@ The generated file is the rendered Jinja template (``.takler``) flattened
 into a runnable shell script. We reuse the same rule to find it from the
 TUI's snapshot of the bunch.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -70,9 +71,7 @@ class JobTab(_FileViewTab):
                 text = candidate.read_text(errors="replace")
             except OSError as exc:
                 error = f"read error: {exc}"
-        self.app.call_from_thread(
-            self._apply_job, node_path, candidate, text, error
-        )
+        self.app.call_from_thread(self._apply_job, node_path, candidate, text, error)
 
     def _apply_job(
         self,
@@ -107,7 +106,7 @@ class JobTab(_FileViewTab):
                 name = entry.name
                 if not name.startswith(stem):
                     continue
-                suffix = name[len(stem):]
+                suffix = name[len(stem) :]
                 if suffix.isdigit():
                     candidates.append(entry)
         except OSError:

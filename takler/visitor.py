@@ -23,6 +23,7 @@ class SimplePrintVisitor(NodeVisitor):
     """
     Print node tree with state.
     """
+
     def __init__(self):
         NodeVisitor.__init__(self)
         self.level = 0
@@ -59,16 +60,18 @@ class PrintVisitor(NodeVisitor):
     show_repeat
         print repeat
     """
+
     def __init__(
-            self, stream: IO,
-            show_parameter: bool = False,
-            show_user_parameter: Optional[bool] = None,
-            show_generated_parameter: Optional[bool] = None,
-            show_trigger: bool = False,
-            show_limit: bool = True,
-            show_event: bool = True,
-            show_meter: bool = True,
-            show_repeat: bool = True,
+        self,
+        stream: IO,
+        show_parameter: bool = False,
+        show_user_parameter: Optional[bool] = None,
+        show_generated_parameter: Optional[bool] = None,
+        show_trigger: bool = False,
+        show_limit: bool = True,
+        show_event: bool = True,
+        show_meter: bool = True,
+        show_repeat: bool = True,
     ):
         NodeVisitor.__init__(self)
         self.level: int = 0
@@ -99,14 +102,20 @@ class PrintVisitor(NodeVisitor):
         pre_spaces = " " * len(f"{place_holder}|- ")
 
         if self.show_repeat and node.repeat is not None:
-            self.stream.write(f"{pre_spaces} repeat {node.repeat.r.name} {node.repeat.value()} [{node.repeat.start()}, {node.repeat.end()}]\n")
+            self.stream.write(
+                f"{pre_spaces} repeat {node.repeat.r.name} {node.repeat.value()} [{node.repeat.start()}, {node.repeat.end()}]\n"
+            )
 
         if self.show_trigger and node.trigger_expression is not None:
-            self.stream.write(f"{pre_spaces} trigger {node.trigger_expression.expression_str}\n")
+            self.stream.write(
+                f"{pre_spaces} trigger {node.trigger_expression.expression_str}\n"
+            )
 
         if self.show_trigger:
             for time_attr in node.times:
-                self.stream.write(f"{pre_spaces} time {time_attr.time.hour:02}:{time_attr.time.minute:02}\n")
+                self.stream.write(
+                    f"{pre_spaces} time {time_attr.time.hour:02}:{time_attr.time.minute:02}\n"
+                )
 
         if self.show_user_parameter:
             user_params = node.user_parameters_only()
@@ -120,7 +129,9 @@ class PrintVisitor(NodeVisitor):
 
         if self.show_limit and len(node.limits) > 0:
             for limit in node.limits:
-                self.stream.write(f"{pre_spaces} limit {limit.name} [{limit.value}/{limit.limit}]\n")
+                self.stream.write(
+                    f"{pre_spaces} limit {limit.name} [{limit.value}/{limit.limit}]\n"
+                )
 
         if self.show_event and len(node.events) > 0:
             for event in node.events:
@@ -129,7 +140,9 @@ class PrintVisitor(NodeVisitor):
 
         if self.show_meter and len(node.meters) > 0:
             for meter in node.meters:
-                self.stream.write(f"{pre_spaces} meter {meter.name} {meter.min_value} {meter.max_value} [{meter.value}]\n")
+                self.stream.write(
+                    f"{pre_spaces} meter {meter.name} {meter.min_value} {meter.max_value} [{meter.value}]\n"
+                )
 
     def before_visit_child(self):
         self.level += 1

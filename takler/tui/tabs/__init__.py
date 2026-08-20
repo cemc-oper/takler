@@ -1,4 +1,5 @@
 """Right-hand tab views for the takler TUI."""
+
 from __future__ import annotations
 
 from .info import InfoTab

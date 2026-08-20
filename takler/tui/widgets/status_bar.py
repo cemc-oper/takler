@@ -5,6 +5,7 @@ messages on the right. It also maps the legacy status palette
 (``green`` / ``yellow`` / ``bold red``) onto a Rich style for the
 right-hand label; the matching toast severity is handled by the app.
 """
+
 from __future__ import annotations
 
 from typing import Dict, Optional

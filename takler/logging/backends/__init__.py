@@ -122,7 +122,9 @@ class NamedLogger(abc.ABC):
         self.component = component
 
     @abc.abstractmethod
-    def log(self, level: LogLevel, message: str, *args: object, **kwargs: object) -> None:
+    def log(
+        self, level: LogLevel, message: str, *args: object, **kwargs: object
+    ) -> None:
         """Emit a record at ``level`` attributed to this logger's component.
 
         Concrete implementations forward to the active backend. They must not

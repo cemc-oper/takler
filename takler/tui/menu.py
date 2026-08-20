@@ -15,6 +15,7 @@ bindings, so adding a new action is one entry.
 :class:`ConfirmModal` is the third modal in the module — a yes/no
 dialog used by destructive actions (e.g. forcing a state).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -90,9 +91,7 @@ class NodeAction:
     needs_node: bool = True
     confirm: bool = False
     refresh_after: bool = False
-    applies_to: Callable[[Node], bool] = field(
-        default=lambda node: True, repr=False
-    )
+    applies_to: Callable[[Node], bool] = field(default=lambda node: True, repr=False)
 
 
 def _task_only(node: Node) -> bool:
@@ -101,9 +100,7 @@ def _task_only(node: Node) -> bool:
 
 
 NODE_ACTIONS: List[NodeAction] = [
-    NodeAction(
-        "refresh", "Refresh", "r", "refresh", needs_node=False
-    ),
+    NodeAction("refresh", "Refresh", "r", "refresh", needs_node=False),
     NodeAction(
         "run",
         "Run",
@@ -240,9 +237,7 @@ class _AnchoredOptionMenu(ModalScreen[Optional[str]]):
         card.styles.offset = (x, y)
         self.query_one(OptionList).focus()
 
-    def on_option_list_option_selected(
-        self, event: OptionList.OptionSelected
-    ) -> None:
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()
         self.dismiss(event.option.id)
 

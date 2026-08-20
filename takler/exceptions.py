@@ -134,11 +134,11 @@ class ExpressionSyntaxError(TaklerError, ValueError):
     """
 
     def __init__(
-            self,
-            message: str,
-            expression: Optional[str] = None,
-            line: Optional[int] = None,
-            column: Optional[int] = None,
+        self,
+        message: str,
+        expression: Optional[str] = None,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
     ) -> None:
         super().__init__(message)
         self.expression = expression

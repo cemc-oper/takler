@@ -20,6 +20,7 @@ class Expression:
     expression_str
         original expression string.
     """
+
     def __init__(self, expression_str: str):
         self.free: bool = False
         self.ast: Optional[AstRoot] = None

@@ -9,6 +9,7 @@ Palette mirrors ecFlow UI conventions:
 * ``complete``  — yellow (finished successfully)
 * ``aborted``   — red (failed)
 """
+
 from __future__ import annotations
 
 from typing import Dict

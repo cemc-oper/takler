@@ -6,11 +6,18 @@ from lark.exceptions import LarkError
 from ..exceptions import ExpressionSyntaxError
 from .expression_ast import (
     AstNodePath,
-    AstOpEq, AstOpAnd,
-    AstOpOr, AstOpGt, AstOpGe, AstOpLt, AstOpLe,
+    AstOpEq,
+    AstOpAnd,
+    AstOpOr,
+    AstOpGt,
+    AstOpGe,
+    AstOpLt,
+    AstOpLe,
     AstMathAdd,
-    AstNodeStatus, AstRoot,
-    AstVariablePath, AstInteger,
+    AstNodeStatus,
+    AstRoot,
+    AstVariablePath,
+    AstInteger,
 )
 from .state import NodeStatus
 
@@ -19,6 +26,7 @@ class ExpressionTransformer(Transformer):
     """
     Transform Lark tokens into takler expression AST.
     """
+
     def node_path(self, items) -> AstNodePath:
         """
         path for a Node, including Flow, NodeContainer and Task
@@ -151,7 +159,8 @@ class ExpressionTransformer(Transformer):
 
 
 # Lark version of expression trigger parser.
-trigger_parser: Lark = Lark(r"""
+trigger_parser: Lark = Lark(
+    r"""
     !node_path: ("."|"..")?"/"node_name("/"node_name)*
     !variable_path: node_path":"variable_name
 
@@ -199,7 +208,9 @@ trigger_parser: Lark = Lark(r"""
     %import common.WS
     %import common.NUMBER
     %ignore WS
-""", start="expression")
+""",
+    start="expression",
+)
 
 
 def _position_of(exc: BaseException, attribute_name: str) -> Optional[int]:

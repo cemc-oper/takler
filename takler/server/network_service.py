@@ -48,6 +48,7 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
     port : int
         Service port
     """
+
     def __init__(
         self,
         scheduler: Scheduler,
@@ -72,7 +73,9 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
         # logged and then the shared fatal-shutdown trigger is fired so the
         # server exits through its unified clean-shutdown path.
         self.exception_policy: ExceptionPolicy = (
-            exception_policy if exception_policy is not None else DEFAULT_EXCEPTION_POLICY
+            exception_policy
+            if exception_policy is not None
+            else DEFAULT_EXCEPTION_POLICY
         )
         self.fatal_shutdown: Optional[Callable[[], None]] = fatal_shutdown
 
@@ -81,7 +84,7 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
         """
         str: gRPC server's listen address
         """
-        return f'{self.host}:{self.port}'
+        return f"{self.host}:{self.port}"
 
     async def start(self):
         """
@@ -322,7 +325,9 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
 
         def op():
             for variable_path in paths:
-                result = self.scheduler.run_command_force(variable_path, state=state, recursive=recursive)
+                result = self.scheduler.run_command_force(
+                    variable_path, state=state, recursive=recursive
+                )
                 if result:
                     logger.info(f"Force: {variable_path} {state}")
                 else:
@@ -428,4 +433,3 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             op,
             error_response=lambda exc: takler_pb2.CoroutineResponse(),
         )
-

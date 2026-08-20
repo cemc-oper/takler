@@ -1,4 +1,5 @@
 """Script tab: dump the contents of the ``TAKLER_SCRIPT`` template file."""
+
 from __future__ import annotations
 
 from pathlib import Path

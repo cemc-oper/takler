@@ -234,5 +234,5 @@ def get_port():
     int
     """
     sock = socket.socket()
-    sock.bind(('', 0))
+    sock.bind(("", 0))
     return sock.getsockname()[1]

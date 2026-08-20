@@ -17,6 +17,7 @@ scripts, stderr, etc.), so users can inspect previous tries or
 ancillary files without leaving the TUI. Clicking a row tails that
 file; clicking a column header toggles the sort.
 """
+
 from __future__ import annotations
 
 import os
@@ -132,9 +133,7 @@ class OutputTab(Vertical):
         self._title = Static("(no node selected)", classes="title")
         self._log: RichLog = RichLog(highlight=True, markup=False, wrap=False)
         self._files_title = Static("", classes="subtitle")
-        self._table: DataTable = DataTable(
-            zebra_stripes=True, cursor_type="row"
-        )
+        self._table: DataTable = DataTable(zebra_stripes=True, cursor_type="row")
         self._rows: List[_FileRow] = []
         # Default: most recently modified first.
         self._sort_key: str = "mtime"
@@ -232,9 +231,7 @@ class OutputTab(Vertical):
                 )
             )
         else:
-            self._title.update(
-                f"{node_path}: {log_path} (last {_TAIL_LINES} lines)"
-            )
+            self._title.update(f"{node_path}: {log_path} (last {_TAIL_LINES} lines)")
             for line in log_lines or []:
                 self._log.write(line)
         self._files_title.update(
@@ -244,9 +241,7 @@ class OutputTab(Vertical):
 
     # -- DataTable handlers -----------------------------------------
 
-    def on_data_table_header_selected(
-        self, event: DataTable.HeaderSelected
-    ) -> None:
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         key = event.column_key.value
         if key is None or key not in {k for _, k in _COLUMNS}:
             return
@@ -258,9 +253,7 @@ class OutputTab(Vertical):
         self._refresh_table()
         event.stop()
 
-    def on_data_table_row_selected(
-        self, event: DataTable.RowSelected
-    ) -> None:
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         key = event.row_key.value
         if not key:
             return
@@ -350,9 +343,7 @@ class OutputTab(Vertical):
     # -- File discovery ---------------------------------------------
 
     @staticmethod
-    def _prefix_for(
-        node: NodeInfo, snapshot: Optional[ShowSnapshot]
-    ) -> Optional[Path]:
+    def _prefix_for(node: NodeInfo, snapshot: Optional[ShowSnapshot]) -> Optional[Path]:
         return artifact_prefix(node, snapshot)
 
     @staticmethod
@@ -389,9 +380,7 @@ class OutputTab(Vertical):
         return rows
 
     @staticmethod
-    def _pick_output(
-        prefix: Optional[Path], rows: List[_FileRow]
-    ) -> Optional[Path]:
+    def _pick_output(prefix: Optional[Path], rows: List[_FileRow]) -> Optional[Path]:
         """Choose the file whose contents to tail in the log pane.
 
         Mirrors the previous behaviour: prefer ``<prefix>.0`` (try 0),
@@ -408,9 +397,7 @@ class OutputTab(Vertical):
             if row.path.name == target_zero:
                 return row.path
 
-        digit_rows = [
-            r for r in rows if r.path.name[len(stem_dot):].isdigit()
-        ]
+        digit_rows = [r for r in rows if r.path.name[len(stem_dot) :].isdigit()]
         if not digit_rows:
             return None
         return max(digit_rows, key=lambda r: r.mtime).path

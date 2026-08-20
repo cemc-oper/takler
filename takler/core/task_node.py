@@ -7,10 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from .node import Node
 from .state import NodeStatus
 from .limit import Limit
-from .parameter import (
-    Parameter,
-    TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
-)
+from .parameter import Parameter, TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
 from .util import logger, SerializationType
 
 
@@ -23,7 +20,9 @@ class Task(Node):
 
         self.try_no: int = 0
 
-        self.generated_parameters: TaskNodeGeneratedParameters = TaskNodeGeneratedParameters(node=self)
+        self.generated_parameters: TaskNodeGeneratedParameters = (
+            TaskNodeGeneratedParameters(node=self)
+        )
 
     def __repr__(self):
         return f"Task {self.name}"
@@ -32,16 +31,20 @@ class Task(Node):
 
     def to_dict(self) -> Dict:
         result = super().to_dict()
-        result.update(dict(
-            task_id=self.task_id,
-            aborted_reason=self.aborted_reason,
-            try_no=self.try_no,
-        ))
+        result.update(
+            dict(
+                task_id=self.task_id,
+                aborted_reason=self.aborted_reason,
+                try_no=self.try_no,
+            )
+        )
 
         return result
 
     @classmethod
-    def fill_from_dict(cls, d: Dict, node: "Task", method: SerializationType = SerializationType.Status) -> "Task":
+    def fill_from_dict(
+        cls, d: Dict, node: "Task", method: SerializationType = SerializationType.Status
+    ) -> "Task":
         Node.fill_from_dict(d=d, node=node, method=method)
 
         task_id = d["task_id"]
@@ -104,10 +107,10 @@ class Task(Node):
         # check node status
         node_status = self.state.node_status
         if node_status in (
-                NodeStatus.complete,
-                NodeStatus.active,
-                NodeStatus.submitted,
-                NodeStatus.unknown,
+            NodeStatus.complete,
+            NodeStatus.active,
+            NodeStatus.submitted,
+            NodeStatus.unknown,
         ):
             return False
 
@@ -236,9 +239,7 @@ class TaskNodeGeneratedParameters(BaseModel):
     takler_rid: Parameter = Parameter(TAKLER_RID, None)
     takler_try_no: Parameter = Parameter(TAKLER_TRY_NO, None)
 
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def update_parameters(self):
         """
@@ -282,6 +283,7 @@ def task(name: str):
     -------
 
     """
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -298,7 +300,9 @@ def task(name: str):
                     self.complete()
 
             return RunTask()
+
         return wrapper
+
     return decorator
 
 
@@ -322,6 +326,7 @@ def async_task(name: str):
                     asyncio.run(run_func())
 
             return RunTask()
-        return wrapper
-    return decorator
 
+        return wrapper
+
+    return decorator

@@ -18,6 +18,7 @@ class Meter:
     _value : int
         current value
     """
+
     def __init__(self, name: str, min_value: int, max_value: int):
         self.name: str = name
         self.min_value: int = min_value
@@ -104,12 +105,14 @@ class Meter:
             name=self.name,
             min_value=self.min_value,
             max_value=self.max_value,
-            value=self.value
+            value=self.value,
         )
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "Meter":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "Meter":
         """
         Create a Meter from dict object.
 

@@ -11,12 +11,7 @@ from takler.logging import get_logger
 from takler.visitor import pre_order_travel, NodeVisitor
 
 
-from .constant import (
-    TAKLER_SCRIPT,
-    TAKLER_JOB,
-    TAKLER_JOBOUT,
-    JOB_SCRIPT_EXTENSION
-)
+from .constant import TAKLER_SCRIPT, TAKLER_JOB, TAKLER_JOBOUT, JOB_SCRIPT_EXTENSION
 from .shell_render import ShellRender
 from .shell_runner import ShellRunner
 
@@ -34,6 +29,7 @@ class ShellScriptTask(Task):
     * set ``script_path`` attribute, and ``update_generated_parameters()`` method will use it to generate TAKLER_SCRIPT parameter.
     * set ``TAKLER_SCRIPT`` parameter as a user parameter to override generated ``TAKLER_SCRIPT`` parameter.
     """
+
     def __init__(self, name: str, script_path: Optional[Union[str, Path]] = None):
         super(ShellScriptTask, self).__init__(name)
 
@@ -45,18 +41,20 @@ class ShellScriptTask(Task):
 
     def to_dict(self) -> Dict:
         result = super().to_dict()
-        result.update(dict(
-            script_path=None if self.script_path is None else str(self.script_path),
-        ))
+        result.update(
+            dict(
+                script_path=None if self.script_path is None else str(self.script_path),
+            )
+        )
 
         return result
 
     @classmethod
     def fill_from_dict(
-            cls,
-            d: Dict,
-            node: "ShellScriptTask",
-            method: SerializationType = SerializationType.Status
+        cls,
+        d: Dict,
+        node: "ShellScriptTask",
+        method: SerializationType = SerializationType.Status,
     ) -> "ShellScriptTask":
         Task.fill_from_dict(d=d, node=node, method=method)
 
@@ -211,10 +209,14 @@ class ShellScriptTaskGeneratedParameters(BaseModel):
         self.takler_script.value = self.node.script_path
 
         home_param = self.node.find_parent_parameter(TAKLER_HOME)
-        job_path = Path(f"{home_param.value}{self.node.node_path}.{JOB_SCRIPT_EXTENSION}{self.node.try_no}")
+        job_path = Path(
+            f"{home_param.value}{self.node.node_path}.{JOB_SCRIPT_EXTENSION}{self.node.try_no}"
+        )
         self.takler_job.value = job_path.absolute()
 
-        jobout_path = Path(f"{home_param.value}{self.node.node_path}.{self.node.try_no}")
+        jobout_path = Path(
+            f"{home_param.value}{self.node.node_path}.{self.node.try_no}"
+        )
         self.takler_jobout.value = jobout_path.absolute()
 
     def find_parameter(self, name: str) -> Optional[Parameter]:
@@ -239,6 +241,7 @@ class CheckJobCreationVisitor(NodeVisitor):
     """
     A node visitor to check all ``ShellScriptTask``s' job creation.
     """
+
     def __init__(self):
         super(CheckJobCreationVisitor, self).__init__()
         self.total = 0
@@ -266,4 +269,6 @@ def check_job_creation(flow: Flow):
     """
     visitor = CheckJobCreationVisitor()
     pre_order_travel(flow, visitor)
-    logger.info(f"check job creation results: {visitor.total} total, {visitor.success} success, {visitor.failed} failed.")
+    logger.info(
+        f"check job creation results: {visitor.total} total, {visitor.success} success, {visitor.failed} failed."
+    )

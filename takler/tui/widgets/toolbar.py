@@ -10,6 +10,7 @@ button and when the countdown fills. The app listens for that message,
 performs the gRPC refresh, and calls back into :meth:`set_bunch`,
 :meth:`set_refreshed`, and :meth:`reset_countdown`.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -134,7 +135,10 @@ class Toolbar(Horizontal):
         self._auto_refresh_seconds = auto_refresh_seconds
 
         self._refresh_button: Button = Button(
-            "↻", id="toolbar-refresh", variant="primary", compact=True,
+            "↻",
+            id="toolbar-refresh",
+            variant="primary",
+            compact=True,
             tooltip="Refresh (r)",
         )
         self._host_label: Static = Static(host, id="toolbar-host")
@@ -152,7 +156,9 @@ class Toolbar(Horizontal):
         # Auto-refresh on/off switch.
         self._auto_refresh_enabled: bool = True
         self._auto_switch: Switch = Switch(
-            value=True, id="toolbar-auto-switch", animate=False,
+            value=True,
+            id="toolbar-auto-switch",
+            animate=False,
             tooltip="Toggle auto-refresh",
         )
         self._bunch_label: Static = Static("", id="toolbar-bunch")
@@ -176,9 +182,7 @@ class Toolbar(Horizontal):
         self._countdown_bar.tooltip = (
             f"Auto-refresh every {self._auto_refresh_seconds}s"
         )
-        self._countdown_bar.update(
-            total=self._auto_refresh_seconds, progress=0
-        )
+        self._countdown_bar.update(total=self._auto_refresh_seconds, progress=0)
         self._countdown_timer = self.set_interval(1.0, self._tick_countdown)
 
     # -- Toolbar interactions ---------------------------------------
@@ -205,9 +209,7 @@ class Toolbar(Horizontal):
         else:
             # Empty the bar so it's clear nothing is counting down.
             self._countdown_elapsed = 0
-            self._countdown_bar.update(
-                total=self._auto_refresh_seconds, progress=0
-            )
+            self._countdown_bar.update(total=self._auto_refresh_seconds, progress=0)
         self.post_message(self.AutoRefreshToggled(enabled))
 
     # -- Auto-refresh countdown -------------------------------------
@@ -233,9 +235,7 @@ class Toolbar(Horizontal):
     def reset_countdown(self) -> None:
         """Restart the countdown from zero (empty bar)."""
         self._countdown_elapsed = 0
-        self._countdown_bar.update(
-            total=self._auto_refresh_seconds, progress=0
-        )
+        self._countdown_bar.update(total=self._auto_refresh_seconds, progress=0)
 
     def _refresh_in_progress(self) -> bool:
         for worker in self.app.workers:

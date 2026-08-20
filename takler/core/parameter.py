@@ -33,7 +33,11 @@ class Parameter(object):
         return f"Parameter<{self.name}, {self.value}>"
 
     def __eq__(self, other):
-        return type(other) is type(self) and other.name == self.name and other.value == self.value
+        return (
+            type(other) is type(self)
+            and other.name == self.name
+            and other.value == self.value
+        )
 
     @property
     def value(self):
@@ -59,14 +63,13 @@ class Parameter(object):
                 }
 
         """
-        result = dict(
-            name=self.name,
-            value=self._value
-        )
+        result = dict(name=self.name, value=self._value)
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "Parameter":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "Parameter":
         """
 
         Parameters

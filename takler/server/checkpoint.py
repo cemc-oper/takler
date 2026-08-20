@@ -127,8 +127,8 @@ def _count_nodes(node: Node) -> int:
 
 
 def _resolve_interval(
-        explicit: Optional[float] = None,
-        connect_config: Optional[ConnectConfig] = None,
+    explicit: Optional[float] = None,
+    connect_config: Optional[ConnectConfig] = None,
 ) -> float:
     """Resolve the effective snapshot period in seconds.
 
@@ -178,8 +178,8 @@ def _resolve_interval(
 
 
 def _resolve_path(
-        explicit: Optional[Union[str, Path]] = None,
-        connect_config: Optional[ConnectConfig] = None,
+    explicit: Optional[Union[str, Path]] = None,
+    connect_config: Optional[ConnectConfig] = None,
 ) -> Path:
     """Resolve the effective Checkpoint_File path.
 
@@ -202,9 +202,7 @@ def _resolve_path(
     Returns:
         The Checkpoint_File path.
     """
-    if explicit is not None and not (
-            isinstance(explicit, str) and _is_blank(explicit)
-    ):
+    if explicit is not None and not (isinstance(explicit, str) and _is_blank(explicit)):
         return Path(explicit)
 
     if connect_config is not None:
@@ -229,11 +227,11 @@ class CheckpointManager:
     """
 
     def __init__(
-            self,
-            bunch: Bunch,
-            checkpoint_file: Optional[Union[str, Path]] = None,
-            interval: Optional[float] = None,
-            connect_config: Optional[ConnectConfig] = None,
+        self,
+        bunch: Bunch,
+        checkpoint_file: Optional[Union[str, Path]] = None,
+        interval: Optional[float] = None,
+        connect_config: Optional[ConnectConfig] = None,
     ):
         """Resolve the snapshot configuration for ``bunch``.
 
@@ -414,10 +412,10 @@ class CheckpointManager:
         os.replace(main_temp, self.checkpoint_file)
 
     def _write_steps(
-            self,
-            payload: str,
-            main_temp: Path,
-            backup_temp: Path,
+        self,
+        payload: str,
+        main_temp: Path,
+        backup_temp: Path,
     ) -> List[Tuple[str, Callable[[], None]]]:
         """Return the ordered file operations of one snapshot write.
 
@@ -484,7 +482,7 @@ class CheckpointManager:
         backup_temp = self._temp_path(self.backup_file)
 
         for index, (name, action) in enumerate(
-                self._write_steps(payload, main_temp, backup_temp)
+            self._write_steps(payload, main_temp, backup_temp)
         ):
             try:
                 action()
@@ -699,8 +697,7 @@ class CheckpointManager:
                 flow_count, node_count = self._restore_into_bunch(snapshot)
             except Exception as exc:  # noqa: BLE001 - boundary is intentional
                 logger.error(
-                    f"failed to restore the bunch from checkpoint file "
-                    f"{path}: {exc!r}"
+                    f"failed to restore the bunch from checkpoint file {path}: {exc!r}"
                 )
                 failed.append(path)
                 continue
@@ -832,15 +829,9 @@ class CheckpointManager:
         flow_count = 0
         node_count = 0
         for flow_dict in flow_dicts:
-            name = (
-                flow_dict.get("name")
-                if isinstance(flow_dict, dict)
-                else None
-            )
+            name = flow_dict.get("name") if isinstance(flow_dict, dict) else None
             try:
-                flow = Flow.from_dict(
-                    flow_dict, method=SerializationType.Status
-                )
+                flow = Flow.from_dict(flow_dict, method=SerializationType.Status)
             except Exception as exc:  # noqa: BLE001 - boundary is intentional
                 logger.error(
                     f"failed to restore flow {name!r} from checkpoint file "

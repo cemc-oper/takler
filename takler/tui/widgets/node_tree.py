@@ -11,6 +11,7 @@ state and the cursor across refreshes), so the app only has to call
 (:meth:`path_at_hover`, :meth:`node_at_line`, :meth:`select_path`,
 :meth:`anchor_for_cursor`) for menu / selection wiring.
 """
+
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
@@ -170,11 +171,7 @@ class NodeTree(Tree[str]):
 
     def _expanded_paths(self) -> set[str]:
         """Paths whose tree node is currently expanded."""
-        return {
-            path
-            for path, node in self._tree_nodes.items()
-            if node.is_expanded
-        }
+        return {path for path, node in self._tree_nodes.items() if node.is_expanded}
 
     def _cursor_path(self) -> Optional[str]:
         """Path under the tree cursor, if it maps to a real node."""

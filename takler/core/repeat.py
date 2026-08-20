@@ -101,12 +101,12 @@ class RepeatBase(ABC):
         """
 
     @abstractmethod
-    def to_dict(self) -> Dict:
-        ...
+    def to_dict(self) -> Dict: ...
 
     @staticmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "RepeatBase":
-        ...
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "RepeatBase": ...
 
 
 class RepeatDate(RepeatBase):
@@ -124,12 +124,23 @@ class RepeatDate(RepeatBase):
     _value
         Current date
     """
+
     DATE_FORMAT = "%Y%m%d"
 
-    def __init__(self, name: str, start_date: Union[str, int], end_date: Union[str, int], step: int = 1):
+    def __init__(
+        self,
+        name: str,
+        start_date: Union[str, int],
+        end_date: Union[str, int],
+        step: int = 1,
+    ):
         super(RepeatDate, self).__init__(name=name)
-        self.start_date: date = datetime.strptime(str(start_date), RepeatDate.DATE_FORMAT).date()
-        self.end_date: date = datetime.strptime(str(end_date), RepeatDate.DATE_FORMAT).date()
+        self.start_date: date = datetime.strptime(
+            str(start_date), RepeatDate.DATE_FORMAT
+        ).date()
+        self.end_date: date = datetime.strptime(
+            str(end_date), RepeatDate.DATE_FORMAT
+        ).date()
         self.step_day: timedelta = timedelta(days=step)
         self._value: date = self.start_date
 
@@ -194,12 +205,16 @@ class RepeatDate(RepeatBase):
 
         # check range
         if value < self.start_date or value > self.end_date:
-            raise ValueError(f"value must be in range [{self.start_date}, {self.end_date}], but current is {value}")
+            raise ValueError(
+                f"value must be in range [{self.start_date}, {self.end_date}], but current is {value}"
+            )
 
         # check step
         diff = (value - self.start_date) / self.step_day
         if not diff.is_integer():
-            raise ValueError(f"value must be in multiply step {self.step} from {self.start_date}, but current is {value}")
+            raise ValueError(
+                f"value must be in multiply step {self.step} from {self.start_date}, but current is {value}"
+            )
 
         self.value = value
 
@@ -207,9 +222,7 @@ class RepeatDate(RepeatBase):
         self._value = self.start_date
 
     def generated_parameters(self) -> Dict[str, Parameter]:
-        return {
-            self.name: Parameter(self.name, self.value)
-        }
+        return {self.name: Parameter(self.name, self.value)}
 
     # Serialization ---------------------------------------
 
@@ -220,21 +233,20 @@ class RepeatDate(RepeatBase):
             end_date=self.end_date.strftime(self.DATE_FORMAT),
             step=self.step,
             value=self.value,
-            class_type=self.__class__.__name__
+            class_type=self.__class__.__name__,
         )
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "RepeatDate":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "RepeatDate":
         name = d["name"]
         start_date = d["start_date"]
         end_date = d["end_date"]
         step = d["step"]
         repeat_date = RepeatDate(
-            name=name,
-            start_date=start_date,
-            end_date=end_date,
-            step=step
+            name=name, start_date=start_date, end_date=end_date, step=step
         )
 
         if method == SerializationType.Status:
@@ -253,6 +265,7 @@ class Repeat:
     r
         inner ``RepeatBase`` object. If ``None``, ``empty`` returns ``False``.
     """
+
     def __init__(self, r: Optional[RepeatBase] = None):
         self.r = r
 
@@ -338,13 +351,13 @@ class Repeat:
     # Serialization -----------------------------------------------------
 
     def to_dict(self) -> Dict:
-        result = dict(
-            r=self.r.to_dict()
-        )
+        result = dict(r=self.r.to_dict())
         return result
 
     @classmethod
-    def from_dict(cls, d: Dict, method: SerializationType = SerializationType.Status) -> "Repeat":
+    def from_dict(
+        cls, d: Dict, method: SerializationType = SerializationType.Status
+    ) -> "Repeat":
         r = d["r"]
         class_name = r["class_type"]
         class_type = REPEAT_ATTR_MAP[class_name]
@@ -353,6 +366,4 @@ class Repeat:
         return repeat
 
 
-REPEAT_ATTR_MAP = dict(
-    RepeatDate=RepeatDate
-)
+REPEAT_ATTR_MAP = dict(RepeatDate=RepeatDate)

@@ -12,9 +12,7 @@ from .node import Node
 from .state import NodeStatus
 from .event import Event
 from .meter import Meter
-from .parameter import (
-    Parameter, TAKLER_HOST, TAKLER_PORT, TAKLER_HOME
-)
+from .parameter import Parameter, TAKLER_HOST, TAKLER_PORT, TAKLER_HOME
 
 
 class Bunch(NodeContainer):
@@ -167,7 +165,7 @@ class ServerState(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
-        validate_assignment = True,
+        validate_assignment=True,
     )
 
     @field_validator("host")

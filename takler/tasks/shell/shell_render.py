@@ -5,7 +5,10 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from .constant import (
-    TAKLER_JOB, TAKLER_SHELL_JOB_CMD, DEFAULT_TAKLER_SHELL_JOB_CMD, TAKLER_INCLUDE
+    TAKLER_JOB,
+    TAKLER_SHELL_JOB_CMD,
+    DEFAULT_TAKLER_SHELL_JOB_CMD,
+    TAKLER_INCLUDE,
 )
 
 if TYPE_CHECKING:
@@ -19,6 +22,7 @@ class ShellRender(object):
     When ``ShellScriptTask`` begins to run, the shell script is rendered into a job script.
     Currently, ``ShellRender`` supports Jinja2 library.
     """
+
     def __init__(self, node: "ShellScriptTask"):
         self.node: "ShellScriptTask" = node
         self._template_params: Optional[Dict[str, Any]] = None
@@ -94,7 +98,9 @@ class ShellRender(object):
         include_paths = include_string.split(os.pathsep)
         return include_paths
 
-    def template_params(self, force: bool = False) -> Dict[str, Union[str, int, float, bool]]:
+    def template_params(
+        self, force: bool = False
+    ) -> Dict[str, Union[str, int, float, bool]]:
         """
         Get template params from node only once. Store in ``self._template_params``.
 

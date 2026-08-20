@@ -88,9 +88,7 @@ def _log_unexpected_error(exc: BaseException) -> None:
         return
 
     takler.logging.configure(console=False)
-    detail = "".join(
-        traceback.format_exception(type(exc), exc, exc.__traceback__)
-    )
+    detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     get_logger(LOGGER_NAME).error(
         f"unexpected error while running a takler client command: "
         f"{type(exc).__name__}: {exc}\n{detail}"
@@ -161,8 +159,8 @@ def _run_command(command: Callable[[], Any]) -> Any:
 
 
 def _create_client(
-        host: Optional[str] = None,
-        port: Optional[Union[str, int]] = None,
+    host: Optional[str] = None,
+    port: Optional[Union[str, int]] = None,
 ) -> TaklerServiceClient:
     """Resolve the server address and build a client for it."""
     resolved_host, resolved_port = get_host_and_prot(host, port)
@@ -170,9 +168,9 @@ def _create_client(
 
 
 def _run_client_command(
-        host: Optional[str],
-        port: Optional[Union[str, int]],
-        body: Callable[[TaklerServiceClient], Any],
+    host: Optional[str],
+    port: Optional[Union[str, int]],
+    body: Callable[[TaklerServiceClient], Any],
 ) -> Any:
     """Run ``body`` against a freshly built client under :func:`_run_command`.
 
@@ -188,10 +186,10 @@ def _run_client_command(
 
 @app.command()
 def init(
-        task_id: str = typer.Option(..., help="task id (TAKLER_RID)."),
-        node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
+    task_id: str = typer.Option(..., help="task id (TAKLER_RID)."),
+    node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
     """
     [child] init the task.
@@ -202,16 +200,17 @@ def init(
         typer.echo("ignore because NO_TAKLER is set.")
         return
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.init(node_path=node_path, task_id=task_id),
     )
 
 
 @app.command()
 def complete(
-        node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
+    node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
     """
     [child] complete the task.
@@ -222,17 +221,18 @@ def complete(
         typer.echo("ignore because NO_TAKLER is set.")
         return
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.complete(node_path=node_path),
     )
 
 
 @app.command()
 def abort(
-        node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        reason: str = typer.Option("", help="abort reason")
+    node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    reason: str = typer.Option("", help="abort reason"),
 ):
     """
     [child] abort the task.
@@ -243,17 +243,18 @@ def abort(
         typer.echo("ignore because NO_TAKLER is set.")
         return
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.abort(node_path=node_path, reason=reason),
     )
 
 
 @app.command()
 def event(
-        node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        event_name: str = typer.Option(..., help="event name"),
+    node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    event_name: str = typer.Option(..., help="event name"),
 ):
     """
     [child] change Event.
@@ -264,18 +265,19 @@ def event(
         typer.echo("ignore because NO_TAKLER is set.")
         return
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.event(node_path=node_path, event_name=event_name),
     )
 
 
 @app.command()
 def meter(
-        node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        meter_name: str = typer.Option(..., help="meter name"),
-        meter_value: str = typer.Option(..., help="meter value"),
+    node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    meter_name: str = typer.Option(..., help="meter name"),
+    meter_value: str = typer.Option(..., help="meter value"),
 ):
     """
     [child] change Meter.
@@ -286,7 +288,8 @@ def meter(
         typer.echo("ignore because NO_TAKLER is set.")
         return
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.meter(
             node_path=node_path,
             meter_name=meter_name,
@@ -300,78 +303,83 @@ def meter(
 
 @app.command()
 def requeue(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        node_path: List[str] = typer.Argument(..., help="node paths"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    node_path: List[str] = typer.Argument(..., help="node paths"),
 ):
     """
     [control] requeue given node(s).
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.requeue(node_path=node_path),
     )
 
 
 @app.command()
 def suspend(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        node_path: List[str] = typer.Argument(..., help="node paths"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    node_path: List[str] = typer.Argument(..., help="node paths"),
 ):
     """
     [control] suspend the node(s). prevent job creation for the node and all its children nodes.
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.suspend(node_path=node_path),
     )
 
 
 @app.command()
 def resume(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        node_path: List[str] = typer.Argument(..., help="node paths"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    node_path: List[str] = typer.Argument(..., help="node paths"),
 ):
     """
     [control] resume the node(s) from suspended status.
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.resume(node_path=node_path),
     )
 
 
 @app.command()
 def run(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        node_path: List[str] = typer.Argument(..., help="node paths"),
-        force: bool = typer.Option(False, help="force run"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    node_path: List[str] = typer.Argument(..., help="node paths"),
+    force: bool = typer.Option(False, help="force run"),
 ):
     """
     [control] run the task.
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.run(node_path=node_path, force=force),
     )
 
 
 @app.command()
 def force(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        recursive: bool = typer.Option(True, help="recursive"),
-        state: str = typer.Argument(..., help="state"),
-        variable_path: List[str] = typer.Argument(..., help="variable paths"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    recursive: bool = typer.Option(True, help="recursive"),
+    state: str = typer.Argument(..., help="state"),
+    variable_path: List[str] = typer.Argument(..., help="variable paths"),
 ):
     """
     [control] change the node's state force, ignore whatever state it is now.
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.force(
             variable_paths=variable_path, state=state, recursive=recursive
         ),
@@ -380,44 +388,44 @@ def force(
 
 @app.command()
 def free_dep(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        dep_type: str = typer.Option(True, help="dependency type, [all, time, trigger]"),
-        node_path: List[str] = typer.Argument(..., help="variable paths"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    dep_type: str = typer.Option(True, help="dependency type, [all, time, trigger]"),
+    node_path: List[str] = typer.Argument(..., help="variable paths"),
 ):
     """
     [control] free dependencies for the node(s).
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.free_dep(node_paths=node_path, dep_type=dep_type),
     )
 
 
 @app.command()
 def load(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        flow_type: str = typer.Option("json", help="flow file type, [json]"),
-        flow_file_path: str = typer.Argument(..., help="flow file path"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    flow_type: str = typer.Option("json", help="flow file type, [json]"),
+    flow_file_path: str = typer.Argument(..., help="flow file path"),
 ):
     """
     [control] load flow from file to server.
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.load(flow_file_path=flow_file_path),
     )
 
 
 @app.command()
 def begin(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        flow_name: str = typer.Argument(
-            "", help="flow name, omit it to begin all flows"
-        ),
-        force: bool = typer.Option(False, help="begin an already begun flow again"),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    flow_name: str = typer.Argument("", help="flow name, omit it to begin all flows"),
+    force: bool = typer.Option(False, help="begin an already begun flow again"),
 ):
     """
     [control] begin the flow(s): start the calendar and reset the node tree.
@@ -425,7 +433,8 @@ def begin(
     Omitting FLOW_NAME sends an empty name, which means all flows.
     """
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.begin(flow_name=flow_name, force=force),
     )
 
@@ -435,14 +444,14 @@ def begin(
 
 @app.command()
 def show(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
-        show_trigger: bool = typer.Option(False, help="show triggers"),
-        show_parameter: bool = typer.Option(False, help="show parameters"),
-        show_limit: bool = typer.Option(True, help="show limits"),
-        show_event: bool = typer.Option(True, help="show events"),
-        show_meter: bool = typer.Option(True, help="show meters"),
-        show_all: bool = typer.Option(False, help="show all items, ignore other options."),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    show_trigger: bool = typer.Option(False, help="show triggers"),
+    show_parameter: bool = typer.Option(False, help="show parameters"),
+    show_limit: bool = typer.Option(True, help="show limits"),
+    show_event: bool = typer.Option(True, help="show events"),
+    show_meter: bool = typer.Option(True, help="show meters"),
+    show_all: bool = typer.Option(False, help="show all items, ignore other options."),
 ):
     """
     [query] print bunch tree.
@@ -455,7 +464,8 @@ def show(
         show_meter = True
 
     _run_client_command(
-        host, port,
+        host,
+        port,
         lambda client: client.show(
             show_trigger=show_trigger,
             show_parameter=show_parameter,
@@ -468,8 +478,8 @@ def show(
 
 @app.command()
 def ping(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
     """
     [query] check the server is running with given host and hort.
@@ -479,8 +489,8 @@ def ping(
 
 @app.command()
 def coroutine(
-        host: str = typer.Option(None, help=HOST_HELP_STRING),
-        port: str = typer.Option(None, help=PORT_HELP_STRING),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
     """
     [show] print current coroutine in server. for debug.
@@ -490,8 +500,7 @@ def coroutine(
 
 # ----------------------------
 def get_host_and_prot(
-        host: Optional[str] = None,
-        port: Optional[Union[str, int]] = None
+    host: Optional[str] = None, port: Optional[Union[str, int]] = None
 ) -> Tuple[Optional[str], Optional[str]]:
     """
     get host and port.
@@ -544,7 +553,10 @@ def get_host(host: Optional[str] = None) -> Optional[str]:
     -------
     Optional[str]
     """
-    warnings.warn('The `get_host` method is deprecated; use `get_host_and_port` instead.', DeprecationWarning)
+    warnings.warn(
+        "The `get_host` method is deprecated; use `get_host_and_port` instead.",
+        DeprecationWarning,
+    )
     if host is not None:
         return host
     if TAKLER_HOST in os.environ:
@@ -564,7 +576,10 @@ def get_port(port: Optional[Union[str, int]] = None) -> Optional[str]:
     -------
     Optional[str]
     """
-    warnings.warn('The `get_port` method is deprecated; use `get_host_and_port` instead.', DeprecationWarning)
+    warnings.warn(
+        "The `get_port` method is deprecated; use `get_host_and_port` instead.",
+        DeprecationWarning,
+    )
     if port is not None:
         return str(port)
     if TAKLER_PORT in os.environ:

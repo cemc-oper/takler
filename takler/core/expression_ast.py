@@ -18,8 +18,7 @@ T = TypeVar("T")
 
 @dataclass
 class AstBase:
-    def set_parent_node(self, node: "Node"):
-        ...
+    def set_parent_node(self, node: "Node"): ...
 
     def value(self) -> T:
         raise NotImplementedError("AstBase.value is not implemented")
@@ -79,10 +78,12 @@ class AstOpOr(AstRoot):
     def evaluate(self) -> bool:
         return self.left.evaluate() or self.right.evaluate()
 
+
 @dataclass
 class AstMathAdd(AstRoot):
     def value(self) -> bool:
         return self.left.value() + self.right.value()
+
 
 @dataclass
 class AstNodePath(AstBase):
@@ -160,7 +161,9 @@ class AstVariablePath(AstBase):
         # if self._node_variable is not None:
         #     return self._node_variable
 
-        self._node_variable = self.node.get_reference_node().find_variable(self.variable_name)
+        self._node_variable = self.node.get_reference_node().find_variable(
+            self.variable_name
+        )
         return self._node_variable
 
 

@@ -80,7 +80,7 @@ EXIT_UNREACHABLE: int = 4
 #: Error_Code -> exit code, i.e. the last column of the design's Error_Code
 #: table. Keys mirror ``error_code.ERROR_NAME_BY_CODE`` exactly.
 EXIT_CODE_BY_ERROR_CODE: Dict[int, int] = {
-    0: EXIT_OK,             # success
+    0: EXIT_OK,  # success
     1: EXIT_REQUEST_ERROR,  # takler_error
     10: EXIT_REQUEST_ERROR,  # node_not_found
     11: EXIT_REQUEST_ERROR,  # invalid_node_path
@@ -91,8 +91,8 @@ EXIT_CODE_BY_ERROR_CODE: Dict[int, int] = {
     20: EXIT_REQUEST_ERROR,  # expression_syntax
     30: EXIT_SERVER_ERROR,  # job_submission
     31: EXIT_SERVER_ERROR,  # zombie
-    40: EXIT_UNREACHABLE,   # transport
-    41: EXIT_UNREACHABLE,   # client_connection
+    40: EXIT_UNREACHABLE,  # transport
+    41: EXIT_UNREACHABLE,  # client_connection
     42: EXIT_SERVER_ERROR,  # server_response
     43: EXIT_REQUEST_ERROR,  # permission_denied
     99: EXIT_SERVER_ERROR,  # internal_error

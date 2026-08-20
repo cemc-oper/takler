@@ -89,12 +89,14 @@ DEFAULT_RETRY_WINDOW_BY_KIND: Mapping[CommandKind, float] = {
 
 #: gRPC status codes that mean "transport level failure, worth retrying"
 #: (requirement 9.3).
-RETRYABLE_STATUS_CODES = frozenset({
-    grpc.StatusCode.UNAVAILABLE,
-    grpc.StatusCode.DEADLINE_EXCEEDED,
-    grpc.StatusCode.RESOURCE_EXHAUSTED,
-    grpc.StatusCode.UNKNOWN,
-})
+RETRYABLE_STATUS_CODES = frozenset(
+    {
+        grpc.StatusCode.UNAVAILABLE,
+        grpc.StatusCode.DEADLINE_EXCEEDED,
+        grpc.StatusCode.RESOURCE_EXHAUSTED,
+        grpc.StatusCode.UNKNOWN,
+    }
+)
 
 #: gRPC status codes that mean "the request itself is wrong, retrying cannot
 #: help", mapped to the exception the client raises (requirement 9.8).
@@ -133,8 +135,8 @@ def backoff_seconds(attempt: int) -> float:
 
 
 def resolve_retry_window(
-        kind: CommandKind,
-        env: Optional[Mapping[str, str]] = None,
+    kind: CommandKind,
+    env: Optional[Mapping[str, str]] = None,
 ) -> float:
     """Resolve the Retry_Window in seconds for ``kind``.
 

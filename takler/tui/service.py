@@ -4,6 +4,7 @@ The CLI service client prints to stdout and creates / closes a gRPC
 channel on every call. The TUI wants the raw payload (for the show
 response) and a single long-lived channel; this module provides both.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -115,7 +116,9 @@ class TaklerTuiService:
         self._ensure_open()
         self._inner.run_command_run(node_path=paths, force=force)
 
-    def force_state(self, paths: List[str], state: str, recursive: bool = False) -> None:
+    def force_state(
+        self, paths: List[str], state: str, recursive: bool = False
+    ) -> None:
         self._ensure_open()
         self._inner.run_command_force(
             variable_paths=paths, state=state, recursive=recursive

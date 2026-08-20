@@ -1,4 +1,5 @@
 """Info tab: show every attribute the snapshot has for the selected node."""
+
 from __future__ import annotations
 
 from typing import Optional

@@ -35,6 +35,7 @@ class Scheduler:
     interval_main_loop : float
         time interval to check flow dependencies, unit is seconds.
     """
+
     def __init__(
         self,
         bunch: Bunch,
@@ -52,7 +53,9 @@ class Scheduler:
         # task 3.3; for now they are kept for forward compatibility and do not
         # alter behaviour.
         self.exception_policy: ExceptionPolicy = (
-            exception_policy if exception_policy is not None else DEFAULT_EXCEPTION_POLICY
+            exception_policy
+            if exception_policy is not None
+            else DEFAULT_EXCEPTION_POLICY
         )
         self.fatal_shutdown: Optional[Callable[[], None]] = fatal_shutdown
 
@@ -127,7 +130,9 @@ class Scheduler:
 
             elapsed = time.time() - start_time
             if elapsed > self.interval_main_loop:
-                logger.warning(f"elapse time ({elapsed:.2f}) seconds is larger than main loop interval ({self.interval_main_loop} seconds)")
+                logger.warning(
+                    f"elapse time ({elapsed:.2f}) seconds is larger than main loop interval ({self.interval_main_loop} seconds)"
+                )
                 duration = 0
             else:
                 duration = self.interval_main_loop - elapsed
@@ -221,9 +226,7 @@ class Scheduler:
             return
         flow = node.get_flow()
         if flow is not None and not flow.begun:
-            raise FlowStateError(
-                f"flow is not begun: {flow.name}", flow_name=flow.name
-            )
+            raise FlowStateError(f"flow is not begun: {flow.name}", flow_name=flow.name)
 
     def travel_bunch(self):
         """
@@ -264,7 +267,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         if isinstance(node, Task):
             node.init(task_id)
@@ -293,7 +298,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         if isinstance(node, Task):
             node.complete()
@@ -324,7 +331,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         if isinstance(node, Task):
             node.abort(reason)
@@ -348,7 +357,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         node.set_event(event_name, True)
 
@@ -371,7 +382,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         node.set_meter(meter_name, int(meter_value))
 
@@ -399,7 +412,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         self._require_begun(node)
 
@@ -425,7 +440,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         node.suspend()
 
@@ -449,7 +466,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         node.resume()
 
@@ -479,7 +498,9 @@ class Scheduler:
         """
         node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         self._require_begun(node)
 
@@ -495,7 +516,9 @@ class Scheduler:
         node.run()
         return True
 
-    def run_command_force(self, variable_path: str, state: str, recursive: bool = False) -> bool:
+    def run_command_force(
+        self, variable_path: str, state: str, recursive: bool = False
+    ) -> bool:
         """
         Force node or event to some state.
 
@@ -595,7 +618,9 @@ class Scheduler:
         """
         node: Node = self.bunch.find_node(node_path)
         if node is None:
-            raise NodeNotFoundError(f"node is not found: {node_path}", node_path=node_path)
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
 
         self._require_begun(node)
 
@@ -706,12 +731,12 @@ class Scheduler:
     # Query -------------------------------------------------
 
     def handle_request_show(
-            self,
-            show_parameter: bool,
-            show_trigger: bool,
-            show_limit: bool,
-            show_event: bool,
-            show_meter: bool,
+        self,
+        show_parameter: bool,
+        show_trigger: bool,
+        show_limit: bool,
+        show_event: bool,
+        show_meter: bool,
     ) -> str:
         bunch_dict = self.bunch.to_dict()
         bunch_json_str = json.dumps(bunch_dict)
