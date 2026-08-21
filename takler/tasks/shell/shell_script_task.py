@@ -1,3 +1,4 @@
+import stat
 from typing import Union, Optional, Dict
 from pathlib import Path
 
@@ -153,6 +154,10 @@ class ShellScriptTask(Task):
         """
         Create job script and return run command.
 
+        The generated job script is made executable by its owner. Its read and
+        write permission bits are left as created, i.e. decided by the process
+        umask, and are never set explicitly by takler.
+
         Returns
         -------
         str
@@ -177,7 +182,13 @@ class ShellScriptTask(Task):
             shell_script = ShellRender(self)
 
             job_script_path = shell_script.render_script(script_path)
-            job_script_path.chmod(0o755)
+            # Only add the owner execute bit, and leave the read/write bits as
+            # they were created, i.e. decided by the process umask. A job script
+            # may carry ``TAKLER_PASS``, so takler must not widen its read
+            # permission by setting an explicit mode such as ``0o755``: who may
+            # read the job password is a deployment decision expressed by umask.
+            mode = job_script_path.stat().st_mode
+            job_script_path.chmod(mode | stat.S_IXUSR)
             logger.info(f"Job generation success: {job_script_path}")
 
             # get run command

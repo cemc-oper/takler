@@ -12,7 +12,7 @@ logging backend does not route records into pytest's handler, so the sink has to
 be configured inside the redirection block (same approach as
 ``test_checkpoint_config_unit.py``).
 
-Validates: Requirements 5.1, 5.2, 5.3, 5.8, 5.11, 7.7
+Validates: Requirements 5.1, 5.2, 5.3, 5.8, 5.11, 7.7, 12.5
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import contextlib
 import io
 import json
 import os
+import stat
 import threading
 from pathlib import Path
 
@@ -31,6 +32,7 @@ import takler.logging
 from takler.core.bunch import Bunch
 from takler.core.flow import Flow
 from takler.server.checkpoint import (
+    CHECKPOINT_FILE_MODE,
     CHECKPOINT_FORMAT_VERSION,
     TEMP_SUFFIX,
     CheckpointManager,
@@ -196,6 +198,44 @@ def test_second_write_moves_the_previous_snapshot_to_the_backup(tmp_path):
     current = json.loads(manager.checkpoint_file.read_text(encoding="utf-8"))
     assert len(current["bunch"]["flows"]) == 2
     assert _temp_names(tmp_path) == []
+
+
+def test_both_snapshot_files_are_owner_read_write_only(tmp_path):
+    """Requirement 12.5: a snapshot carries Job_Passwords, so it stays 0600."""
+    manager = _make_manager(tmp_path)
+    manager.write_checkpoint()
+    # A pre-M2 snapshot with wide permissions must not stay wide once rotated.
+    manager.checkpoint_file.chmod(0o644)
+
+    manager.bunch.add_flow(Flow(name="flow2"))
+    manager.write_checkpoint()
+
+    assert stat.S_IMODE(manager.checkpoint_file.stat().st_mode) == CHECKPOINT_FILE_MODE
+    assert stat.S_IMODE(manager.backup_file.stat().st_mode) == CHECKPOINT_FILE_MODE
+
+
+def test_temporary_files_are_owner_read_write_only_before_the_rename(tmp_path):
+    """The tightening happens at creation, not after the atomic replace."""
+    manager = _make_manager(tmp_path)
+    manager.write_checkpoint()
+    manager.checkpoint_file.chmod(0o644)
+    modes = {}
+
+    def record(index, name):
+        for temp in (
+            manager._temp_path(manager.checkpoint_file),
+            manager._temp_path(manager.backup_file),
+        ):
+            if temp.exists():
+                modes.setdefault(temp.name, []).append(
+                    stat.S_IMODE(temp.stat().st_mode)
+                )
+
+    manager._after_write_step = record
+    manager.write_checkpoint()
+
+    assert modes
+    assert all(mode == CHECKPOINT_FILE_MODE for seen in modes.values() for mode in seen)
 
 
 def test_third_write_keeps_only_the_previous_snapshot_as_backup(tmp_path):

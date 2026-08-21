@@ -15,7 +15,7 @@ resolution), the snapshot write path (payload building plus the atomic
 temporary-file dance), the periodic snapshot task and the startup restore with
 its Checkpoint_File -> Checkpoint_Backup_File -> empty bunch fallback chain.
 
-Requirements: 5.x, 6.x, 7.2, 7.3, 7.4, 7.5, 7.6.
+Requirements: 5.x, 6.x, 7.2, 7.3, 7.4, 7.5, 7.6, 12.5.
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ __all__ = [
     "DEFAULT_CHECKPOINT_FILE",
     "BACKUP_SUFFIX",
     "TEMP_SUFFIX",
+    "CHECKPOINT_FILE_MODE",
     "UNKNOWN_VERSION",
     "CheckpointManager",
 ]
@@ -83,6 +84,12 @@ BACKUP_SUFFIX: str = ".b"
 #: keeps two server processes that share a Checkpoint_File path from writing
 #: into the same temporary file, and keeps a stale temporary file recognizable.
 TEMP_SUFFIX: str = ".tmp"
+
+#: Permissions of the Checkpoint_File, the Checkpoint_Backup_File and the
+#: temporary files they are written through: owner read/write only
+#: (requirement 12.5). A snapshot carries the Job_Passwords of every in-flight
+#: job, so it must not be readable by other users on a shared login node.
+CHECKPOINT_FILE_MODE: int = 0o600
 
 #: ``takler_version`` value used when the running package exposes no version,
 #: which happens when takler is imported from a source tree without being
@@ -372,6 +379,44 @@ class CheckpointManager:
         if not parent.exists():
             parent.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _open_restricted(path: Path, mode: str, encoding: Optional[str] = None):
+        """Create ``path`` with owner-only permissions and return it open.
+
+        Both snapshot files are written through a temporary file that is later
+        renamed into place, and the renamed file keeps the temporary file's
+        mode. Requirement 12.5 is therefore satisfied by creating the temporary
+        file restricted in the first place, rather than by relaxing it and
+        ``chmod``-ing after the rename -- the latter leaves a window in which a
+        snapshot holding Job_Passwords is world readable.
+
+        :func:`os.open`'s mode argument is masked by the process umask, so the
+        permissions are additionally set explicitly on the open descriptor.
+        Using the descriptor rather than the path means the file whose mode is
+        tightened is provably the one just created.
+
+        Args:
+            path: File to create or truncate.
+            mode: Mode string for :func:`os.fdopen`, e.g. ``"w"`` or ``"wb"``.
+            encoding: Text encoding, or ``None`` for a binary mode.
+
+        Returns:
+            The open file object, owned by the caller.
+        """
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, CHECKPOINT_FILE_MODE)
+        try:
+            try:
+                os.fchmod(fd, CHECKPOINT_FILE_MODE)
+            except (AttributeError, NotImplementedError):
+                # Platform without fchmod; the path is a pid-suffixed temporary
+                # file this process has just created, so re-resolving it here is
+                # an acceptable fallback.
+                os.chmod(path, CHECKPOINT_FILE_MODE)
+            return os.fdopen(fd, mode, encoding=encoding)
+        except Exception:
+            os.close(fd)
+            raise
+
     def _write_temp_file(self, path: Path, payload: str) -> None:
         """Write ``payload`` to ``path`` and force it out to the device.
 
@@ -379,8 +424,12 @@ class CheckpointManager:
         what makes requirement 5.2 hold across a machine crash rather than only
         across a process kill: without it the rename could reach the disk ahead
         of the file contents.
+
+        The file is created owner-read-write only, so the snapshot is never
+        readable by anyone else, not even between its creation and the rename
+        (requirement 12.5).
         """
-        with open(path, "w", encoding="utf-8") as f:
+        with self._open_restricted(path, "w", encoding="utf-8") as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())
@@ -393,9 +442,18 @@ class CheckpointManager:
         exist, while copying keeps it complete and in place the whole time.
         Nothing to do on the very first snapshot, when no Checkpoint_File
         exists yet.
+
+        Only the bytes are copied, not the source file's mode: the destination
+        is created owner-read-write only so that a Checkpoint_Backup_File
+        rotated out of a pre-M2 snapshot with wider permissions still ends up at
+        0600 (requirement 12.5).
         """
-        if self.checkpoint_file.exists():
-            shutil.copy2(self.checkpoint_file, backup_temp)
+        if not self.checkpoint_file.exists():
+            return
+
+        with open(self.checkpoint_file, "rb") as source:
+            with self._open_restricted(backup_temp, "wb") as target:
+                shutil.copyfileobj(source, target)
 
     def _replace_backup(self, backup_temp: Path) -> None:
         """Move the copied snapshot onto the Checkpoint_Backup_File path."""
