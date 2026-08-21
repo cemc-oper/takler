@@ -1,7 +1,13 @@
 import pytest
 
 from takler.core import Parameter, Task
-from takler.core.parameter import TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
+from takler.core.parameter import (
+    TASK,
+    TAKLER_NAME,
+    TAKLER_RID,
+    TAKLER_TRY_NO,
+    TAKLER_PASS,
+)
 
 
 def test_task_add_parameter_single():
@@ -161,6 +167,7 @@ def test_task_generated_parameters_only(flow_with_parameter):
         TAKLER_NAME: Parameter(TAKLER_NAME, None),
         TAKLER_RID: Parameter(TAKLER_RID, None),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, None),
+        TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }
 
     task1.update_generated_parameters()
@@ -169,6 +176,7 @@ def test_task_generated_parameters_only(flow_with_parameter):
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/task1"),
         TAKLER_RID: Parameter(TAKLER_RID, None),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
+        TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }
 
     task1.init(task_id="1001")
@@ -178,4 +186,5 @@ def test_task_generated_parameters_only(flow_with_parameter):
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/task1"),
         TAKLER_RID: Parameter(TAKLER_RID, "1001"),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
+        TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }

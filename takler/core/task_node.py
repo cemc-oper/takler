@@ -8,7 +8,14 @@ from pydantic import BaseModel, ConfigDict
 from .node import Node
 from .state import NodeStatus
 from .limit import Limit
-from .parameter import Parameter, TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
+from .parameter import (
+    Parameter,
+    TASK,
+    TAKLER_NAME,
+    TAKLER_RID,
+    TAKLER_TRY_NO,
+    TAKLER_PASS,
+)
 from .util import logger, SerializationType
 
 
@@ -255,6 +262,10 @@ class TaskNodeGeneratedParameters(BaseModel):
     takler_name: Parameter = Parameter(TAKLER_NAME, None)
     takler_rid: Parameter = Parameter(TAKLER_RID, None)
     takler_try_no: Parameter = Parameter(TAKLER_TRY_NO, None)
+    # ``TAKLER_PASS`` must stay a *generated* parameter. ``Node.to_dict()``
+    # serializes ``user_parameters`` only, so keeping the job password here is
+    # what keeps it out of both the ``show`` response and the checkpoint file.
+    takler_pass: Parameter = Parameter(TAKLER_PASS, None)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -266,6 +277,7 @@ class TaskNodeGeneratedParameters(BaseModel):
         self.takler_name.value = self.node.node_path
         self.takler_rid.value = self.node.task_id
         self.takler_try_no.value = self.node.try_no
+        self.takler_pass.value = self.node.job_password
 
     def find_parameter(self, name: str) -> Optional[Parameter]:
         if name == TASK:
@@ -276,6 +288,8 @@ class TaskNodeGeneratedParameters(BaseModel):
             return self.takler_rid
         elif name == TAKLER_TRY_NO:
             return self.takler_try_no
+        elif name == TAKLER_PASS:
+            return self.takler_pass
         else:
             return None
 
@@ -285,6 +299,7 @@ class TaskNodeGeneratedParameters(BaseModel):
             TAKLER_NAME: self.takler_name,
             TAKLER_RID: self.takler_rid,
             TAKLER_TRY_NO: self.takler_try_no,
+            TAKLER_PASS: self.takler_pass,
         }
 
 

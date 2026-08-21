@@ -1,5 +1,11 @@
 from takler.core import Parameter
-from takler.core.task_node import TASK, TAKLER_NAME, TAKLER_RID, TAKLER_TRY_NO
+from takler.core.task_node import (
+    TASK,
+    TAKLER_NAME,
+    TAKLER_RID,
+    TAKLER_TRY_NO,
+    TAKLER_PASS,
+)
 from takler.core.parameter import DATE, TIME
 
 
@@ -132,6 +138,7 @@ def test_parameters_with_task(flow_with_parameter):
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/container1/task2"),
         TAKLER_RID: Parameter(TAKLER_RID, "1001"),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
+        TAKLER_PASS: Parameter(TAKLER_PASS, None),
         "TIME_INTERVAL": Parameter("TIME_INTERVAL", 10),
         "FORECAST_DAYS": Parameter("FORECAST_DAYS", 3.5),
         "NODES": Parameter("NODES", 4),
@@ -158,6 +165,7 @@ def test_parameters_only_with_task(flow_with_parameter):
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/container1/task2"),
         TAKLER_RID: Parameter(TAKLER_RID, "1001"),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
+        TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }
 
 
@@ -189,4 +197,5 @@ def test_generated_parameters_only_with_task(flow_with_parameter):
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/container1/task2"),
         TAKLER_RID: Parameter(TAKLER_RID, "1001"),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
+        TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }
