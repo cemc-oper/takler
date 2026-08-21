@@ -160,20 +160,85 @@ class CheckpointSettings(BaseModel):
     file: Optional[str] = None
 
 
+class SecuritySettings(BaseModel):
+    """The ``security`` section of the :class:`ConnectConfig` file.
+
+    The section gathers the four groups of security knobs of a deployment --
+    TLS, authentication, zombie handling and auditing -- so that a single
+    ``connect.yaml`` describes the complete security posture of a server
+    (Requirements 3.1, 3.3).
+
+    Every field is optional and defaults to ``None``, which means "not
+    configured". As with :class:`CheckpointSettings`, keeping ``None`` as the
+    "absent" marker -- instead of baking the built-in defaults into the model
+    -- is what lets the ``resolve_*`` function family apply the config-source
+    precedence ``explicit argument > environment variable > Connect_Config
+    file > built-in default`` (Requirements 3.4, 3.5).
+
+    Attributes:
+        server_cert_file: Server certificate path. Enables TLS together with
+            ``server_key_file``; both unset means plaintext (Requirement 1.1).
+        server_key_file: Server private key path (Requirement 1.1).
+        client_ca_file: CA certificate used to verify client certificates.
+            Reserved for mTLS: this version only warns and never verifies
+            client certificates (Requirements 1.8, 1.9).
+        ca_file: CA certificate a client trusts when connecting
+            (Requirement 2.1).
+        server_name: Certificate hostname override used by a client
+            (Requirement 2.4).
+        auth_mode: Auth_Mode name, ``disabled`` (built-in default) or
+            ``enabled`` (Requirements 3.3, 3.6).
+        operator_secret_file: Operator_Secret_File path (Requirement 7.1).
+        operator_whitelist_file: Operator_Whitelist_File path
+            (Requirement 7.2).
+        zombie_policy: Zombie_Policy name, ``fail`` (built-in default),
+            ``fob`` or ``adopt`` (Requirements 3.3, 3.6).
+        audit_file: Audit_File path (Requirement 11.12).
+    """
+
+    # TLS (Requirements 1.1, 1.8, 2.1, 2.4)
+    server_cert_file: Optional[str] = None
+    server_key_file: Optional[str] = None
+    client_ca_file: Optional[str] = None
+    ca_file: Optional[str] = None
+    server_name: Optional[str] = None
+
+    # Authentication (Requirements 3.3, 7.1, 7.2)
+    auth_mode: Optional[str] = None
+    operator_secret_file: Optional[str] = None
+    operator_whitelist_file: Optional[str] = None
+
+    # Zombie handling and auditing (Requirements 3.3, 10.1, 11.12)
+    zombie_policy: Optional[str] = None
+    audit_file: Optional[str] = None
+
+
 class ConnectConfig(BaseModel):
     """Content of the ``connect.yaml`` file shared by server and clients.
 
-    The ``checkpoint`` section carries a default value, so a legacy
-    ``connect.yaml`` holding only the ``server`` section is still loadable and
-    yields an all-``None`` :class:`CheckpointSettings`; newly written files
-    gain an extra ``checkpoint`` section (Requirement 7.1).
+    The ``checkpoint`` and ``security`` sections both carry a default value, so
+    a legacy ``connect.yaml`` holding only the ``server`` section -- or only
+    the ``server`` and ``checkpoint`` sections -- is still loadable and yields
+    an all-``None`` :class:`CheckpointSettings` / :class:`SecuritySettings`;
+    newly written files gain both sections (Requirements 7.1, 3.2, 3.10).
     """
 
     server: Server
     checkpoint: CheckpointSettings = CheckpointSettings()
+    security: SecuritySettings = SecuritySettings()
 
 
 def generate_connect_config() -> ConnectConfig:
+    """Build a fresh :class:`ConnectConfig` for the current host.
+
+    The ``checkpoint`` and ``security`` sections are filled with their
+    all-``None`` defaults, so a newly generated file documents both sections
+    and every configurable knob in them (Requirements 7.1, 3.10).
+
+    Returns:
+        A :class:`ConnectConfig` holding this host's name, IP and an available
+        port.
+    """
     hostname = socket.gethostname()
     ip = get_ip()
     port = str(get_port())

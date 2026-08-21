@@ -38,6 +38,7 @@ __all__ = [
     "ClientConnectionError",
     "ServerResponseError",
     "PermissionDeniedError",
+    "SecurityConfigError",
 ]
 
 
@@ -174,4 +175,20 @@ class PermissionDeniedError(TaklerError):
 
     M1 does not implement authentication; this only carries the mapping of
     the corresponding gRPC status code.
+    """
+
+
+class SecurityConfigError(TaklerError):
+    """The security configuration cannot be used, so the server must not start.
+
+    Raised for a half configured TLS pair, a certificate or key file that
+    cannot be read or parsed, and for a missing or empty operator secret file
+    while authentication is enabled.
+
+    This type is raised only while the server starts up, before the network
+    service accepts requests, so it never crosses the RPC boundary and is
+    therefore not assigned an Error_Code of its own. Should some future path
+    let it reach the boundary anyway, the unlisted ``TaklerError`` subclass
+    fallback classifies it as the generic takler error code, which is the
+    right outcome: it is a failure takler recognises, not an internal one.
     """
