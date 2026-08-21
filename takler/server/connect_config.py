@@ -363,6 +363,187 @@ class ConnectConfig(BaseModel):
     security: SecuritySettings = SecuritySettings()
 
 
+def _is_unset(value: "Optional[Union[str, enum.Enum]]") -> bool:
+    """Return ``True`` when a config-source value counts as "not provided".
+
+    Companion of :func:`_is_blank` for the ``resolve_*`` family, whose sources
+    may hold either a plain name or an already parsed enum member: ``None``,
+    an empty string and a whitespace-only string all mean "absent", so the next
+    precedence source applies, while any enum member is a real value.
+
+    Treating a blank string as absent matters at every level, not just for
+    environment variables: were a blank passed on to a ``from_str``, it would
+    degrade to the built-in default with a WARNING and shadow the lower
+    precedence sources instead of deferring to them.
+    """
+    if isinstance(value, str):
+        return _is_blank(value)
+    return value is None
+
+
+def _security_setting(
+    connect_config: "Optional[ConnectConfig]", field: str
+) -> Optional[str]:
+    """Read one field of a Connect_Config ``security`` section.
+
+    Args:
+        connect_config: A loaded Connect_Config, or ``None`` when no config
+            file is in play.
+        field: Name of the :class:`SecuritySettings` field to read.
+
+    Returns:
+        The field value with surrounding whitespace removed, or ``None`` when
+        it is not provided. A missing Connect_Config, a field left unset and a
+        blank/whitespace-only field are all reported the same way, since all
+        three mean the next precedence source applies (Requirement 3.4).
+    """
+    if connect_config is None:
+        return None
+
+    value = getattr(connect_config.security, field)
+    if _is_blank(value):
+        return None
+
+    return value.strip()
+
+
+def resolve_auth_mode(
+    explicit: "Optional[Union[str, AuthMode]]" = None,
+    connect_config: "Optional[ConnectConfig]" = None,
+    env: Optional[Mapping[str, str]] = None,
+) -> AuthMode:
+    """Resolve the effective :class:`AuthMode`.
+
+    Applies per-source precedence -- explicit argument > ``TAKLER_AUTH_MODE``
+    environment variable > the ``auth_mode`` field of the Connect_Config
+    ``security`` section > built-in default :attr:`AuthMode.DISABLED`
+    (Requirements 3.5, 3.6, 3.7). This is one source more than
+    :func:`resolve_exception_policy`, which has no Connect_Config level. An
+    absent value at any level (``None``, empty or whitespace-only) lets the
+    next source take effect.
+
+    Values from all three sources are parsed with :meth:`AuthMode.from_str`, so
+    an unrecognized name degrades to :attr:`AuthMode.DISABLED` with a WARNING
+    rather than raising (Requirement 3.8).
+
+    Args:
+        explicit: An explicitly supplied Auth_Mode (command line option or
+            constructor argument), either an :class:`AuthMode` or its name.
+        connect_config: A loaded Connect_Config whose ``security`` section is
+            consulted, or ``None`` when no config file is in play.
+        env: A mapping of environment variables (defaults to ``os.environ``).
+            Only ``TAKLER_AUTH_MODE`` is consulted.
+
+    Returns:
+        The fully resolved :class:`AuthMode`.
+    """
+    if not _is_unset(explicit):
+        return AuthMode.from_str(explicit)
+
+    if env is None:
+        env = os.environ
+
+    env_value = env.get(TAKLER_AUTH_MODE)
+    if not _is_blank(env_value):
+        return AuthMode.from_str(env_value)
+
+    config_value = _security_setting(connect_config, "auth_mode")
+    if config_value is not None:
+        return AuthMode.from_str(config_value)
+
+    return DEFAULT_AUTH_MODE
+
+
+def resolve_zombie_policy(
+    explicit: "Optional[Union[str, ZombiePolicy]]" = None,
+    connect_config: "Optional[ConnectConfig]" = None,
+    env: Optional[Mapping[str, str]] = None,
+) -> ZombiePolicy:
+    """Resolve the effective :class:`ZombiePolicy`.
+
+    Applies per-source precedence -- explicit argument >
+    ``TAKLER_ZOMBIE_POLICY`` environment variable > the ``zombie_policy`` field
+    of the Connect_Config ``security`` section > built-in default
+    :attr:`ZombiePolicy.FAIL` (Requirements 3.5, 3.6, 3.7). An absent value at
+    any level (``None``, empty or whitespace-only) lets the next source take
+    effect.
+
+    Values from all three sources are parsed with
+    :meth:`ZombiePolicy.from_str`, so an unrecognized name degrades to
+    :attr:`ZombiePolicy.FAIL` with a WARNING rather than raising
+    (Requirement 3.9).
+
+    Args:
+        explicit: An explicitly supplied Zombie_Policy (command line option or
+            constructor argument), either a :class:`ZombiePolicy` or its name.
+        connect_config: A loaded Connect_Config whose ``security`` section is
+            consulted, or ``None`` when no config file is in play.
+        env: A mapping of environment variables (defaults to ``os.environ``).
+            Only ``TAKLER_ZOMBIE_POLICY`` is consulted.
+
+    Returns:
+        The fully resolved :class:`ZombiePolicy`.
+    """
+    if not _is_unset(explicit):
+        return ZombiePolicy.from_str(explicit)
+
+    if env is None:
+        env = os.environ
+
+    env_value = env.get(TAKLER_ZOMBIE_POLICY)
+    if not _is_blank(env_value):
+        return ZombiePolicy.from_str(env_value)
+
+    config_value = _security_setting(connect_config, "zombie_policy")
+    if config_value is not None:
+        return ZombiePolicy.from_str(config_value)
+
+    return DEFAULT_ZOMBIE_POLICY
+
+
+def resolve_audit_file(
+    explicit: Optional[str] = None,
+    connect_config: "Optional[ConnectConfig]" = None,
+    env: Optional[Mapping[str, str]] = None,
+) -> Optional[str]:
+    """Resolve the effective Audit_File path.
+
+    Applies per-source precedence -- explicit argument > ``TAKLER_AUDIT_FILE``
+    environment variable > the ``audit_file`` field of the Connect_Config
+    ``security`` section > no Audit_File (Requirements 3.5, 3.7). An absent
+    value at any level (``None``, empty or whitespace-only) lets the next
+    source take effect.
+
+    Unlike :func:`resolve_auth_mode` and :func:`resolve_zombie_policy`, a path
+    goes through no enum, so trimming the surrounding whitespace is the only
+    normalization applied and there is no value to reject: the built-in default
+    is simply "no Audit_File", in which case the Audit_Logger writes to the
+    regular logging destinations (Requirement 11.13).
+
+    Args:
+        explicit: An explicitly supplied Audit_File path (command line option
+            or constructor argument).
+        connect_config: A loaded Connect_Config whose ``security`` section is
+            consulted, or ``None`` when no config file is in play.
+        env: A mapping of environment variables (defaults to ``os.environ``).
+            Only ``TAKLER_AUDIT_FILE`` is consulted.
+
+    Returns:
+        The resolved Audit_File path, or ``None`` when no source provides one.
+    """
+    if not _is_blank(explicit):
+        return explicit.strip()
+
+    if env is None:
+        env = os.environ
+
+    env_value = env.get(TAKLER_AUDIT_FILE)
+    if not _is_blank(env_value):
+        return env_value.strip()
+
+    return _security_setting(connect_config, "audit_file")
+
+
 def generate_connect_config() -> ConnectConfig:
     """Build a fresh :class:`ConnectConfig` for the current host.
 
