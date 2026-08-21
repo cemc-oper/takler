@@ -1,5 +1,6 @@
 import functools
 import asyncio
+import secrets
 from typing import Optional, Dict, Set
 
 from pydantic import BaseModel, ConfigDict
@@ -19,6 +20,17 @@ class Task(Node):
         self.aborted_reason: Optional[str] = None
 
         self.try_no: int = 0
+
+        # One-time job password of the current run instance.
+        #
+        # It is deliberately **not** part of :meth:`to_dict`: node
+        # serialization feeds both the ``show`` response and the checkpoint
+        # file, so serializing it here would hand every in-flight password to
+        # anyone able to call ``show``.
+        #
+        # Invariant: ``job_password`` is empty if and only if ``try_no == 0``.
+        # ``increment_try_no`` and ``requeue`` are the only write points.
+        self.job_password: Optional[str] = None
 
         self.generated_parameters: TaskNodeGeneratedParameters = (
             TaskNodeGeneratedParameters(node=self)
@@ -201,6 +213,7 @@ class Task(Node):
         self.task_id = None
         self.aborted_reason = None
         self.try_no = 0
+        self.job_password = None
         super(Task, self).requeue(reset_repeat=reset_repeat)
 
     # Status update operation ---------------------------------------
@@ -229,6 +242,10 @@ class Task(Node):
         self.try_no += 1
         self.task_id = None
         self.aborted_reason = None
+        # ``token_urlsafe(32)`` yields a 43 character URL-safe string from a
+        # cryptographically secure source, and contains no shell metacharacter,
+        # so it can be exported without quoting.
+        self.job_password = secrets.token_urlsafe(32)
         self.update_generated_parameters()
 
 
