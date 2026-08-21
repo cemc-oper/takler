@@ -16,6 +16,10 @@ logger = get_logger("server.config")
 # Environment variable names recognized by the server configuration.
 TAKLER_CONNECT_FILE = "TAKLER_CONNECT_FILE"
 TAKLER_EXCEPTION_POLICY = "TAKLER_EXCEPTION_POLICY"
+# Security related environment variables (Requirement 3.7).
+TAKLER_AUTH_MODE = "TAKLER_AUTH_MODE"
+TAKLER_ZOMBIE_POLICY = "TAKLER_ZOMBIE_POLICY"
+TAKLER_AUDIT_FILE = "TAKLER_AUDIT_FILE"
 
 
 class ExceptionPolicy(enum.Enum):
@@ -128,6 +132,137 @@ def resolve_exception_policy(
         return DEFAULT_EXCEPTION_POLICY
 
     return ExceptionPolicy.from_str(env_value)
+
+
+class AuthMode(enum.Enum):
+    """Whether the server authenticates the callers of its RPCs.
+
+    * :attr:`DISABLED` (default): the Auth_Interceptor lets every RPC through
+      without looking at the Credential_Metadata, which keeps an M1 deployment
+      working unchanged after an upgrade.
+    * :attr:`ENABLED`: a Child_Command needs a job password and an
+      Operator_Command needs the shared operator secret plus a whitelisted OS
+      user name.
+
+    :attr:`DISABLED` is the built-in default (Requirement 3.6); enabling
+    authentication is always an explicit opt-in.
+    """
+
+    DISABLED = "disabled"
+    ENABLED = "enabled"
+
+    @classmethod
+    def from_str(cls, value: "Union[str, AuthMode]") -> "AuthMode":
+        """Parse an Auth_Mode name into an :class:`AuthMode`.
+
+        Name matching follows :meth:`ExceptionPolicy.from_str`: it is
+        case-insensitive, tolerates ``-`` in place of ``_`` and ignores
+        surrounding whitespace. An :class:`AuthMode` value is returned
+        unchanged for convenience.
+
+        An unrecognized (or blank/non-string) value does not raise: it degrades
+        to the default :attr:`DISABLED` and emits a WARNING naming the
+        offending value (Requirement 3.8). Degrading is safe here -- unlike a
+        half-configured TLS setup -- because a server running with
+        :attr:`DISABLED` immediately logs the Requirement 3.12 WARNING stating
+        that any caller able to reach the port may run a Control_Command, so
+        the effective posture is never silently misread.
+
+        Args:
+            value: A recognized Auth_Mode name (any letter case), coming from
+                either ``TAKLER_AUTH_MODE`` or the ``security`` section of a
+                Connect_Config file, or an existing :class:`AuthMode`.
+
+        Returns:
+            The matching :class:`AuthMode` member, or :attr:`DISABLED` when
+            ``value`` is not recognized.
+        """
+        if isinstance(value, AuthMode):
+            return value
+
+        if isinstance(value, str):
+            normalized = value.strip().upper().replace("-", "_")
+            member = cls.__members__.get(normalized)
+            if member is not None:
+                return member
+
+        logger.warning(
+            f"Invalid {TAKLER_AUTH_MODE} value {value!r}; "
+            f"falling back to {DEFAULT_AUTH_MODE.name}."
+        )
+        return DEFAULT_AUTH_MODE
+
+
+# Built-in default applied when neither an explicit argument, an environment
+# variable nor a Connect_Config file provides a value (Requirement 3.6).
+DEFAULT_AUTH_MODE = AuthMode.DISABLED
+
+
+class ZombiePolicy(enum.Enum):
+    """How the server handles a Child_Command that hits a Zombie_Condition.
+
+    The policy is server-global and applies to every zombie, whichever
+    condition it hit:
+
+    * :attr:`FAIL` (default): leave the target task untouched and answer with
+      ``ZombieError``, so the stale job sees a failure.
+    * :attr:`FOB`: leave the target task untouched but answer success, so the
+      stale job goes on quietly.
+    * :attr:`ADOPT`: run the command anyway, adopting the credentials it
+      carries.
+
+    :attr:`FAIL` is the built-in default (Requirement 3.6): it is the only one
+    of the three that neither hides the zombie nor lets it write to the current
+    run of the task.
+    """
+
+    FAIL = "fail"
+    FOB = "fob"
+    ADOPT = "adopt"
+
+    @classmethod
+    def from_str(cls, value: "Union[str, ZombiePolicy]") -> "ZombiePolicy":
+        """Parse a Zombie_Policy name into a :class:`ZombiePolicy`.
+
+        Name matching follows :meth:`ExceptionPolicy.from_str`: it is
+        case-insensitive, tolerates ``-`` in place of ``_`` and ignores
+        surrounding whitespace. A :class:`ZombiePolicy` value is returned
+        unchanged for convenience.
+
+        An unrecognized (or blank/non-string) value does not raise: it degrades
+        to the default :attr:`FAIL` and emits a WARNING naming the offending
+        value (Requirement 3.9). Degrading to :attr:`FAIL` cannot weaken the
+        server, since it is the strictest of the three policies.
+
+        Args:
+            value: A recognized Zombie_Policy name (any letter case), coming
+                from either ``TAKLER_ZOMBIE_POLICY`` or the ``security``
+                section of a Connect_Config file, or an existing
+                :class:`ZombiePolicy`.
+
+        Returns:
+            The matching :class:`ZombiePolicy` member, or :attr:`FAIL` when
+            ``value`` is not recognized.
+        """
+        if isinstance(value, ZombiePolicy):
+            return value
+
+        if isinstance(value, str):
+            normalized = value.strip().upper().replace("-", "_")
+            member = cls.__members__.get(normalized)
+            if member is not None:
+                return member
+
+        logger.warning(
+            f"Invalid {TAKLER_ZOMBIE_POLICY} value {value!r}; "
+            f"falling back to {DEFAULT_ZOMBIE_POLICY.name}."
+        )
+        return DEFAULT_ZOMBIE_POLICY
+
+
+# Built-in default applied when neither an explicit argument, an environment
+# variable nor a Connect_Config file provides a value (Requirement 3.6).
+DEFAULT_ZOMBIE_POLICY = ZombiePolicy.FAIL
 
 
 class Address(BaseModel):
