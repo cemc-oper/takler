@@ -90,6 +90,9 @@ def test_build_payload_returns_a_json_string_with_the_expected_top_level():
         "takler_version",
         "written_at",
         "bunch",
+        # Sibling of ``bunch``, added in M2 without a version bump
+        # (requirements 5.1, 5.7).
+        "job_passwords",
     }
     assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION
     assert snapshot["takler_version"] == _takler_version()

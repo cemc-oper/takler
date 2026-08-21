@@ -27,7 +27,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Callable, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import takler
 from takler.core.bunch import Bunch
@@ -48,6 +48,7 @@ __all__ = [
     "BACKUP_SUFFIX",
     "TEMP_SUFFIX",
     "CHECKPOINT_FILE_MODE",
+    "JOB_PASSWORDS_KEY",
     "UNKNOWN_VERSION",
     "CheckpointManager",
 ]
@@ -90,6 +91,21 @@ TEMP_SUFFIX: str = ".tmp"
 #: (requirement 12.5). A snapshot carries the Job_Passwords of every in-flight
 #: job, so it must not be readable by other users on a shared login node.
 CHECKPOINT_FILE_MODE: int = 0o600
+
+#: Top level key of the snapshot's "node path -> Job_Password" mapping, a
+#: sibling of ``bunch`` rather than a node field (requirement 5.1). ``show``
+#: and the snapshot share one :meth:`Bunch.to_dict`, so anything put inside the
+#: node tree would also be handed to every caller of ``show``.
+JOB_PASSWORDS_KEY: str = "job_passwords"
+
+#: The only node statuses whose Job_Password is worth persisting
+#: (requirements 5.2, 5.3). A non-empty password is equivalent to
+#: ``try_no > 0``, so persisting every non-empty one would also carry the
+#: passwords of complete and aborted tasks -- passwords that can never be
+#: accepted, since a Child_Command against a task in those statuses hits
+#: Zombie_Condition ``Z2`` whether or not it matches. Narrowing the scope keeps
+#: the payload small and the number of live secrets on disk down.
+_PERSISTED_STATUSES: Tuple[NodeStatus, ...] = (NodeStatus.submitted, NodeStatus.active)
 
 #: ``takler_version`` value used when the running package exposes no version,
 #: which happens when takler is imported from a source tree without being
@@ -300,6 +316,16 @@ class CheckpointManager:
         format is introduced. ``takler_version`` and ``written_at`` are
         diagnostic only and take no part in restoring.
 
+        The :data:`JOB_PASSWORDS_KEY` mapping is a sibling of ``bunch``
+        (requirement 5.1) and is collected here, at the same instant as
+        ``Bunch.to_dict``, so the passwords and the node statuses they were
+        selected by are one consistent view.
+
+        ``format_version`` stays at 1 even though a top level key is added
+        (requirement 5.7): loading only validates ``format_version`` and
+        ``bunch`` and ignores unknown top level keys, so the new key is
+        compatible in both directions and needs no migration.
+
         Returns:
             The snapshot as a JSON string.
 
@@ -313,8 +339,48 @@ class CheckpointManager:
             "takler_version": _takler_version(),
             "written_at": datetime.datetime.now().isoformat(),
             "bunch": self.bunch.to_dict(),
+            JOB_PASSWORDS_KEY: self._collect_job_passwords(),
         }
         return json.dumps(snapshot)
+
+    def _collect_job_passwords(self) -> Dict[str, str]:
+        """Collect the Job_Passwords of the in-flight tasks, keyed by node path.
+
+        Only tasks whose password is non-empty *and* whose status is submitted
+        or active are collected (requirements 5.2, 5.3); see
+        :data:`_PERSISTED_STATUSES` for why the other statuses are dropped
+        rather than carried along.
+
+        The path of each node is built by passing the already joined parent
+        prefix down the recursion, and ``node.node_path`` is deliberately **not
+        used** (requirement 5.11): it is a property that walks up the parent
+        chain and rebuilds the string on every evaluation, which measured 13~16x
+        slower over a whole tree. That matters here more than on the restore
+        side, because this runs on the event loop thread on every snapshot
+        period, where it is 13.8ms rather than 182.5ms of blocking at 50k tasks.
+
+        Returns:
+            A ``{node path: Job_Password}`` mapping, empty when nothing is in
+            flight. Node paths are absolute and formatted like
+            :attr:`Node.node_path`, e.g. ``/flow1/family1/task1``.
+        """
+        result: Dict[str, str] = {}
+
+        def walk(node: Node, prefix: str) -> None:
+            path = f"{prefix}/{node.name}"
+            if (
+                isinstance(node, Task)
+                and node.job_password
+                and node.state.node_status in _PERSISTED_STATUSES
+            ):
+                result[path] = node.job_password
+            for child in node.children:
+                walk(child, path)
+
+        for flow in self.bunch.flows.values():
+            walk(flow, "")
+
+        return result
 
     def write_checkpoint(self) -> bool:
         """Write one snapshot synchronously.
