@@ -36,17 +36,31 @@ Scope of this module (task 8.1):
   the path and failure is emitted to the console sink, the console sink
   continues, and the failure is reported via the returned result -- the method
   never raises.
+* **Audit sink** -- when ``config.audit_file`` is set,
+  :meth:`LoguruBackend.apply_config` installs a third sink that receives *only*
+  the records bound to the ``audit`` component, while the console and file sinks
+  gain a filter rejecting those same records; the isolation therefore runs in
+  both directions (Requirements 11.1, 11.12). With no ``audit_file`` configured
+  no audit sink exists and no isolation is applied, so audit records flow to the
+  console / file sinks like any other component's (Requirement 11.13). The audit
+  sink renders the bare ``{message}`` -- an Audit_Record is already a complete
+  JSON object carrying its own ``timestamp`` key, so a prefix would make each
+  line invalid JSON -- and opens its file lazily (``delay=True``) so the first
+  writer can pre-create it with owner-only permissions (Requirement 11.14). Like
+  every other sink it is tracked by handler id and torn down by the same
+  idempotent mechanism (Requirement 1.4).
 """
 
 from __future__ import annotations
 
 import os
 import sys
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
 from loguru import logger as _loguru_logger
 
 from takler.logging.backends import LoggingBackend, NamedLogger, map_level
+from takler.logging.config import AUDIT_COMPONENT
 from takler.logging.errors import ApplyResult, SettingFailure
 from takler.logging.levels import LEVEL_ORDER, LogLevel
 
@@ -88,10 +102,37 @@ _CONSOLE_FORMAT = (
 # byte-for-byte identical to console content (Requirement 5.1).
 _FILE_FORMAT = _CONSOLE_FORMAT
 
+# The audit sink renders the bare message with no prefix: an Audit_Record is
+# already a complete JSON object with its own ``timestamp`` key, so any prefix
+# would make the line invalid JSON (Requirement 11.5).
+_AUDIT_FORMAT = "{message}"
+
 # Component name used to attribute internal diagnostic records (for example the
 # console warning emitted when a file sink cannot be established). It mirrors
 # the root component name normalization used elsewhere in the subsystem.
 _ROOT_COMPONENT = "takler"
+
+
+def _is_audit_record(record: "Mapping[str, object]") -> bool:
+    """Return whether a loguru record belongs to the audit component.
+
+    The component name is carried in loguru's ``extra`` dict under
+    ``takler_name`` (bound by :class:`LoguruNamedLogger`); records emitted by
+    code that did not go through the adapter have no such key and are therefore
+    not audit records.
+    """
+    extra = record.get("extra") or {}
+    return extra.get("takler_name") == AUDIT_COMPONENT  # type: ignore[union-attr]
+
+
+def _accept_audit_only(record: "Mapping[str, object]") -> bool:
+    """Sink filter accepting only audit-component records (Req 11.12)."""
+    return _is_audit_record(record)
+
+
+def _reject_audit(record: "Mapping[str, object]") -> bool:
+    """Sink filter rejecting audit-component records (Req 11.12)."""
+    return not _is_audit_record(record)
 
 
 class LoguruNamedLogger(NamedLogger):
@@ -191,6 +232,13 @@ class LoguruBackend(LoggingBackend):
             if failure is not None:
                 failures.append(failure)
 
+        # Audit sink last, so a failure notice can still reach the console
+        # sink installed above (Requirements 11.1, 11.12).
+        if config.audit_file is not None:
+            failure = self._install_audit_sink(config)
+            if failure is not None:
+                failures.append(failure)
+
         return ApplyResult(applied=config, failures=failures)
 
     def get_named_logger(self, component: str) -> NamedLogger:
@@ -238,12 +286,16 @@ class LoguruBackend(LoggingBackend):
         (Requirements 4.1, 4.3). Colorization is disabled so the file and
         console layouts stay identical plain text (Requirement 5.1).
         """
-        handler_id = self._logger.add(
-            sys.stderr,
-            level=self.map_level(config.level),
-            format=_CONSOLE_FORMAT,
-            colorize=False,
-        )
+        add_kwargs: dict = {
+            "level": self.map_level(config.level),
+            "format": _CONSOLE_FORMAT,
+            "colorize": False,
+        }
+        if config.audit_file is not None:
+            # Keep audit records off the console (Requirement 11.12).
+            add_kwargs["filter"] = _reject_audit
+
+        handler_id = self._logger.add(sys.stderr, **add_kwargs)
         self._handler_ids.append(handler_id)
 
     def _install_file_sink(self, config: "ResolvedConfig") -> Optional[SettingFailure]:
@@ -293,6 +345,9 @@ class LoguruBackend(LoggingBackend):
             "format": _FILE_FORMAT,
             "colorize": False,
         }
+        if config.audit_file is not None:
+            # Keep audit records out of the regular log file (Requirement 11.12).
+            add_kwargs["filter"] = _reject_audit
         # Pass rotation/retention straight through only when provided; omitting
         # the kwarg lets loguru apply its no-rotation / keep-all defaults.
         if config.rotation is not None:
@@ -308,6 +363,45 @@ class LoguruBackend(LoggingBackend):
             return SettingFailure("log_file", reason)
 
         # Track the file sink so reconfiguration removes it (Requirement 1.4).
+        self._handler_ids.append(handler_id)
+        return None
+
+    def _install_audit_sink(self, config: "ResolvedConfig") -> Optional[SettingFailure]:
+        """Install the audit sink, handling ``add`` failures gracefully.
+
+        The sink accepts only records bound to the ``audit`` component (the
+        console and file sinks reject those same records), renders the bare
+        ``{message}`` so each line stays valid JSON, and defers opening the file
+        to the first record (``delay=True``) so the first writer can pre-create
+        it with owner-only permissions rather than loguru creating it under the
+        process umask (Requirements 11.1, 11.12, 11.14). The handler id is
+        tracked so reconfiguration removes it like any other sink
+        (Requirement 1.4).
+
+        Args:
+            config: The resolved configuration whose ``audit_file`` is set.
+
+        Returns:
+            ``None`` when the audit sink was installed, or a
+            :class:`SettingFailure` describing why it could not be.
+        """
+        path = config.audit_file
+        assert path is not None  # guarded by the caller
+
+        try:
+            handler_id = self._logger.add(
+                path,
+                level=self.map_level(config.level),
+                format=_AUDIT_FORMAT,
+                filter=_accept_audit_only,
+                delay=True,
+                colorize=False,
+            )
+        except Exception as exc:  # noqa: BLE001 - never raise to the caller
+            reason = f"could not establish audit sink at {path!r}: {exc}"
+            self._report_file_sink_failure(reason)
+            return SettingFailure("audit_file", reason)
+
         self._handler_ids.append(handler_id)
         return None
 

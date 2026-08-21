@@ -71,6 +71,30 @@ created or the file cannot be opened for writing, the file sink is **not**
 established, a record naming the path and the failure is emitted to the console
 sink, the console sink continues, a :class:`SettingFailure` is recorded, and the
 method never raises to the caller.
+
+Audit sink
+----------
+
+When ``config.audit_file`` is set, a third sink is installed on the same
+``takler`` logger and the three sinks are isolated by component name in both
+directions (Requirements 11.1, 11.12):
+
+* the audit handler carries a handler-level filter accepting *only* records
+  whose component is :data:`~takler.logging.config.AUDIT_COMPONENT`;
+* the console handler and the regular file handler each carry a handler-level
+  filter *rejecting* those records.
+
+The isolation filters are attached only while an audit sink exists. With no
+``audit_file`` configured, no audit handler is installed and audit records flow
+to the console / regular file sinks like any other component's, rather than
+vanishing (Requirement 11.13).
+
+The audit handler formats records as the bare message with no timestamp/level/
+component prefix, because an Audit_Record is already a complete JSON object
+carrying its own ``timestamp`` key -- a prefix would make each line invalid
+JSON. It also opens its file lazily (``delay=True``) so the first writer can
+pre-create the file with owner-only permissions instead of the handler creating
+it under the process umask (Requirement 11.14).
 """
 
 from __future__ import annotations
@@ -84,7 +108,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple, Union
 
 from takler.logging.backends import LoggingBackend, NamedLogger
-from takler.logging.config import ResolvedConfig
+from takler.logging.config import AUDIT_COMPONENT, ResolvedConfig
 from takler.logging.errors import ApplyResult, SettingFailure
 from takler.logging.formatter import format_record
 from takler.logging.levels import LEVEL_ORDER, LogLevel
@@ -229,6 +253,26 @@ def _levelno_to_loglevel(levelno: int) -> LogLevel:
         return at_or_below[-1] if at_or_below else LEVEL_ORDER[0]
 
 
+def _record_component(record: logging.LogRecord) -> str:
+    """Return the exact component name a record is attributed to.
+
+    Mirrors what :class:`_TaklerStdlibFormatter` renders: the component name
+    the named-logger adapter attached, falling back to the stdlib logger name
+    for records created elsewhere.
+    """
+    return getattr(record, _COMPONENT_ATTR, None) or record.name
+
+
+def _accept_audit_only(record: logging.LogRecord) -> bool:
+    """Handler filter accepting only audit-component records (Req 11.12)."""
+    return _record_component(record) == AUDIT_COMPONENT
+
+
+def _reject_audit(record: logging.LogRecord) -> bool:
+    """Handler filter rejecting audit-component records (Req 11.12)."""
+    return _record_component(record) != AUDIT_COMPONENT
+
+
 class _TaklerStdlibFormatter(logging.Formatter):
     """A stdlib formatter that renders records via the shared layout.
 
@@ -321,9 +365,16 @@ class StdlibBackend(LoggingBackend):
 
         Idempotent: the handlers this module previously attached are removed
         before the new set is installed, so reconfiguration never duplicates
-        destinations (Requirement 1.4). Never raises to the caller; any setting
-        that cannot be applied is reported in the returned
-        :class:`~takler.logging.errors.ApplyResult` (Requirement 9.4).
+        destinations (Requirement 1.4). This includes the audit handler, which
+        is torn down and reinstalled by exactly the same mechanism. Never
+        raises to the caller; any setting that cannot be applied is reported in
+        the returned :class:`~takler.logging.errors.ApplyResult`
+        (Requirement 9.4).
+
+        When ``config.audit_file`` is set, the audit sink is installed and the
+        component-name isolation filters are attached to all three sinks
+        (Requirements 11.1, 11.12); when it is not, no audit sink exists and no
+        isolation is applied (Requirement 11.13).
 
         Args:
             config: The fully resolved configuration to apply.
@@ -352,11 +403,17 @@ class StdlibBackend(LoggingBackend):
             failures.append(SettingFailure("level", str(exc)))
             logger.setLevel(self.map_level(LogLevel.INFO))
 
+        # An audit sink isolates audit records from the regular sinks in both
+        # directions; without one, no isolation is applied (Requirement 11.13).
+        isolate_audit = config.audit_file is not None
+
         # Console sink (stderr), active when enabled (Requirements 4.1, 4.3).
         console_handler: Optional[logging.Handler] = None
         if config.console:
             try:
-                console_handler = self._make_console_handler(config.level)
+                console_handler = self._make_console_handler(
+                    config.level, isolate_audit
+                )
                 logger.addHandler(console_handler)
             except Exception as exc:  # noqa: BLE001 - never raise to the caller
                 console_handler = None
@@ -370,7 +427,66 @@ class StdlibBackend(LoggingBackend):
         if config.log_file:
             self._install_file_sink(logger, config, console_handler, failures)
 
+        # Audit sink (Requirements 11.1, 11.12). Installed last so a failure
+        # notice can still reach the console sink.
+        if config.audit_file:
+            self._install_audit_sink(logger, config, console_handler, failures)
+
         return ApplyResult(applied=config, failures=failures)
+
+    def _install_audit_sink(
+        self,
+        logger: logging.Logger,
+        config: ResolvedConfig,
+        console_handler: Optional[logging.Handler],
+        failures: List[SettingFailure],
+    ) -> None:
+        """Install the managed audit sink, degrading gracefully on failure.
+
+        The handler receives only records whose component is
+        :data:`~takler.logging.config.AUDIT_COMPONENT` (the console and regular
+        file handlers reject those same records), renders the bare message so
+        each line stays valid JSON, and opens its file lazily so the first
+        writer can pre-create it with owner-only permissions (Requirements
+        11.1, 11.12, 11.14). It is tagged as managed, so reconfiguration tears
+        it down through the same idempotent mechanism as the other sinks
+        (Requirement 1.4).
+
+        On any failure the audit sink is not established, a record naming the
+        path and the failure is emitted to the console sink, a
+        :class:`SettingFailure` is recorded, and the method returns without
+        raising (Requirement 9.4).
+
+        Args:
+            logger: The ``takler`` root logger to attach the handler to.
+            config: The resolved configuration (provides ``audit_file``).
+            console_handler: The managed console handler, used to emit the
+                failure notice; ``None`` when the console is disabled.
+            failures: The list to append a :class:`SettingFailure` to on error.
+        """
+        path = config.audit_file
+        assert path is not None  # guarded by the caller
+
+        try:
+            # ``delay=True``: the file is opened on the first record, so the
+            # audit writer can pre-create it with 0600 rather than the handler
+            # creating it under the process umask (Requirement 11.14).
+            handler: logging.Handler = logging.FileHandler(
+                path, mode="a", encoding="utf-8", delay=True
+            )
+        except Exception as exc:  # noqa: BLE001 - never raise to the caller
+            message = f"could not establish audit sink at {path!r}: {exc}"
+            failures.append(SettingFailure("audit_file", message))
+            self._emit_to_console(console_handler, message)
+            return
+
+        handler.setLevel(int(config.level.value))
+        # Bare message: an Audit_Record is already a complete JSON object with
+        # its own ``timestamp`` key, so any prefix would break per-line JSON.
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        handler.addFilter(_accept_audit_only)
+        setattr(handler, _MANAGED_HANDLER_FLAG, True)
+        logger.addHandler(handler)
 
     def _install_file_sink(
         self,
@@ -431,6 +547,9 @@ class StdlibBackend(LoggingBackend):
 
         handler.setLevel(int(config.level.value))
         handler.setFormatter(_TaklerStdlibFormatter())
+        if config.audit_file is not None:
+            # Keep audit records out of the regular log file (Requirement 11.12).
+            handler.addFilter(_reject_audit)
         setattr(handler, _MANAGED_HANDLER_FLAG, True)
         logger.addHandler(handler)
 
@@ -525,7 +644,23 @@ class StdlibBackend(LoggingBackend):
         """
         message = f"could not establish file sink at {path!r}: {reason}"
         failures.append(SettingFailure("log_file", message))
+        StdlibBackend._emit_to_console(console_handler, message)
 
+    @staticmethod
+    def _emit_to_console(
+        console_handler: Optional[logging.Handler],
+        message: str,
+    ) -> None:
+        """Emit a WARNING directly through the console handler, if any.
+
+        Bypassing the logger makes the notice appear regardless of the
+        configured threshold. Never raises.
+
+        Args:
+            console_handler: The managed console handler, or ``None`` when the
+                console is disabled.
+            message: The already-formatted notice text.
+        """
         if console_handler is None:
             return
 
@@ -545,11 +680,17 @@ class StdlibBackend(LoggingBackend):
             pass
 
     @staticmethod
-    def _make_console_handler(level: LogLevel) -> logging.Handler:
+    def _make_console_handler(
+        level: LogLevel,
+        isolate_audit: bool = False,
+    ) -> logging.Handler:
         """Build a tagged stderr console handler using the shared formatter.
 
         Args:
             level: The level threshold to apply to the handler.
+            isolate_audit: When ``True``, attach a filter rejecting
+                audit-component records so they only reach the audit sink
+                (Requirement 11.12).
 
         Returns:
             A configured :class:`logging.StreamHandler` tagged as managed by
@@ -558,6 +699,8 @@ class StdlibBackend(LoggingBackend):
         handler = logging.StreamHandler(stream=sys.stderr)
         handler.setLevel(int(level.value))
         handler.setFormatter(_TaklerStdlibFormatter())
+        if isolate_audit:
+            handler.addFilter(_reject_audit)
         setattr(handler, _MANAGED_HANDLER_FLAG, True)
         return handler
 

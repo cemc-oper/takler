@@ -25,13 +25,25 @@ __all__ = [
     "resolve_config",
     "ENV_LOG_LEVEL",
     "ENV_LOG_FILE",
+    "ENV_AUDIT_FILE",
     "DEFAULT_LEVEL",
     "DEFAULT_CONSOLE",
+    "AUDIT_COMPONENT",
 ]
 
 # Environment variable names recognized by the logging subsystem.
 ENV_LOG_LEVEL = "TAKLER_LOG_LEVEL"
 ENV_LOG_FILE = "TAKLER_LOG_FILE"
+# Audit sink path. The name is duplicated (not imported) on purpose: the
+# logging subsystem must not depend on ``takler.server``, which owns the
+# server-side resolution of the same variable.
+ENV_AUDIT_FILE = "TAKLER_AUDIT_FILE"
+
+# The component name whose records are routed to the audit sink. Records
+# emitted through ``get_logger("audit")`` carry this component name, and the
+# backends use it to isolate the audit sink from the regular sinks in both
+# directions (Requirement 11.12).
+AUDIT_COMPONENT = "audit"
 
 # Built-in defaults applied when neither an explicit argument nor an
 # environment variable provides a value.
@@ -61,6 +73,13 @@ class ResolvedConfig:
             argument overrode it), this carries that offending value so the
             caller can emit a WARNING and fall back to ``INFO`` (Requirement
             7.3). It is ``None`` in every other case.
+        audit_file: Path for the optional audit sink, or ``None`` for no audit
+            sink. When set, the backend installs a third sink that receives
+            *only* the records of the :data:`AUDIT_COMPONENT` component, and
+            excludes those records from the console and regular file sinks
+            (Requirements 11.1, 11.12). When ``None``, no audit sink is
+            installed and audit records flow to whatever sinks are configured
+            (Requirement 11.13).
     """
 
     level: LogLevel
@@ -69,6 +88,7 @@ class ResolvedConfig:
     rotation: Optional[Union[str, int]]
     retention: Optional[Union[str, int]]
     invalid_env_level: Optional[str] = None
+    audit_file: Optional[str] = None
 
 
 def _is_blank(value: Optional[str]) -> bool:
@@ -111,23 +131,34 @@ def _resolve_level(
         return DEFAULT_LEVEL, env_level
 
 
-def _resolve_log_file(
-    explicit_log_file: Any,
+def _resolve_file_path(
+    explicit_path: Any,
     env: Mapping[str, str],
+    env_key: str,
 ) -> Optional[str]:
-    """Resolve the effective file-sink path.
+    """Resolve the effective path of a file sink.
 
-    Precedence: an explicit ``log_file`` argument wins (coerced to ``str`` so
-    ``os.PathLike`` values are accepted), otherwise a non-blank
-    ``TAKLER_LOG_FILE`` environment value applies, otherwise no file sink.
+    Precedence: an explicit argument wins (coerced to ``str`` so
+    ``os.PathLike`` values are accepted), otherwise a non-blank value of the
+    ``env_key`` environment variable applies, otherwise no sink.
+
+    Args:
+        explicit_path: The explicitly supplied path, or ``None``.
+        env: The environment mapping to consult.
+        env_key: The environment variable name backing this setting
+            (``TAKLER_LOG_FILE`` for the regular file sink,
+            ``TAKLER_AUDIT_FILE`` for the audit sink).
+
+    Returns:
+        The resolved path, or ``None`` when the sink is not configured.
     """
-    if explicit_log_file is not None:
-        return os.fspath(explicit_log_file)
+    if explicit_path is not None:
+        return os.fspath(explicit_path)
 
-    env_file = env.get(ENV_LOG_FILE)
-    if _is_blank(env_file):
+    env_path = env.get(env_key)
+    if _is_blank(env_path):
         return None
-    return env_file
+    return env_path
 
 
 def resolve_config(
@@ -143,11 +174,13 @@ def resolve_config(
 
     Args:
         explicit: A mapping of explicitly supplied settings. Recognized keys
-            are ``level``, ``console``, ``log_file``, ``rotation`` and
-            ``retention``. A missing key, or a key whose value is ``None``, is
-            treated as "not provided" so the next precedence source applies.
+            are ``level``, ``console``, ``log_file``, ``rotation``,
+            ``retention`` and ``audit_file``. A missing key, or a key whose
+            value is ``None``, is treated as "not provided" so the next
+            precedence source applies.
         env: A mapping of environment variables (typically ``os.environ``).
-            Only ``TAKLER_LOG_LEVEL`` and ``TAKLER_LOG_FILE`` are consulted.
+            Only ``TAKLER_LOG_LEVEL``, ``TAKLER_LOG_FILE`` and
+            ``TAKLER_AUDIT_FILE`` are consulted.
 
     Returns:
         The fully resolved configuration.
@@ -161,7 +194,12 @@ def resolve_config(
     explicit_console = explicit.get("console")
     console = DEFAULT_CONSOLE if explicit_console is None else bool(explicit_console)
 
-    log_file = _resolve_log_file(explicit.get("log_file"), env)
+    log_file = _resolve_file_path(explicit.get("log_file"), env, ENV_LOG_FILE)
+
+    # The audit sink path follows the same per-setting precedence as the
+    # regular file sink, backed by its own environment variable
+    # (Requirement 11.12).
+    audit_file = _resolve_file_path(explicit.get("audit_file"), env, ENV_AUDIT_FILE)
 
     # Rotation and retention are sourced from explicit arguments only; there
     # is no environment variable for them, and the default is "none".
@@ -175,4 +213,5 @@ def resolve_config(
         rotation=rotation,
         retention=retention,
         invalid_env_level=invalid_env_level,
+        audit_file=audit_file,
     )

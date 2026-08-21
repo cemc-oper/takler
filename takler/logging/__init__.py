@@ -116,6 +116,7 @@ def configure(
     console: Optional[bool] = None,
     rotation: Optional[Union[str, int]] = None,
     retention: Optional[Union[str, int]] = None,
+    audit_file: Optional[Union[str, "os.PathLike[str]"]] = None,
 ) -> None:
     """Configure the active logging backend (Logging_Configurator).
 
@@ -150,6 +151,13 @@ def configure(
             the default (console enabled) in effect.
         rotation: Rotation threshold (size or time interval).
         retention: Retention limit (count or age) for rotated files.
+        audit_file: Path for an optional audit sink. When set, records emitted
+            through ``get_logger("audit")`` go to this file only -- not to the
+            console or the regular log file -- and every other component's
+            records stay out of it (Requirements 11.1, 11.12). When omitted, the
+            ``TAKLER_AUDIT_FILE`` environment variable applies; with neither,
+            no audit sink is installed and audit records flow to the configured
+            console / file sinks (Requirement 11.13).
 
     Raises:
         InvalidLogLevelError: If ``level`` is supplied but is not a recognized
@@ -171,6 +179,8 @@ def configure(
         explicit["rotation"] = rotation
     if retention is not None:
         explicit["retention"] = retention
+    if audit_file is not None:
+        explicit["audit_file"] = audit_file
 
     # Resolve first. An invalid explicit level raises here, BEFORE any sink is
     # torn down, leaving the previously active configuration intact
