@@ -15,6 +15,20 @@ from .connect_config import ConnectConfig, ExceptionPolicy, resolve_exception_po
 logger = get_logger("server")
 
 
+def _as_optional_path_str(value: Optional[Union[str, Path]]) -> Optional[str]:
+    """Normalize an optional path argument to ``Optional[str]``.
+
+    A ``Path`` becomes its string form, and a blank or whitespace-only string
+    becomes ``None``: throughout takler an empty value from a config source
+    means "not provided", so it must let the next precedence source apply
+    rather than count as a configured path.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
 class TaklerServer:
     """
     Takler server which will create three members when init:
@@ -33,6 +47,8 @@ class TaklerServer:
         connect_config: "Optional[ConnectConfig]" = None,
         checkpoint_file: Optional[Union[str, Path]] = None,
         checkpoint_interval: Optional[float] = None,
+        tls_cert_file: Optional[Union[str, Path]] = None,
+        tls_key_file: Optional[Union[str, Path]] = None,
     ):
         """Build the bunch and the three services that operate on it.
 
@@ -50,6 +66,11 @@ class TaklerServer:
                 relative to the current working directory (Requirement 7.3).
             checkpoint_interval: Explicit snapshot period in seconds, highest
                 precedence (Requirement 7.2).
+            tls_cert_file: Explicit server certificate path, highest precedence
+                over the ``security`` section of ``connect_config``
+                (Requirement 1.10).
+            tls_key_file: Explicit server private key path, same precedence as
+                ``tls_cert_file`` (Requirement 1.10).
         """
         # Resolve the effective exception-handling policy following the source
         # precedence: explicit argument > ``TAKLER_EXCEPTION_POLICY`` env var >
@@ -57,6 +78,14 @@ class TaklerServer:
         self.exception_policy: ExceptionPolicy = resolve_exception_policy(
             exception_policy
         )
+
+        # Explicit TLS pair, the highest precedence source for the server
+        # certificate and private key (Requirement 1.10). Only kept here; the
+        # pair is turned into gRPC server credentials -- and the Connect_Config
+        # ``security`` section consulted for whatever the command line left out
+        # -- when the network service is started.
+        self.tls_cert_file: Optional[str] = _as_optional_path_str(tls_cert_file)
+        self.tls_key_file: Optional[str] = _as_optional_path_str(tls_key_file)
 
         # Shared fatal-error signal. In ``FAIL_FAST`` mode the scheduler / service
         # request a clean server exit by triggering this event; ``run()`` waits on

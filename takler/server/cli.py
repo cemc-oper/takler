@@ -9,6 +9,10 @@ Two things here are contracts rather than implementation details:
 
 * ``takler-server --help`` prints the startup options and exits with ``0``
   (requirements 15.3, 15.4). ``python -m takler.server`` is the same CLI.
+* A security configuration that cannot be used aborts the start-up with a
+  non-zero exit code and one line on stderr, rather than degrading to a
+  plaintext or unauthenticated server (requirement 1.6). See
+  :func:`serve_forever`.
 * ``SIGTERM`` / ``SIGINT`` are routed to :meth:`TaklerServer.stop`, not left to
   the default handlers. The default ``SIGINT`` behaviour raises
   ``KeyboardInterrupt`` out of ``asyncio.run`` and the default ``SIGTERM``
@@ -23,7 +27,7 @@ their outcome there. That precondition constrains the address this process
 actually uses, no matter whether it came from the command line or from the
 Connect_Config file.
 
-Requirements: 15.3, 15.4, 5.9, 6.23.
+Requirements: 15.3, 15.4, 5.9, 6.23, 1.6, 1.10.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from typing import Optional
 import typer
 
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
+from takler.exceptions import SecurityConfigError
 from takler.logging import get_logger
 from takler.server import TaklerServer
 from takler.server.connect_config import (
@@ -83,6 +88,15 @@ EXCEPTION_POLICY_HELP = (
     f"how unexpected exceptions are handled, resilient or fail_fast, "
     f"or use env var {TAKLER_EXCEPTION_POLICY}; defaults to resilient"
 )
+#: Shared tail of the ``--tls-cert`` / ``--tls-key`` help text: the two options
+#: are the highest precedence source for the pair, and the pair is all-or-nothing
+#: (requirements 1.4, 1.10).
+_TLS_HELP_TAIL = (
+    "overrides the connect.yaml security section; the certificate and the key "
+    "must be given together, configuring only one aborts the start-up"
+)
+TLS_CERT_HELP = f"server certificate path enabling TLS; {_TLS_HELP_TAIL}"
+TLS_KEY_HELP = f"server private key path enabling TLS; {_TLS_HELP_TAIL}"
 
 
 app = typer.Typer(
@@ -204,8 +218,26 @@ def serve_forever(server: TaklerServer) -> None:
 
     Kept as a separate function so tests can exercise option handling without
     binding a port.
+
+    A :class:`~takler.exceptions.SecurityConfigError` -- a half configured TLS
+    pair, an unreadable certificate or key, a missing operator secret file while
+    authentication is enabled -- is raised while ``TaklerServer.start()`` runs,
+    before the service accepts requests. It has no RPC boundary to travel
+    through, so this is where it becomes an operator-visible failure: one line
+    on stderr and exit code 1, never a silent fall back to plaintext or to an
+    unauthenticated server (requirement 1.6).
+
+    The catch sits here rather than inside :func:`_serve` on purpose: ``_serve``
+    has a ``finally`` clause that calls ``server.stop()``, and a security
+    configuration error means the server never finished starting, so running
+    that shutdown flow over a half-started server would be shutting down
+    services that were never brought up.
     """
-    asyncio.run(_serve(server))
+    try:
+        asyncio.run(_serve(server))
+    except SecurityConfigError as exc:
+        typer.echo(f"security configuration error: {exc}", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -222,6 +254,8 @@ def serve(
     exception_policy: Optional[str] = typer.Option(
         None, "--exception-policy", help=EXCEPTION_POLICY_HELP
     ),
+    tls_cert: Optional[Path] = typer.Option(None, "--tls-cert", help=TLS_CERT_HELP),
+    tls_key: Optional[Path] = typer.Option(None, "--tls-key", help=TLS_KEY_HELP),
 ) -> None:
     """Start a takler server: restore the last checkpoint, then serve."""
     connect_config = resolve_connect_config(config)
@@ -234,6 +268,11 @@ def serve(
         connect_config=connect_config,
         checkpoint_file=checkpoint_file,
         checkpoint_interval=checkpoint_interval,
+        # Highest precedence source of the TLS pair: handed over as explicit
+        # values, so the Connect_Config ``security`` section only fills in what
+        # the command line left out (requirement 1.10).
+        tls_cert_file=tls_cert,
+        tls_key_file=tls_key,
     )
     serve_forever(server)
 
