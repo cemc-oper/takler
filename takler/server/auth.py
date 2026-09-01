@@ -5,21 +5,24 @@ Operator_Secret_Set and the Operator_Whitelist (:class:`CredentialStore`), the
 method-name privilege table, the per-call credentials taken from the gRPC
 metadata and the Auth_Interceptor that applies them.
 
-Three independent pieces live here so far: :class:`CredentialStore` with its
-file handling, the method-name privilege table
-(:class:`PrivilegeLevel`, :data:`PRIVILEGE_BY_METHOD`,
-:func:`privilege_for_method`), and the per-call credentials
-(:class:`CallCredentials` plus the context variable that carries them from the
-interceptor to the Zombie_Detector and to the Audit_Logger). The interceptor
-that joins them is added on top.
+Four pieces live here: :class:`CredentialStore` with its file handling, the
+method-name privilege table (:class:`PrivilegeLevel`,
+:data:`PRIVILEGE_BY_METHOD`, :func:`privilege_for_method`), the per-call
+credentials (:class:`CallCredentials` plus the context variable that carries
+them from the interceptor to the Zombie_Detector and to the Audit_Logger), and
+:class:`AuthInterceptor`, which joins the three into the single check every RPC
+passes through.
 
-All three deliberately depend on nothing but the standard library and
-:mod:`takler.logging` -- not even on :mod:`grpc` -- so the parsing, the
-hot-reload behaviour, the privilege lookup and the metadata parsing can all be
-tested without standing up a gRPC server.
+Everything but the interceptor deliberately depends on nothing outside the
+standard library and :mod:`takler.logging` -- not even on :mod:`grpc` -- so the
+parsing, the hot-reload behaviour, the privilege lookup and the metadata
+parsing can all be tested without standing up a gRPC server. Only
+:class:`AuthInterceptor` needs :mod:`grpc`, for the base class, the status codes
+and the abort handler it returns.
 
-Requirements: 6.1, 6.2, 6.4, 6.5, 6.8, 6.13, 7.1, 7.2, 7.5, 7.6, 7.8, 7.9,
-7.10, 7.12, 11.8, 12.1, 12.3.
+Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11, 6.12,
+6.13, 7.1, 7.2, 7.3,
+7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11, 7.12, 7.13, 11.8, 12.1, 12.3.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ import dataclasses
 import enum
 import hmac
 import os
+import stat
 from pathlib import Path
 from typing import (
     Any,
@@ -42,7 +46,11 @@ from typing import (
     Union,
 )
 
+import grpc
+
+from takler.exceptions import SecurityConfigError
 from takler.logging import get_logger
+from takler.server.connect_config import DEFAULT_AUTH_MODE, AuthMode
 
 __all__ = [
     "AUDIT_UNKNOWN_USER",
@@ -53,10 +61,13 @@ __all__ = [
     "METADATA_KEY_USER",
     "PRIVILEGE_BY_METHOD",
     "SERVICE_METHOD_PREFIX",
+    "STATUS_CODE_BY_REJECTION",
+    "AuthInterceptor",
     "CallCredentials",
     "CredentialFileContent",
     "CredentialStore",
     "PrivilegeLevel",
+    "RejectionReason",
     "compare_secret_values",
     "get_call_credentials",
     "privilege_for_method",
@@ -341,6 +352,45 @@ class _CredentialFile:
         )
 
 
+class RejectionReason(enum.Enum):
+    """Why an Operator_Command was refused (Requirement 6.11).
+
+    The three values are the whole vocabulary of a refusal: the classification
+    is what reaches the rejection WARNING, the Audit_Record and the gRPC abort
+    details, and it is all that reaches them -- no credential value is ever
+    echoed back (Requirements 6.10, 6.12, 12.1).
+
+    The split is by *what the caller has to do about it*, not by which check
+    failed:
+
+    * :attr:`MISSING_CREDENTIAL`: nothing was presented, which for a client is
+      "you are not configured yet" -- a missing ``TAKLER_SECRET_FILE``, an
+      un-upgraded client against an ``enabled`` server. It maps to
+      ``UNAUTHENTICATED``.
+    * :attr:`INVALID_CREDENTIAL`: something was presented and it does not hold,
+      which is "your secret is stale" -- typically a client left behind by a
+      rotation (Requirement 7.13). A credential file that cannot be read at
+      run time lands here too: the server cannot tell whether the caller's
+      secret is valid, and answering "not valid" is the fail-closed answer
+      (Requirement 7.7).
+    * :attr:`NOT_IN_WHITELIST`: the secret held but this user name is not
+      authorized, which is "ask the operator to add you" and needs no secret
+      rotation at all.
+
+    ``UNAUTHENTICATED`` for the first and ``PERMISSION_DENIED`` for the other
+    two is the mapping the Auth_Interceptor applies; the status codes are not
+    named here so that this module keeps needing nothing from :mod:`grpc`.
+
+    The values are the exact classification strings of the Cross-Language
+    Contract, so a log line, an audit record and a Go client all spell a
+    refusal the same way.
+    """
+
+    MISSING_CREDENTIAL = "missing_credential"
+    INVALID_CREDENTIAL = "invalid_credential"
+    NOT_IN_WHITELIST = "not_in_whitelist"
+
+
 class CredentialStore:
     """Holds the Operator_Secret_Set and the Operator_Whitelist.
 
@@ -355,9 +405,10 @@ class CredentialStore:
     rotate the shared secret without a downtime window (Requirement 7.12).
 
     Neither accessor raises on a missing or unreadable file; they report the
-    failure through :attr:`CredentialFileContent.error` instead. The credential
-    verification built on top of them turns such a failure into a fail-closed
-    ``PERMISSION_DENIED`` with an ERROR log rather than letting an exception
+    failure through :attr:`CredentialFileContent.error` instead.
+    :meth:`authorize_operator`, which is what the Auth_Interceptor calls, turns
+    such a failure into an ERROR log plus a fail-closed
+    :attr:`RejectionReason.INVALID_CREDENTIAL` rather than letting an exception
     escape an interceptor, where it would degrade into an ``UNKNOWN`` status
     code (Requirement 7.7).
 
@@ -533,6 +584,277 @@ class CredentialStore:
         if user is None:
             return False
         return user in content.values
+
+    def authorize_operator(
+        self,
+        secret: Optional[str],
+        user: Optional[str],
+        compare: Optional[SecretComparison] = None,
+    ) -> Optional[RejectionReason]:
+        """Decide whether an Operator_Command may proceed.
+
+        This is the run-time counterpart of :meth:`validate_at_startup` and the
+        single entry point the Auth_Interceptor uses for an ``OPERATOR`` level
+        method: it answers with a classification instead of a status code, so
+        this module stays free of :mod:`grpc`, and the interceptor maps
+        :attr:`RejectionReason.MISSING_CREDENTIAL` to ``UNAUTHENTICATED`` and
+        the other two to ``PERMISSION_DENIED``.
+
+        The checks run in this order, and the first failure decides:
+
+        ================================================= =========================
+        Situation                                         Result
+        ================================================= =========================
+        no ``takler-secret`` or no ``takler-user``         ``MISSING_CREDENTIAL``
+        a credential file cannot be read                   ERROR + ``INVALID_CREDENTIAL``
+        no Operator_Secret_File configured                 ERROR + ``INVALID_CREDENTIAL``
+        the secret is not in the Operator_Secret_Set       ``INVALID_CREDENTIAL``
+        the user is not in the Operator_Whitelist          ``NOT_IN_WHITELIST``
+        otherwise                                          ``None`` -- authorized
+        ================================================= =========================
+
+        Presence is checked before the files are touched so that an
+        unconfigured client gets ``UNAUTHENTICATED`` -- "you carry no
+        credentials" -- rather than a report about the server's own files, and
+        so that a caller who sends nothing cannot make the server read two
+        files per attempt.
+
+        **Nothing here raises, by construction (Requirement 7.7).** An
+        exception leaving an interceptor does not become the status code it
+        describes; it becomes ``UNKNOWN``, which tells the client nothing and
+        tells the Client_CLI to treat a refusal as a server fault. So a file
+        that has been deleted, chmod-ed away or replaced mid-flight while the
+        server runs is answered the same way as a wrong secret: an ERROR naming
+        the path and the reason, and a refusal. Refusing rather than passing is
+        the only safe reading of "the server cannot check right now" -- the
+        alternative would turn ``rm`` on the secret file, or an NFS hiccup, into
+        an open server.
+
+        An unreadable file is not cached as empty either: the fingerprint is
+        dropped on failure (see :class:`_CredentialFile`), so the next
+        Operator_Command re-reads and a transient failure heals by itself
+        without a restart.
+
+        A missing Operator_Secret_File *path* is reported the same way even
+        though :meth:`validate_at_startup` already refuses to start in that
+        case. It stays reachable for a store built outside the server startup
+        path, and "no secret is configured" must never mean "no secret is
+        required".
+
+        The ERROR is emitted per rejected RPC rather than once per failure
+        state. A deployment where this fires repeatedly is one where every
+        Operator_Command is being refused, which is worth a line each: the
+        record is what tells the operator that the cause is the server's own
+        file rather than their secret.
+
+        Args:
+            secret: The ``takler-secret`` value the caller presented, or
+                ``None`` when the key was absent or blank.
+            user: The ``takler-user`` value the caller presented, or ``None``.
+            compare: The per-value comparison handed to
+                :meth:`verify_secret`, for the property test that counts
+                comparisons. Defaults to :func:`compare_secret_values`.
+
+        Returns:
+            ``None`` when the call is authorized, otherwise the
+            :class:`RejectionReason` to report.
+        """
+        if secret is None or user is None:
+            return RejectionReason.MISSING_CREDENTIAL
+
+        # Both files are read before either verdict is formed: whichever of
+        # them is unreadable, the answer is the same refusal, and reading both
+        # means the ERROR names the file that is actually broken instead of
+        # only the first one consulted. The reads are fingerprint-cached, so
+        # this costs two ``stat`` calls in the normal case.
+        secret_content = self.read_secret_set()
+        whitelist_content = self.read_whitelist()
+
+        unreadable = False
+        for content in (secret_content, whitelist_content):
+            if content.error is not None:
+                # The message already carries the path and the underlying
+                # reason, and carries no file content (Requirement 7.7).
+                logger.error(
+                    f"{content.error}; refusing the operator command "
+                    f"({RejectionReason.INVALID_CREDENTIAL.value})."
+                )
+                unreadable = True
+        if unreadable:
+            return RejectionReason.INVALID_CREDENTIAL
+
+        if not secret_content.configured:
+            logger.error(
+                f"No {self._secret.description} is configured; refusing the "
+                f"operator command "
+                f"({RejectionReason.INVALID_CREDENTIAL.value}). Set the "
+                f"operator_secret_file item of the security section, or "
+                f"disable authentication."
+            )
+            return RejectionReason.INVALID_CREDENTIAL
+
+        if not self.verify_secret(secret, compare=compare):
+            return RejectionReason.INVALID_CREDENTIAL
+
+        if not self.is_whitelisted(user):
+            return RejectionReason.NOT_IN_WHITELIST
+
+        return None
+
+    def validate_at_startup(
+        self,
+        auth_mode: AuthMode = DEFAULT_AUTH_MODE,
+    ) -> None:
+        """Check the credential files before the server starts serving.
+
+        Four situations are distinguished (Requirements 7.3, 7.4, 7.5, 7.11);
+        the first two are fatal and the last two only produce a WARNING:
+
+        =============================================== ==========================
+        Situation                                       Outcome
+        =============================================== ==========================
+        ``enabled`` and no Operator_Secret_File          ERROR + raise (7.3)
+        ``enabled`` and it is missing / unreadable /     ERROR + raise (7.4)
+        holds no value
+        ``enabled`` and no Operator_Whitelist_File       WARNING (7.5)
+        Operator_Secret_File readable or writable        WARNING (7.11)
+        beyond its owner
+        =============================================== ==========================
+
+        **Why this is fatal where an unparseable Auth_Mode is not.** A bad
+        ``auth_mode`` string degrades to ``disabled``, and a ``disabled`` server
+        announces itself as unauthenticated in its own startup log, so nobody
+        misreads the posture. Here the operator has explicitly asked for
+        authentication, and the only ways to continue are both worse than
+        refusing to start: serving with an empty Operator_Secret_Set would
+        reject *every* Operator_Command, which looks like a client bug rather
+        than a server misconfiguration, and falling back to ``disabled`` would
+        leave a server the operator believes is authenticated wide open. A
+        non-zero exit at startup is the one outcome that cannot be misread --
+        which is why :class:`~takler.exceptions.SecurityConfigError` is raised
+        rather than returned; ``takler-server`` turns it into exit code 1
+        (Requirement 1.6).
+
+        Checking here rather than on the first RPC also matters: a deployment
+        error surfaces when the operator is watching the server come up, not
+        hours later inside somebody else's ``takler-client`` invocation.
+
+        The permission WARNING is emitted whatever the Auth_Mode is: a
+        world-readable secret file is worth reporting even on a server that is
+        not yet enforcing authentication, since the same file will be used once
+        it does. It is a warning and not an error because the owner may
+        legitimately have widened the group bits to share the secret with a
+        second operator account, and because refusing to start over a mode bit
+        would strand a server whose authentication is otherwise sound.
+
+        Nothing is validated when authentication is off apart from those
+        permissions -- an M1 deployment that configures no credential file at
+        all must keep starting unchanged.
+
+        A whitelist file that is configured but unreadable is deliberately not
+        fatal: it is read again on every RPC, so the run-time fail-closed path
+        (Requirement 7.7) already rejects every Operator_Command with an ERROR
+        naming the path, and a transient failure at startup -- an NFS mount not
+        up yet -- should not keep the server from coming up.
+
+        Args:
+            auth_mode: The resolved Auth_Mode. Passed in rather than resolved
+                here because the resolution is the caller's business: the
+                server has already applied the "argument > environment >
+                Connect_Config > default" order (Requirement 3.5) and this
+                store does not know about any of those sources.
+
+        Raises:
+            SecurityConfigError: Authentication is enabled but the
+                Operator_Secret_File is unusable. The message names the
+                configuration item or the path plus the reason, and never
+                contains file content.
+        """
+        auth_enabled = auth_mode is AuthMode.ENABLED
+
+        if auth_enabled:
+            content = self.read_secret_set()
+            if not content.configured:
+                self._reject_configuration(
+                    f"Auth_Mode is {AuthMode.ENABLED.value!r} but no "
+                    f"{self._secret.description} is configured; set the "
+                    f"operator_secret_file item of the security section, or "
+                    f"disable authentication."
+                )
+            if content.error is not None:
+                # Already carries the path and the underlying reason
+                # (Requirement 7.4).
+                self._reject_configuration(content.error)
+            if not content.values:
+                self._reject_configuration(
+                    f"{self._secret.description} {self._secret.path} holds no "
+                    f"operator secret: every line is blank or starts with "
+                    f"{COMMENT_PREFIX!r}."
+                )
+
+        self._warn_on_wide_secret_file_permissions()
+
+        if auth_enabled and not self._whitelist.configured:
+            logger.warning(
+                f"No {self._whitelist.description} is configured: any user "
+                f"name presenting a valid operator secret is accepted, so "
+                f"operator commands are authorized by the secret alone. Set "
+                f"the operator_whitelist_file item of the security section to "
+                f"restrict them to named users."
+            )
+
+    def _reject_configuration(self, message: str) -> None:
+        """Log ``message`` as an ERROR and raise it as a configuration error.
+
+        Both happen in one place so that a startup refusal can never be raised
+        without a matching log record: the exception text reaches whoever
+        started the process, the log record reaches the log file the operator
+        will look at afterwards, and the two say the same thing.
+
+        Raises:
+            SecurityConfigError: Always.
+        """
+        logger.error(message)
+        raise SecurityConfigError(message)
+
+    def _warn_on_wide_secret_file_permissions(self) -> None:
+        """Warn when the Operator_Secret_File is readable beyond its owner.
+
+        The mode bits are reported in octal, in the form the operator would
+        pass to ``chmod`` to fix them (Requirement 7.11).
+
+        A file that cannot be stat-ed produces nothing here. When
+        authentication is enabled that has already been reported as a fatal
+        error by the caller, and when it is disabled an unreadable file is not
+        yet a problem -- warning about the permissions of a file whose
+        permissions could not be read would be noise either way.
+        """
+        path = self._secret.path
+        if path is None:
+            return
+
+        try:
+            mode = stat.S_IMODE(os.stat(path).st_mode)
+        except OSError:
+            return
+
+        wide = mode & _GROUP_OTHER_READ_WRITE
+        if wide:
+            logger.warning(
+                f"{self._secret.description} {path} has mode {mode:04o}, which "
+                f"lets users other than its owner read or write it "
+                f"({wide:04o}); the operator secret is only as private as this "
+                f"file. Consider chmod 0600."
+            )
+
+
+#: Mode bits that let a user other than the file's owner read or write it.
+#:
+#: Only the read and write bits are tested, not the execute bits: a credential
+#: file with ``+x`` set is odd but harmless, and reporting it would train the
+#: reader to ignore this warning. The owner's own bits are irrelevant -- the
+#: server process runs as the owner and has to be able to read the file.
+_GROUP_OTHER_READ_WRITE: int = stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
 
 
 class PrivilegeLevel(enum.Enum):
@@ -1001,3 +1323,245 @@ def reset_call_credentials(token: contextvars.Token) -> None:
             :func:`set_call_credentials`.
     """
     _CALL_CREDENTIALS.reset(token)
+
+
+#: gRPC status code each :class:`RejectionReason` is answered with
+#: (Requirements 6.4, 6.5, 6.6, 6.7).
+#:
+#: The split follows what the caller can do about the refusal, which is also
+#: what the two codes mean in the gRPC contract: ``UNAUTHENTICATED`` is "you
+#: presented no credentials", ``PERMISSION_DENIED`` is "you presented
+#: credentials and they do not grant this". Keeping them apart is what lets a
+#: client tell "this client is not configured for an authenticated server" from
+#: "this secret is stale" without parsing the message text.
+#:
+#: Both map to exit code 1 in the Client_CLI, so the distinction is for the
+#: human reading the message, not for the exit status (Requirement 6.14).
+STATUS_CODE_BY_REJECTION: Dict[RejectionReason, grpc.StatusCode] = {
+    RejectionReason.MISSING_CREDENTIAL: grpc.StatusCode.UNAUTHENTICATED,
+    RejectionReason.INVALID_CREDENTIAL: grpc.StatusCode.PERMISSION_DENIED,
+    RejectionReason.NOT_IN_WHITELIST: grpc.StatusCode.PERMISSION_DENIED,
+}
+
+
+class AuthInterceptor(grpc.aio.ServerInterceptor):
+    """The single place every RPC is authenticated (Requirement 6.2).
+
+    One interceptor in front of the whole service, rather than a check inside
+    each handler: a handler that forgets to check is an unauthenticated write
+    path into the Bunch, and there is no way to notice it is missing. Here the
+    check cannot be forgotten, because a method that nobody classified still
+    resolves to :attr:`PrivilegeLevel.OPERATOR` (see
+    :func:`privilege_for_method`).
+
+    What is checked follows from the method's Privilege_Level alone:
+
+    ==================== =================================================
+    Privilege_Level      Checked when Auth_Mode is ``enabled``
+    ==================== =================================================
+    ``PUBLIC``           nothing, the metadata is not even parsed (6.8)
+    ``CHILD``            ``takler-pass`` is present (6.4, 6.13)
+    ``OPERATOR``         ``takler-secret`` and ``takler-user`` are present,
+                         the secret is in the Operator_Secret_Set and the
+                         user is whitelisted (6.5, 6.6, 6.7)
+    ==================== =================================================
+
+    With Auth_Mode ``disabled`` nothing is checked at all and every RPC passes,
+    which is what keeps an M1 deployment working unchanged (Requirement 6.3).
+    The credentials are still parsed and published in that case: the
+    Zombie_Detector's ``Z2`` / ``Z3`` checks and the Audit_Logger's ``user`` /
+    ``peer`` fields do not depend on authentication being on.
+
+    **A Child_Command's password is only checked for presence, never compared.**
+    The interceptor does not know which node the command targets without
+    deserializing the request, and the Job_Password is per node. More
+    importantly the two failures are different: an absent password means "this
+    caller has no credentials", which is an authentication failure, while a
+    mismatching one means "this caller holds the credentials of an earlier run
+    of this task", which is a zombie and may legitimately be let through
+    depending on the Zombie_Policy. So the comparison belongs to the
+    Zombie_Detector (Requirement 6.13).
+
+    Attributes:
+        auth_mode: The resolved Auth_Mode. Read once per RPC so that it can be
+            reassigned in a test between calls.
+        credential_store: The store consulted for an ``OPERATOR`` level method.
+    """
+
+    def __init__(
+        self,
+        auth_mode: AuthMode = DEFAULT_AUTH_MODE,
+        credential_store: Optional[CredentialStore] = None,
+        audit_logger: Optional[Any] = None,
+        privilege_table: Optional[Mapping[str, PrivilegeLevel]] = None,
+    ) -> None:
+        """Build the interceptor.
+
+        Args:
+            auth_mode: The resolved Auth_Mode (Requirement 3.5 resolves it, not
+                this class). Defaults to :data:`DEFAULT_AUTH_MODE`, that is
+                ``disabled``.
+            credential_store: The :class:`CredentialStore` holding the
+                Operator_Secret_Set and the Operator_Whitelist. ``None`` builds
+                an empty store, which verifies no secret at all: an
+                ``OPERATOR`` method is then always refused with an ERROR naming
+                the missing configuration, never let through
+                (Requirement 7.7).
+            audit_logger: The Audit_Logger the rejection path will write its
+                ``denied`` record to (Requirement 11.3). Wired in a later step;
+                held here so the interceptor's construction site does not have
+                to change again.
+            privilege_table: The method name to Privilege_Level table,
+                defaulting to :data:`PRIVILEGE_BY_METHOD`. Injectable for tests
+                that stand up a service of their own.
+        """
+        self.auth_mode: AuthMode = auth_mode
+        self.credential_store: CredentialStore = (
+            credential_store if credential_store is not None else CredentialStore()
+        )
+        self._audit_logger = audit_logger
+        self._privilege_table: Optional[Mapping[str, PrivilegeLevel]] = privilege_table
+
+    async def intercept_service(
+        self,
+        continuation: Callable[[Any], Any],
+        handler_call_details: Any,
+    ) -> Any:
+        """Authenticate one RPC, then either let it through or refuse it.
+
+        Returns:
+            The handler ``continuation`` produced when the call is authorized,
+            or an abort handler that fails the RPC with the mapped status code
+            when it is not. A refused call never reaches ``continuation``, so
+            no handler runs and no node state can change (Requirement 6.9).
+        """
+        method = getattr(handler_call_details, "method", "")
+        level = privilege_for_method(method, table=self._privilege_table)
+
+        # PUBLIC first, before the metadata is looked at: ``ping`` is what a
+        # health check and a monitoring probe call, and it has to keep working
+        # on a server whose credential files are broken (Requirement 6.8).
+        if level is PrivilegeLevel.PUBLIC:
+            return await continuation(handler_call_details)
+
+        credentials = CallCredentials.from_metadata(
+            getattr(handler_call_details, "invocation_metadata", None)
+        )
+
+        # ``disabled``: publish and pass, with no check at all. The Auth_Mode is
+        # read here rather than in ``__init__`` so a test may flip it between
+        # calls on one interceptor (Requirement 6.3).
+        if self.auth_mode is not AuthMode.ENABLED:
+            set_call_credentials(credentials)
+            return await continuation(handler_call_details)
+
+        reason = self._reject_reason(level, credentials)
+        if reason is not None:
+            return self._abort_handler(method, credentials, reason)
+
+        set_call_credentials(credentials)
+        return await continuation(handler_call_details)
+
+    def _reject_reason(
+        self,
+        level: PrivilegeLevel,
+        credentials: CallCredentials,
+    ) -> Optional[RejectionReason]:
+        """Decide whether a call at ``level`` may proceed.
+
+        Args:
+            level: The Privilege_Level the method demands. ``PUBLIC`` never
+                reaches here.
+            credentials: The credentials parsed from the invocation metadata.
+
+        Returns:
+            ``None`` when the call is authorized, otherwise the
+            :class:`RejectionReason` to report.
+        """
+        if level is PrivilegeLevel.CHILD:
+            # Presence only; the value is the Zombie_Detector's business
+            # (Requirements 6.4, 6.13).
+            if not credentials.has_job_password:
+                return RejectionReason.MISSING_CREDENTIAL
+            return None
+
+        # Everything else, including any method that is not registered in the
+        # privilege table, is treated as OPERATOR (Requirement 6.2).
+        return self.credential_store.authorize_operator(
+            credentials.secret, credentials.user
+        )
+
+    def _abort_handler(
+        self,
+        method: str,
+        credentials: CallCredentials,
+        reason: RejectionReason,
+    ) -> grpc.RpcMethodHandler:
+        """Build the handler that refuses one RPC.
+
+        Returning a substitute handler is the only way an ``grpc.aio``
+        interceptor can refuse a call with a chosen status code. Raising from
+        :meth:`intercept_service` would reach the client as ``UNKNOWN``, which
+        tells it nothing about whether to fix its credentials, and the
+        Client_CLI would read it as a server fault rather than as a refusal.
+
+        The behaviour is registered as unary-unary because every rpc of the
+        ``TaklerServer`` service is unary-unary, ``QueryCoroutine`` included --
+        the privilege-table completeness test walks the service descriptor, so
+        a future streaming rpc arrives together with a failing test, and this is
+        where the matching handler flavour would have to be selected.
+
+        The abort itself happens inside the behaviour rather than here, since
+        aborting needs the ``ServicerContext`` that only exists once the call is
+        dispatched. That context is also where the caller's network address
+        comes from, which is why the rejection is logged there too: an address
+        is most of what makes a refusal record actionable.
+
+        Args:
+            method: The fully qualified method name that was refused.
+            credentials: The credentials the caller presented, for the user
+                name in the log record. No value of them is ever logged.
+            reason: The classification to report.
+
+        Returns:
+            An :class:`grpc.RpcMethodHandler` that fails the call with the
+            status code :data:`STATUS_CODE_BY_REJECTION` maps ``reason`` to.
+        """
+        status_code = STATUS_CODE_BY_REJECTION[reason]
+        # Only the classification and the method name, never a credential value
+        # and never a hint about which check failed on the server's files
+        # (Requirements 6.12, 12.1).
+        details = f"{method} refused: {reason.value}"
+
+        async def abort(request: Any, context: Any) -> None:
+            peer = None
+            try:
+                peer = context.peer()
+            except Exception:  # pragma: no cover - defensive
+                # A context that cannot report its peer must still be able to
+                # refuse the call; the address is diagnostic, not part of the
+                # decision.
+                pass
+            self._log_rejection(method, credentials.with_peer(peer), reason)
+            await context.abort(status_code, details)
+
+        return grpc.unary_unary_rpc_method_handler(abort)
+
+    def _log_rejection(
+        self,
+        method: str,
+        credentials: CallCredentials,
+        reason: RejectionReason,
+    ) -> None:
+        """Record one refusal (Requirement 6.10).
+
+        The record carries the method name, the ``takler-user`` value, the
+        caller's address and the classification -- and none of the credential
+        values, which is why the user name is taken through
+        :meth:`CallCredentials.audit_user` and the password and secret are not
+        touched at all (Requirements 6.10, 12.1).
+        """
+        logger.warning(
+            f"refused {method}: {reason.value} "
+            f"(user={credentials.audit_user()}, peer={credentials.peer})"
+        )
