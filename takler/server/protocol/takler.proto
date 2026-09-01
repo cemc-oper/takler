@@ -10,7 +10,7 @@ Golang
 */
 
 
-option go_package = "github.com/perillaroc/takler-client/takler_protocol";
+option go_package = "github.com/cemc-oper/takler-client/takler_protocol";
 
 package takler_protocol;
 
