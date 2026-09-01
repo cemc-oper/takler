@@ -20,6 +20,14 @@
 .. toctree::
    :maxdepth: 2
    :hidden:
+   :caption: 运维
+
+   安全部署 <operation/security>
+
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
    :caption: 开发者
 
    API <develop/api/index>
