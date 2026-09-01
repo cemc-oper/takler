@@ -36,6 +36,7 @@ import pytest
 import takler.logging
 from takler.core import Bunch, Flow
 from takler.server import TaklerServer
+from takler.server.connect_config import generate_connect_config
 from takler.tasks import ShellScriptTask
 from takler.tasks.shell.constant import TAKLER_JOB
 
@@ -115,7 +116,7 @@ def test_job_script_is_owner_executable_and_keeps_umask_read_write_bits(
 # ---------------------------------------------------------------------------
 
 
-def _start_and_capture(auth_mode: str, monkeypatch) -> str:
+def _start_and_capture(auth_mode: str, monkeypatch, tmp_path) -> str:
     """Run ``TaklerServer.start()`` and return the captured log output.
 
     The three services and the snapshot restore are stubbed out: this test is
@@ -127,11 +128,24 @@ def _start_and_capture(auth_mode: str, monkeypatch) -> str:
     Auth_Mode reaches the server through ``TAKLER_AUTH_MODE``: it is resolved in
     ``TaklerServer.__init__`` from the environment and the Connect_Config, not
     from a constructor argument.
+
+    A usable Operator_Secret_File is configured whatever the Auth_Mode is,
+    because ``start()`` refuses to start an ``enabled`` server that has none
+    (Requirement 7.3) and this test needs to reach the end of the start-up. The
+    file is created with mode ``0o600`` so it does not add a permission WARNING
+    of its own to the captured output.
     """
     monkeypatch.setenv("TAKLER_AUTH_MODE", auth_mode)
 
+    secret_file = tmp_path / "operator.secret"
+    secret_file.write_text("s3cret\n")
+    secret_file.chmod(0o600)
+
+    connect_config = generate_connect_config()
+    connect_config.security.operator_secret_file = str(secret_file)
+
     async def _run() -> None:
-        server = TaklerServer(host="login01", port=33083)
+        server = TaklerServer(host="login01", port=33083, connect_config=connect_config)
 
         async def _noop_async() -> None:
             return None
@@ -156,9 +170,11 @@ def _start_and_capture(auth_mode: str, monkeypatch) -> str:
 
 @pytest.mark.parametrize("with_umask", [0o022], indirect=True)
 def test_startup_warns_exactly_once_when_auth_enabled_under_a_wide_umask(
-    with_umask, monkeypatch
+    with_umask, monkeypatch, tmp_path
 ):
-    output = _start_and_capture(auth_mode="enabled", monkeypatch=monkeypatch)
+    output = _start_and_capture(
+        auth_mode="enabled", monkeypatch=monkeypatch, tmp_path=tmp_path
+    )
 
     assert output.count(_WARNING_MARKER) == 1
     assert "WARNING" in output
@@ -170,15 +186,19 @@ def test_startup_warns_exactly_once_when_auth_enabled_under_a_wide_umask(
 
 @pytest.mark.parametrize("with_umask", [0o077], indirect=True)
 def test_startup_does_not_warn_when_auth_enabled_under_a_narrow_umask(
-    with_umask, monkeypatch
+    with_umask, monkeypatch, tmp_path
 ):
-    output = _start_and_capture(auth_mode="enabled", monkeypatch=monkeypatch)
+    output = _start_and_capture(
+        auth_mode="enabled", monkeypatch=monkeypatch, tmp_path=tmp_path
+    )
 
     assert _WARNING_MARKER not in output
 
 
 @pytest.mark.parametrize("with_umask", [0o022], indirect=True)
-def test_startup_does_not_warn_when_auth_is_disabled(with_umask, monkeypatch):
-    output = _start_and_capture(auth_mode="disabled", monkeypatch=monkeypatch)
+def test_startup_does_not_warn_when_auth_is_disabled(with_umask, monkeypatch, tmp_path):
+    output = _start_and_capture(
+        auth_mode="disabled", monkeypatch=monkeypatch, tmp_path=tmp_path
+    )
 
     assert _WARNING_MARKER not in output
