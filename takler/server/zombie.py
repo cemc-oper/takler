@@ -6,23 +6,28 @@ running when its task got requeued, and that then reports ``complete`` against
 the fresh instance. Letting such a report through corrupts the state of the new
 run, which is what the second M2 acceptance criterion is about.
 
-This module owns the *detection* half of the feature: the three
+This module owns both halves of the feature. Detection: the three
 Zombie_Conditions (:class:`ZombieCondition`), the order in which they are
 evaluated (:func:`detect_zombie_condition`) and the vocabulary the caller
-answers with (:class:`ChildAction`). What to *do* about a detected zombie is the
-Zombie_Policy's business and lives on top of this: the detector reports which
-condition was hit and never touches the node.
+answers with (:class:`ChildAction`). Disposition: what the configured
+Zombie_Policy does about a hit (:func:`dispose_zombie`), which is the only place
+that raises, logs or writes to the node.
 
-Detection is deliberately free of any dependency on gRPC, on the Scheduler and
-on the node tree beyond :class:`~takler.core.task_node.Task` itself, so each
-condition can be exercised on a hand-built task without standing up a server.
+The two halves stay separate functions on purpose: detection is a pure predicate
+that can be tested on a hand-built task, and every state change of the feature
+is confined to one function. :meth:`ZombieDetector.guard` joins them and is what
+the Scheduler calls.
 
-Nothing here logs, and nothing here returns a password: the Job_Password and the
-``takler-pass`` of the call are read for one constant-time comparison and are
+Both halves are free of any dependency on gRPC and on the Scheduler, and touch
+the node tree only through :class:`~takler.core.task_node.Task`, so the whole
+feature can be exercised without standing up a server.
+
+No password ever leaves this module: the Job_Password and the ``takler-pass`` of
+the call are read for one constant-time comparison and one adoption, and are
 never put into a message, a return value or a log record (Requirements 10.9,
 12.1).
 
-Requirements: 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8.
+Requirements: 9.2~9.8, 10.1~10.9.
 """
 
 from __future__ import annotations
@@ -33,8 +38,15 @@ from typing import Optional, Tuple
 
 from takler.core.state import NodeStatus
 from takler.core.task_node import Task
+from takler.exceptions import ZombieError
+from takler.logging import get_logger
 from takler.server.auth import CallCredentials, get_call_credentials
-from takler.server.connect_config import DEFAULT_AUTH_MODE, AuthMode
+from takler.server.connect_config import (
+    DEFAULT_AUTH_MODE,
+    DEFAULT_ZOMBIE_POLICY,
+    AuthMode,
+    ZombiePolicy,
+)
 
 __all__ = [
     "CHILD_COMMAND_INIT",
@@ -42,11 +54,15 @@ __all__ = [
     "ChildAction",
     "ZombieCondition",
     "ZombieDetector",
+    "describe_zombie",
     "detect_zombie_condition",
+    "dispose_zombie",
     "hits_z1",
     "hits_z2",
     "hits_z3",
 ]
+
+logger = get_logger("server.zombie")
 
 
 class ChildAction(enum.Enum):
@@ -313,30 +329,154 @@ def detect_zombie_condition(
     return None
 
 
-class ZombieDetector:
-    """Applies the Zombie_Conditions on behalf of the server.
+def describe_zombie(
+    node: Task,
+    command: str,
+    condition: ZombieCondition,
+    policy: ZombiePolicy,
+) -> str:
+    """Render the one-line description of a zombie disposition.
 
-    The detector holds the server-global settings the conditions depend on, so
-    the Scheduler does not have to pass them at every call site. Only Auth_Mode
-    is needed for the detection itself; the Zombie_Policy joins it when the
-    disposition is added on top.
+    The text carries the five facts Requirement 10.8 asks for -- node path,
+    command name, the identifier of the condition that was hit, the policy in
+    force and the current status of the target task -- and is used for both the
+    WARNING record and the :class:`~takler.exceptions.ZombieError` message, so
+    the operator reading the log and the job reading its command output see the
+    same account of what happened.
+
+    It deliberately carries no password, neither the task's nor the call's
+    (Requirement 10.9). The status is included instead, which is what actually
+    explains the hit in the common ``Z2`` case: "the task is queued, so no job
+    of it should be reporting".
+
+    Args:
+        node: The target task.
+        command: Short name of the Child_Command.
+        condition: The Zombie_Condition that was hit.
+        policy: The Zombie_Policy being applied.
+
+    Returns:
+        A single line with no password in it.
+    """
+    return (
+        f"zombie {command} on {node.node_path}: "
+        f"hit {condition.value}, status is {node.state.node_status.name}, "
+        f"applying policy {policy.value}"
+    )
+
+
+def dispose_zombie(
+    node: Task,
+    command: str,
+    condition: ZombieCondition,
+    *,
+    policy: ZombiePolicy = DEFAULT_ZOMBIE_POLICY,
+    credentials: Optional[CallCredentials] = None,
+) -> ChildAction:
+    """Apply the Zombie_Policy to a Child_Command that hit a Zombie_Condition.
+
+    Every disposition is logged once as a WARNING before it takes effect
+    (Requirements 10.8, 10.9), so the three policies leave the same trace and an
+    operator can tell that a ``fob``-ed command was silently accepted -- the
+    client sees ``flag=0`` and has no way to know.
+
+    The three policies (Requirements 10.2~10.7):
+
+    * ``fail``: raise :class:`~takler.exceptions.ZombieError`. Nothing is
+      written to the node, so its status, ``task_id``, ``try_no``,
+      ``aborted_reason`` and Job_Password all stay as they were, and
+      ``TaklerService._handle_command`` turns the exception into ``flag=31``
+      under the M1 contract.
+    * ``fob``: return :attr:`ChildAction.SKIP`. Again nothing is written; the
+      caller returns before running the command, and the handler builds its
+      usual ``flag=0`` response.
+    * ``adopt``: return :attr:`ChildAction.PROCEED` so the caller runs the
+      command, after taking over the ``takler-pass`` of the call as the node's
+      Job_Password. Nothing else is adopted here: the ``task_id`` of a ``Z3``
+      ``init`` is set by ``Task.init()`` itself when the command runs
+      (Requirement 10.7), and duplicating that assignment would only create a
+      second place for it to drift.
+
+    Args:
+        node: The target task, already located and type-checked.
+        command: Short name of the Child_Command.
+        condition: The Zombie_Condition that was hit, as returned by
+            :func:`detect_zombie_condition`.
+        policy: The Zombie_Policy in force. Defaults to ``fail``, the built-in
+            default and the only policy of the three that neither hides the
+            zombie nor lets it write to the current run.
+        credentials: The Credential_Metadata of the call, from which ``adopt``
+            takes the password. Defaults to the credentials the
+            Auth_Interceptor published for the RPC being served.
+
+    Returns:
+        :attr:`ChildAction.SKIP` under ``fob``, :attr:`ChildAction.PROCEED`
+        under ``adopt``.
+
+    Raises:
+        ZombieError: Under ``fail``.
+    """
+    if credentials is None:
+        credentials = get_call_credentials()
+
+    description = describe_zombie(node, command, condition, policy)
+    logger.warning(description)
+
+    if policy is ZombiePolicy.FAIL:
+        raise ZombieError(description)
+
+    if policy is ZombiePolicy.FOB:
+        return ChildAction.SKIP
+
+    # ADOPT. A blank ``takler-pass`` counts as "not carried" (Requirement 10.6)
+    # rather than as a password to adopt: storing an empty or whitespace-only
+    # value would leave the task with a Job_Password that no job can present
+    # meaningfully, and an empty one is itself ``Z1`` for the next command of the
+    # very job being adopted. Treating blank as unset is also how the client
+    # treats a blank ``TAKLER_PASS`` -- it does not send the key at all -- so the
+    # two ends agree on what "carried a password" means.
+    if credentials.job_password and credentials.job_password.strip():
+        node.job_password = credentials.job_password
+
+    return ChildAction.PROCEED
+
+
+class ZombieDetector:
+    """Detects and disposes of zombie Child_Commands on behalf of the server.
+
+    The detector holds the two server-global settings the feature depends on, so
+    the Scheduler does not have to pass them at every call site: Auth_Mode
+    decides whether ``Z1`` is evaluated, and Zombie_Policy decides what a hit
+    means.
 
     The instance carries no per-call state, so one detector serves every RPC.
     """
 
-    def __init__(self, auth_mode: AuthMode = DEFAULT_AUTH_MODE) -> None:
-        """Bind the detector to the Auth_Mode in force.
+    def __init__(
+        self,
+        auth_mode: AuthMode = DEFAULT_AUTH_MODE,
+        zombie_policy: ZombiePolicy = DEFAULT_ZOMBIE_POLICY,
+    ) -> None:
+        """Bind the detector to the Auth_Mode and Zombie_Policy in force.
 
         Args:
             auth_mode: The resolved Auth_Mode. Defaults to ``disabled``, the
                 built-in default, which skips ``Z1``.
+            zombie_policy: The resolved Zombie_Policy. Defaults to ``fail``, the
+                built-in default.
         """
         self._auth_mode = auth_mode
+        self._zombie_policy = zombie_policy
 
     @property
     def auth_mode(self) -> AuthMode:
         """The Auth_Mode this detector applies."""
         return self._auth_mode
+
+    @property
+    def zombie_policy(self) -> ZombiePolicy:
+        """The Zombie_Policy this detector applies."""
+        return self._zombie_policy
 
     def detect(
         self,
@@ -364,5 +504,54 @@ class ZombieDetector:
             command,
             task_id,
             auth_mode=self._auth_mode,
+            credentials=credentials,
+        )
+
+    def guard(
+        self,
+        node: Task,
+        command: str,
+        task_id: Optional[str] = None,
+        credentials: Optional[CallCredentials] = None,
+    ) -> ChildAction:
+        """Judge a Child_Command and dispose of it, returning what to do next.
+
+        This is the single entry point the Scheduler calls, once per
+        Child_Command, after locating and type-checking the node and before any
+        state is written (Requirement 9.1). A command that hits no condition is
+        answered with :attr:`ChildAction.PROCEED` without any log record and
+        without the node being touched -- in particular its Job_Password is left
+        alone (Requirements 10.11, 10.12), since the ordinary path is the
+        overwhelming majority of calls and must stay silent.
+
+        The same ``credentials`` serve both halves, so the ``takler-pass`` that
+        failed the ``Z1`` comparison is the one ``adopt`` takes over.
+
+        Args:
+            node: The target task.
+            command: Short name of the Child_Command.
+            task_id: The job id an ``init`` carries.
+            credentials: The Credential_Metadata of the call, defaulting to the
+                credentials published for the RPC being served.
+
+        Returns:
+            :attr:`ChildAction.PROCEED` to run the command,
+            :attr:`ChildAction.SKIP` to answer success without running it.
+
+        Raises:
+            ZombieError: A condition was hit and the Zombie_Policy is ``fail``.
+        """
+        if credentials is None:
+            credentials = get_call_credentials()
+
+        condition = self.detect(node, command, task_id, credentials=credentials)
+        if condition is None:
+            return ChildAction.PROCEED
+
+        return dispose_zombie(
+            node,
+            command,
+            condition,
+            policy=self._zombie_policy,
             credentials=credentials,
         )
