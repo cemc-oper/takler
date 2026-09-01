@@ -18,8 +18,8 @@ All three deliberately depend on nothing but the standard library and
 hot-reload behaviour, the privilege lookup and the metadata parsing can all be
 tested without standing up a gRPC server.
 
-Requirements: 6.1, 6.2, 6.4, 6.5, 6.8, 6.13, 7.1, 7.2, 7.6, 7.12, 11.8, 12.1,
-12.3.
+Requirements: 6.1, 6.2, 6.4, 6.5, 6.8, 6.13, 7.1, 7.2, 7.5, 7.6, 7.8, 7.9,
+7.10, 7.12, 11.8, 12.1, 12.3.
 """
 
 from __future__ import annotations
@@ -27,10 +27,12 @@ from __future__ import annotations
 import contextvars
 import dataclasses
 import enum
+import hmac
 import os
 from pathlib import Path
 from typing import (
     Any,
+    Callable,
     Dict,
     FrozenSet,
     Iterable,
@@ -55,6 +57,7 @@ __all__ = [
     "CredentialFileContent",
     "CredentialStore",
     "PrivilegeLevel",
+    "compare_secret_values",
     "get_call_credentials",
     "privilege_for_method",
     "reset_call_credentials",
@@ -126,6 +129,62 @@ def parse_credential_lines(text: str) -> FrozenSet[str]:
             continue
         values.add(stripped)
     return frozenset(values)
+
+
+#: Signature of the secret comparison used by
+#: :meth:`CredentialStore.verify_secret`: it takes the encoded candidate and one
+#: encoded Operator_Secret and answers whether they are equal.
+SecretComparison = Callable[[bytes, bytes], bool]
+
+
+def _encode_secret(value: str) -> bytes:
+    """Encode a credential value to the byte form the comparison works on.
+
+    :func:`hmac.compare_digest` accepts two :class:`str` operands only when both
+    are ASCII, and refuses to mix :class:`str` with :class:`bytes` at all. Both
+    restrictions are reachable here: a secret is whatever an operator put in the
+    file, and a candidate is whatever a client sent. Encoding both sides to
+    UTF-8 removes the type question entirely and keeps the comparison
+    byte-exact, since equal text encodes to equal bytes and unequal text does
+    not.
+
+    ``surrogatepass`` is used so that no :class:`str` can make this raise. A
+    lone surrogate cannot be encoded to UTF-8 by the strict handler, and it can
+    reach here from a metadata value that arrived as text; a
+    :exc:`UnicodeEncodeError` escaping the verification would surface as an
+    ``UNKNOWN`` status code instead of the intended ``PERMISSION_DENIED``.
+    """
+    return value.encode("utf-8", errors="surrogatepass")
+
+
+def compare_secret_values(candidate: bytes, secret: bytes) -> bool:
+    """Compare one candidate against one Operator_Secret in constant time.
+
+    This is a one-line wrapper on :func:`hmac.compare_digest`, and it exists for
+    two reasons.
+
+    The first is Requirement 7.8: the comparison must not short-circuit on the
+    first differing byte, otherwise the response time of a rejected
+    Operator_Command reveals how long a prefix the caller guessed right, which
+    turns guessing a secret from an exponential search into a linear one.
+
+    The second is that it is the seam Requirement 7.9 is tested through. The
+    property test injects a counting stand-in for this function and asserts that
+    one :meth:`CredentialStore.verify_secret` call performs exactly
+    ``len(Operator_Secret_Set)`` comparisons, whatever the candidate is and
+    wherever in the file it matches. That assertion is what keeps a later
+    refactor from "optimizing" the loop with a ``break``; without an
+    indirection to substitute, the count would not be observable from a test.
+
+    Args:
+        candidate: The candidate value, already encoded by
+            :func:`_encode_secret`.
+        secret: One Operator_Secret, already encoded the same way.
+
+    Returns:
+        Whether the two byte strings are equal.
+    """
+    return hmac.compare_digest(candidate, secret)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -364,6 +423,116 @@ class CredentialStore:
             user name that presents a valid secret" (Requirement 7.5).
         """
         return self._whitelist.read()
+
+    def verify_secret(
+        self,
+        candidate: Optional[str],
+        compare: Optional[SecretComparison] = None,
+    ) -> bool:
+        """Whether ``candidate`` is one of the current Operator_Secrets.
+
+        Every value of the Operator_Secret_Set is compared with
+        :func:`compare_secret_values`, so no comparison short-circuits on the
+        first differing byte (Requirement 7.8), and *every* value is compared
+        even after one has matched: the result is accumulated with ``|=`` and
+        there is no ``break`` and no early ``return`` inside the loop
+        (Requirement 7.9).
+
+        **The missing ``break`` is the point, not an oversight.** Stopping at the
+        match would make the verification time depend on which line of the
+        Operator_Secret_File matched. That leaks no secret value, but during a
+        rotation it does leak which clients are still presenting the old secret
+        -- exactly the information an attacker wants in order to know whether a
+        secret they hold is still live. The whole cost of removing that channel
+        is not writing ``break``, which is why the property test pins the
+        comparison count down (see :func:`compare_secret_values`).
+
+        The set is re-read first when the file changed, so a rotation takes
+        effect without a restart: appending a value makes it valid immediately
+        and removing one makes it stop being accepted (Requirements 7.6, 7.12,
+        7.13).
+
+        Verification fails closed. An empty Operator_Secret_Set accepts nothing,
+        which covers both "no secret file is configured" and "the file could not
+        be read at all" -- the loop simply does not run and the result stays
+        ``False``. Turning a read failure into an ERROR log and a rejection
+        classification is the caller's job (Requirement 7.7), not this method's.
+
+        Nothing here can raise. A candidate of the wrong type is rejected before
+        the loop and a candidate that is not encodable by the strict UTF-8
+        handler is still encoded (see :func:`_encode_secret`), because an
+        exception leaving the Auth_Interceptor would reach the client as
+        ``UNKNOWN`` rather than as ``PERMISSION_DENIED``.
+
+        Args:
+            candidate: The ``takler-secret`` value presented by the caller.
+                ``None`` -- no secret was carried -- yields ``False``.
+            compare: The per-value comparison, defaulting to
+                :func:`compare_secret_values`. Resolved at call time, so a test
+                may inject it here or patch the module-level default; both
+                routes work and neither changes the production path.
+
+        Returns:
+            Whether ``candidate`` equals one of the current Operator_Secrets.
+        """
+        if compare is None:
+            compare = compare_secret_values
+
+        if isinstance(candidate, bytes):
+            # Not produced by the metadata parsing, which normalizes to text,
+            # but accepted rather than refused: the value is what matters and
+            # rejecting on type here would be a silent authentication failure.
+            candidate_bytes = candidate
+        elif isinstance(candidate, str):
+            candidate_bytes = _encode_secret(candidate)
+        else:
+            return False
+
+        matched = False
+        for secret in self.read_secret_set().values:
+            matched |= compare(candidate_bytes, _encode_secret(secret))
+        return matched
+
+    def is_whitelisted(self, user: Optional[str]) -> bool:
+        """Whether ``user`` may run an Operator_Command.
+
+        The comparison is byte-exact: no case folding, no prefix or suffix
+        matching, no trimming (Requirement 7.10). POSIX user names are case
+        sensitive, so folding would hand ``alice``'s authority to ``Alice``, and
+        a prefix match would hand it to ``alice2``. Comparing whole strings for
+        equality is the same as comparing whole byte sequences, since equal text
+        encodes to equal bytes.
+
+        Unlike :meth:`verify_secret` this needs no constant-time comparison: a
+        user name is not a secret. It travels in the clear in the metadata and
+        appears in every audit record, so there is nothing for a timing channel
+        to reveal.
+
+        When no Operator_Whitelist_File is configured this is always ``True``:
+        an absent whitelist means any user name presenting a valid secret is
+        accepted (Requirement 7.5), so authorization rests on the secret alone.
+        That includes a ``None`` user -- whether ``takler-user`` was carried at
+        all is checked separately by the Auth_Interceptor, which rejects a
+        missing one as ``missing_credential`` before the whitelist is consulted
+        (Requirement 6.5), and duplicating that check here would report a
+        missing key as ``not_in_whitelist``.
+
+        A configured but unreadable whitelist yields an empty value set, so no
+        user matches and the check fails closed on its own.
+
+        Args:
+            user: The ``takler-user`` value presented by the caller.
+
+        Returns:
+            Whether ``user`` belongs to the Operator_Whitelist, or ``True`` when
+            no whitelist file is configured.
+        """
+        content = self.read_whitelist()
+        if not content.configured:
+            return True
+        if user is None:
+            return False
+        return user in content.values
 
 
 class PrivilegeLevel(enum.Enum):
