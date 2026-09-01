@@ -1,5 +1,7 @@
 import asyncio
 import contextlib
+import os
+import stat
 from pathlib import Path
 from typing import Union, Optional
 
@@ -9,10 +11,54 @@ from takler.logging import configure, get_logger
 from .scheduler import Scheduler
 from .network_service import TaklerService
 from .checkpoint import CheckpointManager
-from .connect_config import ConnectConfig, ExceptionPolicy, resolve_exception_policy
+from .connect_config import (
+    AuthMode,
+    ConnectConfig,
+    ExceptionPolicy,
+    resolve_auth_mode,
+    resolve_exception_policy,
+)
 
 
 logger = get_logger("server")
+
+
+# Permission bits of a newly created *regular* file before the umask is applied.
+# ``open()`` / ``Path.write_text()`` request 0o666 and the kernel clears whatever
+# the umask masks out, so ``_NEW_FILE_BASE_MODE & ~umask`` is exactly the mode a
+# freshly written job script gets (Requirement 12.6).
+_NEW_FILE_BASE_MODE = 0o666
+
+# The two read bits that must stay clear for a job script -- and therefore the
+# Job_Password it exports -- to be unreadable to anyone but its owner. The
+# execute bits are irrelevant here (a new regular file never gets them from the
+# base mode) and so are the write bits: being able to write a job script is a
+# separate problem from being able to read the password out of it.
+_OTHER_READ_BITS = stat.S_IRGRP | stat.S_IROTH
+
+# The umask recommended when Auth_Mode is enabled: it clears every group and
+# other bit, so job scripts come out 0o600 before takler adds the owner execute
+# bit (Requirements 12.8, 17.6).
+_RECOMMENDED_UMASK = 0o077
+
+
+def _read_umask() -> int:
+    """Return the current process umask without changing it.
+
+    POSIX offers no way to read the umask on its own: ``os.umask(mask)`` sets a
+    new value and returns the previous one. Reading it therefore means setting a
+    temporary value, taking the old value back and immediately restoring it. The
+    temporary value is the restrictive :data:`_RECOMMENDED_UMASK` rather than
+    something permissive, so that the brief window in between cannot widen the
+    permissions of a file created by another thread.
+
+    The umask is per-process, not per-thread, so this pair of calls is only safe
+    while the process is still single-threaded -- hence the one caller runs
+    during startup, before any worker thread or task exists.
+    """
+    current = os.umask(_RECOMMENDED_UMASK)
+    os.umask(current)
+    return current
 
 
 def _as_optional_path_str(value: Optional[Union[str, Path]]) -> Optional[str]:
@@ -79,6 +125,16 @@ class TaklerServer:
             exception_policy
         )
 
+        # Kept because several security settings live in the ``security`` section
+        # of ``connect.yaml`` and are needed after construction, not just
+        # forwarded to the checkpoint manager (Requirement 3.5).
+        self.connect_config: Optional[ConnectConfig] = connect_config
+
+        # Resolved once here: ``TAKLER_AUTH_MODE`` env var > the ``auth_mode``
+        # field of the Connect_Config ``security`` section > ``disabled``
+        # (Requirements 3.5, 3.6).
+        self.auth_mode: AuthMode = resolve_auth_mode(connect_config=connect_config)
+
         # Explicit TLS pair, the highest precedence source for the server
         # certificate and private key (Requirement 1.10). Only kept here; the
         # pair is turned into gRPC server credentials -- and the Connect_Config
@@ -130,21 +186,61 @@ class TaklerServer:
         """
         self._fatal_error_event.set()
 
+    def _check_job_script_umask(self):
+        """Warn once at startup when the umask leaves job scripts world-readable.
+
+        A job script exports ``TAKLER_PASS``, and its read/write bits come from
+        the process umask (Requirement 12.6). Under the common default umask
+        ``0022`` the script is group- and other-readable, so on a shared file
+        system every account can read the Job_Password of every in-flight job and
+        authentication buys nothing. When Auth_Mode is enabled, that combination
+        earns exactly one WARNING naming the current umask, the risk and the
+        recommended value (Requirement 12.8).
+
+        Nothing is warned about when Auth_Mode is disabled: without
+        authentication the password is not a credential in the first place.
+
+        This runs once, from :meth:`start`. Checking per job script instead would
+        emit one identical line per task, which for a flow with a thousand tasks
+        is a thousand lines saying the same thing.
+        """
+        if self.auth_mode is not AuthMode.ENABLED:
+            return
+
+        current_umask = _read_umask()
+        # Mode a new regular file ends up with, then the group / other read bits
+        # within it. Non-zero means someone other than the owner can read it.
+        new_file_mode = _NEW_FILE_BASE_MODE & ~current_umask
+        if not new_file_mode & _OTHER_READ_BITS:
+            return
+
+        logger.warning(
+            f"umask {current_umask:04o} lets users other than the owner read "
+            f"newly created files (a job script would be {new_file_mode:04o}); "
+            f"job scripts export TAKLER_PASS, so on a shared file system the "
+            f"one-time password of every running job is readable by other "
+            f"accounts and authentication is defeated; "
+            f"set the server process umask to {_RECOMMENDED_UMASK:04o}."
+        )
+
     async def start(self):
         """
         Start services:
 
         * configure logging
+        * check the umask that job script permissions will be derived from
         * restore the bunch from the Checkpoint_File
         * start scheduler
         * start network service
         * start the periodic snapshot task
 
-        The order is the contract. ``restore()`` runs synchronously before the
-        scheduler is started, so the very first dependency resolution already
-        sees the restored node tree (Requirement 6.1), and the periodic snapshot
-        task is created last, so its first write cannot race the restore
-        (Requirement 5.1).
+        The order is the contract. The umask check reads the process umask with a
+        set-and-restore pair, so it must run while the process is still
+        single-threaded, i.e. before any service is started (Requirement 12.8).
+        ``restore()`` runs synchronously before the scheduler is started, so the
+        very first dependency resolution already sees the restored node tree
+        (Requirement 6.1), and the periodic snapshot task is created last, so its
+        first write cannot race the restore (Requirement 5.1).
         """
         # Configure logging before the first server record is emitted so that
         # startup, command, and shutdown activity is captured at the configured
@@ -171,6 +267,14 @@ class TaklerServer:
             )
 
         logger.info("start server...")
+
+        # Reading the umask needs a set-and-restore pair (see ``_read_umask``),
+        # which is only safe while the process is single-threaded. Hence this
+        # position: after ``configure()`` so the WARNING reaches the configured
+        # destinations, before ``restore()`` and before any of the three services
+        # -- and therefore any worker thread or task -- exists (Requirement 12.8).
+        self._check_job_script_umask()
+
         # Restore before the scheduler main loop exists (Requirement 6.1).
         # ``restore()`` never raises: an unusable snapshot degrades to the backup
         # file and then to an empty bunch, so startup always proceeds.
