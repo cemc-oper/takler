@@ -27,7 +27,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
 
 import takler
 from takler.core.bunch import Bunch
@@ -37,7 +37,7 @@ from takler.core.state import NodeStatus
 from takler.core.task_node import Task
 from takler.core.util import SerializationType
 from takler.logging import get_logger
-from takler.server.connect_config import ConnectConfig
+from takler.server.connect_config import AuthMode, ConnectConfig, resolve_auth_mode
 
 __all__ = [
     "CHECKPOINT_FORMAT_VERSION",
@@ -255,6 +255,7 @@ class CheckpointManager:
         checkpoint_file: Optional[Union[str, Path]] = None,
         interval: Optional[float] = None,
         connect_config: Optional[ConnectConfig] = None,
+        auth_mode: Optional[Union[str, AuthMode]] = None,
     ):
         """Resolve the snapshot configuration for ``bunch``.
 
@@ -263,16 +264,30 @@ class CheckpointManager:
         follow the precedence ``explicit argument > connect_config > built-in
         default`` (requirement 7.5).
 
+        The Auth_Mode is resolved the same way, through
+        :func:`~takler.server.connect_config.resolve_auth_mode`, because the
+        restore self-check of requirement 5.9 only applies when authentication
+        is enabled. Resolving it here rather than reading it off a server object
+        keeps this module's dependency on ``takler.server`` limited to
+        :mod:`takler.server.connect_config`, so the self-check stays testable
+        without standing up a server.
+
         Args:
             bunch: The bunch to snapshot and to restore into.
             checkpoint_file: Explicit Checkpoint_File path, highest precedence.
             interval: Explicit snapshot period in seconds, highest precedence.
             connect_config: Loaded ``connect.yaml``, consulted when an explicit
                 argument is not provided.
+            auth_mode: Explicit Auth_Mode, highest precedence. ``None`` lets
+                ``TAKLER_AUTH_MODE``, then ``connect_config``, then the
+                built-in default decide.
         """
         self.bunch: Bunch = bunch
         self._checkpoint_file: Path = _resolve_path(checkpoint_file, connect_config)
         self.interval: float = _resolve_interval(interval, connect_config)
+        self._auth_mode: AuthMode = resolve_auth_mode(
+            auth_mode, connect_config=connect_config
+        )
 
         # Set once the periodic snapshot task is running, and cancelled on
         # stop; ``None`` means "no periodic task in flight".
@@ -796,6 +811,11 @@ class CheckpointManager:
         loop is created, so the first dependency resolution already sees the
         restored tree (requirement 6.1).
 
+        Job_Passwords are written back after :meth:`_restore_into_bunch` has
+        added every flow (requirement 5.4) and before
+        :meth:`_verify_server_address`, so the restored tree is complete -- both
+        node states and passwords -- before anything only diagnoses it.
+
         Never raises. An empty bunch is a valid, if unwelcome, starting point,
         while a server that refuses to start leaves the operator without even a
         ``show`` of what was running.
@@ -830,6 +850,7 @@ class CheckpointManager:
                 f"restored {flow_count} flow(s) and {node_count} node(s) "
                 f"from checkpoint file {path}."
             )
+            self._restore_job_passwords(snapshot.get(JOB_PASSWORDS_KEY))
             self._verify_server_address(snapshot)
             return True
 
@@ -968,6 +989,117 @@ class CheckpointManager:
             node_count += _count_nodes(flow)
 
         return flow_count, node_count
+
+    def _restore_job_passwords(self, mapping: Optional[Dict[str, str]]) -> int:
+        """Write the snapshot's Job_Passwords back onto the restored tasks.
+
+        Must run after :meth:`_restore_into_bunch` has added every flow
+        (requirement 5.4): before that, the tasks the mapping names do not exist
+        yet.
+
+        The tree is walked exactly once and the joined parent prefix is passed
+        down, exactly as in :meth:`_collect_job_passwords`; each visited path is
+        looked up in ``mapping`` rather than the other way round. Calling
+        ``Bunch.find_node`` per entry is ruled out by requirement 5.11 and
+        measured 725ms at 50k tasks against 187ms for a single walk. The
+        requirement 5.9 self-check rides along in the same walk for the same
+        reason -- a second traversal would double the cost to establish
+        something the first one already had in hand.
+
+        Fault tolerance (requirements 5.6, 5.8): a missing mapping (``None``,
+        i.e. a pre-M2 snapshot with no :data:`JOB_PASSWORDS_KEY` at all) is an
+        empty mapping and a normal restore, and an entry whose path is not in
+        the tree or is not a Task is one WARNING naming that path plus a skip.
+        Neither aborts the restore -- losing the whole bunch state over one
+        stale path would be far worse than losing one password.
+
+        Args:
+            mapping: The snapshot's ``{node path: Job_Password}`` mapping, or
+                ``None`` when the snapshot carries none.
+
+        Returns:
+            The number of tasks whose Job_Password was restored, which is also
+            what the requirement 5.10 INFO reports: the operator compares it
+            against how many jobs they believe were in flight.
+        """
+        if mapping is None:
+            mapping = {}
+        elif not isinstance(mapping, dict):
+            # A snapshot whose mapping key holds something other than an object
+            # is corrupt in that key only; the node tree it came with is already
+            # restored, so this degrades to "no passwords" like a pre-M2 file.
+            logger.warning(
+                f"the {JOB_PASSWORDS_KEY!r} key of checkpoint file "
+                f"{self.checkpoint_file} is not an object but a "
+                f"{type(mapping).__name__}; no job password is restored."
+            )
+            mapping = {}
+
+        # Paths of ``mapping`` that were found in the tree, whether or not they
+        # turned out to be a Task. What is left over afterwards is exactly the
+        # set of paths that do not exist, without a second lookup per entry.
+        visited: Set[str] = set()
+        restored = 0
+
+        # Requirement 5.9 only asks for the self-check under Auth_Mode
+        # ``enabled``: with authentication off, an empty Job_Password never
+        # makes a Child_Command a zombie, so the WARNING would be pure noise.
+        check_unprotected = self._auth_mode is AuthMode.ENABLED
+        unprotected: List[str] = []
+
+        def walk(node: Node, prefix: str) -> None:
+            nonlocal restored
+            path = f"{prefix}/{node.name}"
+
+            if path in mapping:
+                visited.add(path)
+                if isinstance(node, Task):
+                    node.job_password = mapping[path]
+                    restored += 1
+                else:
+                    logger.warning(  # requirement 5.8
+                        f"checkpoint file {self.checkpoint_file} holds a job "
+                        f"password for node path {path}, which is not a task "
+                        f"but a {type(node).__name__}; skipping this entry."
+                    )
+
+            if (
+                check_unprotected
+                and isinstance(node, Task)
+                and not node.job_password
+                and node.state.node_status in _PERSISTED_STATUSES
+            ):
+                unprotected.append(path)
+
+            for child in node.children:
+                walk(child, path)
+
+        for flow in self.bunch.flows.values():
+            walk(flow, "")
+
+        for path in mapping:
+            if path not in visited:
+                logger.warning(  # requirement 5.8
+                    f"checkpoint file {self.checkpoint_file} holds a job "
+                    f"password for node path {path}, which does not exist in "
+                    f"the restored node tree; skipping this entry."
+                )
+
+        logger.info(  # requirement 5.10
+            f"recovered the job password of {restored} task(s) from checkpoint "
+            f"file {self.checkpoint_file}."
+        )
+
+        if unprotected:
+            logger.warning(  # requirement 5.9
+                f"{len(unprotected)} submitted/active task(s) have no job "
+                f"password after restoring from checkpoint file "
+                f"{self.checkpoint_file}; with authentication enabled their "
+                f"child commands hit zombie condition Z1 and are handled by "
+                f"the zombie policy: {', '.join(unprotected)}"
+            )
+
+        return restored
 
     def _iter_restored_tasks(self) -> Iterator[Task]:
         """Yield every Task_Node of the restored node tree.
