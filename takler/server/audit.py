@@ -69,9 +69,12 @@ __all__ = [
     "OUTCOME_ERROR",
     "OUTCOME_SUCCESS",
     "OUTCOME_ZOMBIE",
+    "UNKNOWN_PEER",
     "UNKNOWN_USER",
     "AuditLogger",
     "AuditRecord",
+    "audit_command_name",
+    "audit_peer",
     "audit_timestamp",
 ]
 
@@ -98,6 +101,15 @@ DENIED_ERROR_CODE: int = 43
 #: (Requirement 11.8). A record with an empty user would be ambiguous between
 #: "anonymous call" and "audit bug", so the absence is spelled out.
 UNKNOWN_USER: str = "unknown"
+
+#: Placeholder ``peer`` for a call whose network address could not be read.
+#:
+#: The address comes from the gRPC stack rather than from the metadata, so it is
+#: missing exactly when the audited code was not reached through an RPC -- the
+#: TUI, an in-process run, a unit test. Spelling that out keeps every record's
+#: key set identical and keeps an empty string from being read as "the caller
+#: had no address", which no real caller does.
+UNKNOWN_PEER: str = "unknown"
 
 #: Permissions of an Audit_File this process creates (Requirement 11.14). The
 #: audit trail names the users who issued each command and the addresses they
@@ -129,6 +141,73 @@ def audit_timestamp() -> str:
         For example ``"2026-07-15T10:30:00.123456"``.
     """
     return datetime.datetime.now().isoformat()
+
+
+def audit_peer(peer: Optional[str]) -> str:
+    """Return the ``peer`` field for a call whose address is ``peer``.
+
+    Args:
+        peer: The caller's network address as gRPC reports it, for example
+            ``"ipv4:10.0.0.9:51234"``, or ``None`` / blank when it is unknown.
+
+    Returns:
+        ``peer``, or :data:`UNKNOWN_PEER` when there is none.
+    """
+    return peer if peer else UNKNOWN_PEER
+
+
+#: Method-name prefixes stripped by :func:`audit_command_name`.
+#:
+#: The three are the naming conventions of ``takler.proto``: ``RunCommand*`` for
+#: a command, ``RunRequest*`` for a request and ``Query*`` for a query. They
+#: carry no information a reader of the audit trail needs -- ``requeue`` says
+#: everything ``RunCommandRequeue`` does -- and dropping them makes the
+#: ``command`` field read like the sub-command the operator actually typed.
+#:
+#: Ordered longest-first so that a shorter prefix cannot shadow a longer one.
+_METHOD_NAME_PREFIXES: "tuple[str, ...]" = ("RunCommand", "RunRequest", "Query")
+
+
+def audit_command_name(method: str) -> str:
+    """Derive the ``command`` field of a record from an RPC method name.
+
+    Accepts either the fully qualified name the gRPC stack carries
+    (``"/takler_protocol.TaklerServer/RunCommandFreeDep"``) or the bare method
+    name (``"RunCommandFreeDep"``), and returns the short lower-case form
+    (``"free_dep"``).
+
+    Deriving rather than tabulating is deliberate: a table would need an entry
+    per method and a forgotten entry would silently write an empty ``command``
+    into the audit trail, which is worse than a slightly odd derived name. The
+    derivation also keeps working for a method nobody classified, which is
+    exactly the case the rejection record point has to cover -- an unregistered
+    method is refused, and the refusal is audited.
+
+    Args:
+        method: The method name, fully qualified or bare. An unrecognized shape
+            is returned lower-cased rather than rejected: the value is a field
+            of a log record, and no input should make writing one fail.
+
+    Returns:
+        The short command name, for example ``"requeue"``, ``"free_dep"`` or
+        ``"show"``.
+    """
+    name = method.rsplit("/", 1)[-1] if "/" in method else method
+    for prefix in _METHOD_NAME_PREFIXES:
+        if name.startswith(prefix) and len(name) > len(prefix):
+            name = name[len(prefix) :]
+            break
+
+    # CamelCase to snake_case: ``FreeDep`` -> ``free_dep``, ``Requeue`` ->
+    # ``requeue``. Only an upper-case letter that follows another character
+    # starts a new word, so a leading capital does not produce a leading
+    # underscore.
+    parts: List[str] = []
+    for index, char in enumerate(name):
+        if char.isupper() and index > 0:
+            parts.append("_")
+        parts.append(char.lower())
+    return "".join(parts)
 
 
 @dataclasses.dataclass(frozen=True)

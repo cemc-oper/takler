@@ -16,6 +16,7 @@ from takler.exceptions import (
 )
 from takler.logging import get_logger
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
+from takler.server.zombie import ChildAction, ZombieDetector
 
 
 logger = get_logger("server.scheduler")
@@ -34,6 +35,10 @@ class Scheduler:
         Scheduler has only one bunch.
     interval_main_loop : float
         time interval to check flow dependencies, unit is seconds.
+    zombie_detector : Optional[ZombieDetector]
+        judges every Child_Command against the run instance the server records
+        for the target task. ``None`` disables the judgement, which is the
+        M1 behaviour and what a directly driven scheduler gets.
     """
 
     def __init__(
@@ -42,6 +47,7 @@ class Scheduler:
         interval_main_loop: float = DEFAULT_INTERVAL_LOOP_SECONDS,
         exception_policy: Optional[ExceptionPolicy] = None,
         fatal_shutdown: Optional[Callable[[], None]] = None,
+        zombie_detector: Optional[ZombieDetector] = None,
     ):
         self.bunch: Bunch = bunch
         self.interval_main_loop: float = interval_main_loop
@@ -58,6 +64,13 @@ class Scheduler:
             else DEFAULT_EXCEPTION_POLICY
         )
         self.fatal_shutdown: Optional[Callable[[], None]] = fatal_shutdown
+        # Zombie detection is a server-level feature: ``TaklerServer`` builds the
+        # detector from the resolved Auth_Mode and Zombie_Policy and passes it
+        # in. ``None`` means "no policy configured", which is the case for a
+        # scheduler driven directly -- by the TUI, by a unit test, or by an
+        # in-process run -- and leaves every Child_Command with its M1
+        # behaviour. See :meth:`_guard_child_command`.
+        self.zombie_detector: Optional[ZombieDetector] = zombie_detector
 
     async def start(self):
         pass
@@ -241,6 +254,56 @@ class Scheduler:
         for name, flow in self.bunch.flows.items():
             flow.resolve_dependencies()
 
+    def _guard_child_command(
+        self, node: Task, command: str, task_id: Optional[str] = None
+    ) -> ChildAction:
+        """Judge a Child_Command against the target task's run instance.
+
+        This is the single zombie decision point of the scheduler. Each of the
+        five Child_Commands calls it on one line, **after** the node is located
+        and type-checked and **before** anything is written to the node
+        (Requirement 9.1), so "no state is changed by a rejected command" holds
+        by construction rather than by rollback.
+
+        Five explicit call sites rather than a decorator: ``init`` has to pass
+        its ``task_id`` for the ``Z3`` check, and the "judge before writing"
+        ordering is worth being able to read off the method body.
+
+        Control_Commands and Query_Commands do not call this at all
+        (Requirement 9.10): a zombie is a job instance that disagrees with the
+        server's record, and an operator command has no job instance.
+
+        A command that hits no Zombie_Condition is answered with
+        :attr:`~takler.server.zombie.ChildAction.PROCEED` and leaves the node --
+        including its Job_Password -- untouched (Requirements 10.11, 10.12).
+
+        Parameters
+        ----------
+        node
+            the target task, already located and type-checked. A missing node or
+            a non-task node is not a zombie: it keeps the M1 outcome of the
+            command in question (Requirement 9.9).
+        command
+            short name of the Child_Command: ``init``, ``complete``, ``abort``,
+            ``event`` or ``meter``.
+        task_id
+            the job id an ``init`` carries; unused by the other four.
+
+        Returns
+        -------
+        ChildAction
+            ``PROCEED`` to run the command, ``SKIP`` to return success without
+            running it (the ``fob`` policy).
+
+        Raises
+        ------
+        ZombieError
+            A Zombie_Condition was hit and the Zombie_Policy is ``fail``.
+        """
+        if self.zombie_detector is None:
+            return ChildAction.PROCEED
+        return self.zombie_detector.guard(node, command, task_id)
+
     # Child command -------------------------------------------------
 
     async def run_command_init(self, node_path: str, task_id: str):
@@ -260,6 +323,9 @@ class Scheduler:
             If node is not found.
         NodeTypeError
             If node is not a ``Task``.
+        ZombieError
+            If the command hits a Zombie_Condition and the Zombie_Policy is
+            ``fail`` (see :meth:`_guard_child_command`).
 
         Notes
         -----
@@ -271,10 +337,14 @@ class Scheduler:
                 f"node is not found: {node_path}", node_path=node_path
             )
 
-        if isinstance(node, Task):
-            node.init(task_id)
-        else:
+        if not isinstance(node, Task):
             raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
+
+        if self._guard_child_command(node, "init", task_id) is ChildAction.SKIP:
+            # fob: answer success without touching the node.
+            return
+
+        node.init(task_id)
 
     def run_command_complete(self, node_path: str):
         """
@@ -291,6 +361,9 @@ class Scheduler:
             If node is not found.
         NodeTypeError
             If node is not a ``Task``.
+        ZombieError
+            If the command hits a Zombie_Condition and the Zombie_Policy is
+            ``fail`` (see :meth:`_guard_child_command`).
 
         Returns
         -------
@@ -302,10 +375,14 @@ class Scheduler:
                 f"node is not found: {node_path}", node_path=node_path
             )
 
-        if isinstance(node, Task):
-            node.complete()
-        else:
+        if not isinstance(node, Task):
             raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
+
+        if self._guard_child_command(node, "complete") is ChildAction.SKIP:
+            # fob: answer success without touching the node.
+            return
+
+        node.complete()
 
     def run_command_abort(self, node_path: str, reason: Optional[str] = None):
         """
@@ -324,6 +401,9 @@ class Scheduler:
             If node is not found.
         NodeTypeError
             If node is not a ``Task``.
+        ZombieError
+            If the command hits a Zombie_Condition and the Zombie_Policy is
+            ``fail`` (see :meth:`_guard_child_command`).
 
         Returns
         -------
@@ -335,10 +415,14 @@ class Scheduler:
                 f"node is not found: {node_path}", node_path=node_path
             )
 
-        if isinstance(node, Task):
-            node.abort(reason)
-        else:
+        if not isinstance(node, Task):
             raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
+
+        if self._guard_child_command(node, "abort") is ChildAction.SKIP:
+            # fob: answer success without touching the node.
+            return
+
+        node.abort(reason)
 
     def run_command_event(self, node_path: str, event_name: str):
         """
@@ -351,6 +435,14 @@ class Scheduler:
         event_name
             event name
 
+        Raises
+        ------
+        NodeNotFoundError
+            If node is not found.
+        ZombieError
+            If the target is a ``Task``, the command hits a Zombie_Condition and
+            the Zombie_Policy is ``fail`` (see :meth:`_guard_child_command`).
+
         Returns
         -------
 
@@ -360,6 +452,14 @@ class Scheduler:
             raise NodeNotFoundError(
                 f"node is not found: {node_path}", node_path=node_path
             )
+
+        # A non-task target keeps its M1 behaviour: ``event`` accepts any node
+        # which owns the event, and such a node has no job instance to judge
+        # (Requirement 9.9).
+        if isinstance(node, Task):
+            if self._guard_child_command(node, "event") is ChildAction.SKIP:
+                # fob: answer success without touching the node.
+                return
 
         node.set_event(event_name, True)
 
@@ -376,6 +476,14 @@ class Scheduler:
         meter_value
             meter value
 
+        Raises
+        ------
+        NodeNotFoundError
+            If node is not found.
+        ZombieError
+            If the target is a ``Task``, the command hits a Zombie_Condition and
+            the Zombie_Policy is ``fail`` (see :meth:`_guard_child_command`).
+
         Returns
         -------
 
@@ -385,6 +493,13 @@ class Scheduler:
             raise NodeNotFoundError(
                 f"node is not found: {node_path}", node_path=node_path
             )
+
+        # Same as ``event``: a non-task target has no job instance, so it keeps
+        # its M1 behaviour (Requirement 9.9).
+        if isinstance(node, Task):
+            if self._guard_child_command(node, "meter") is ChildAction.SKIP:
+                # fob: answer success without touching the node.
+                return
 
         node.set_meter(meter_name, int(meter_value))
 

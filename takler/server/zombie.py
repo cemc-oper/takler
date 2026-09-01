@@ -27,7 +27,7 @@ the call are read for one constant-time comparison and one adoption, and are
 never put into a message, a return value or a log record (Requirements 10.9,
 12.1).
 
-Requirements: 9.2~9.8, 10.1~10.9.
+Requirements: 9.2~9.8, 10.1~10.9, 11.4, 11.7.
 """
 
 from __future__ import annotations
@@ -40,6 +40,14 @@ from takler.core.state import NodeStatus
 from takler.core.task_node import Task
 from takler.exceptions import ZombieError
 from takler.logging import get_logger
+from takler.server.audit import (
+    EVENT_ZOMBIE,
+    OUTCOME_ZOMBIE,
+    AuditLogger,
+    AuditRecord,
+    audit_peer,
+    audit_timestamp,
+)
 from takler.server.auth import CallCredentials, get_call_credentials
 from takler.server.connect_config import (
     DEFAULT_AUTH_MODE,
@@ -47,6 +55,7 @@ from takler.server.connect_config import (
     AuthMode,
     ZombiePolicy,
 )
+from takler.server.protocol.error_code import SUCCESS, error_code_for_exception
 
 __all__ = [
     "CHILD_COMMAND_INIT",
@@ -456,6 +465,7 @@ class ZombieDetector:
         self,
         auth_mode: AuthMode = DEFAULT_AUTH_MODE,
         zombie_policy: ZombiePolicy = DEFAULT_ZOMBIE_POLICY,
+        audit_logger: Optional[AuditLogger] = None,
     ) -> None:
         """Bind the detector to the Auth_Mode and Zombie_Policy in force.
 
@@ -464,9 +474,14 @@ class ZombieDetector:
                 built-in default, which skips ``Z1``.
             zombie_policy: The resolved Zombie_Policy. Defaults to ``fail``, the
                 built-in default.
+            audit_logger: The Audit_Logger every disposition is recorded to
+                (Requirement 11.4). ``None`` skips the record, which is what a
+                scheduler driven directly -- by the TUI, by a unit test -- gets;
+                the WARNING of Requirement 10.8 is emitted either way.
         """
         self._auth_mode = auth_mode
         self._zombie_policy = zombie_policy
+        self._audit_logger: Optional[AuditLogger] = audit_logger
 
     @property
     def auth_mode(self) -> AuthMode:
@@ -548,10 +563,70 @@ class ZombieDetector:
         if condition is None:
             return ChildAction.PROCEED
 
-        return dispose_zombie(
-            node,
-            command,
-            condition,
-            policy=self._zombie_policy,
-            credentials=credentials,
+        # The node path is read before the disposition, because ``fail`` leaves
+        # this method by raising and the record still has to name the target.
+        target = [node.node_path]
+        try:
+            action = dispose_zombie(
+                node,
+                command,
+                condition,
+                policy=self._zombie_policy,
+                credentials=credentials,
+            )
+        except ZombieError as exc:
+            # ``fail``: the Error_Code is taken from the exception the handler
+            # will map, rather than written as a literal 31, so the record and
+            # the ``ServiceResponse.flag`` cannot drift apart.
+            self._record_audit(
+                command, target, credentials, error_code_for_exception(exc)
+            )
+            raise
+        # ``fob`` and ``adopt`` both answer the client with ``flag=0``.
+        self._record_audit(command, target, credentials, SUCCESS)
+        return action
+
+    def _record_audit(
+        self,
+        command: str,
+        target: "list[str]",
+        credentials: CallCredentials,
+        error_code: int,
+    ) -> None:
+        """Write the ``zombie`` Audit_Record of one disposition (Req 11.4).
+
+        Exactly one record per disposition, whichever policy applied, and none at
+        all for a Child_Command that hit no condition. The ``fob`` case is the
+        reason this matters: the client is answered ``flag=0`` and has no way to
+        learn its report was dropped, so the audit trail is the only place that
+        disposition is visible.
+
+        ``event`` and ``outcome`` are both ``zombie`` (Requirements 11.4, 11.7).
+        The Zombie_Condition that fired is not a field of the record -- the eight
+        keys are fixed (Requirement 11.5) -- and stays in the WARNING that
+        :func:`describe_zombie` renders.
+
+        No password reaches the record: neither the node's nor the call's is read
+        here (Requirements 10.9, 11.11, 12.1).
+
+        Args:
+            command: Short name of the Child_Command.
+            target: The path of the target task, as a one element list.
+            credentials: The Credential_Metadata of the call, for the user name
+                and the peer address.
+            error_code: The ``ServiceResponse.flag`` the RPC will carry.
+        """
+        if self._audit_logger is None:
+            return
+        self._audit_logger.record(
+            AuditRecord(
+                timestamp=audit_timestamp(),
+                event=EVENT_ZOMBIE,
+                command=command,
+                user=credentials.audit_user(),
+                peer=audit_peer(credentials.peer),
+                target=target,
+                outcome=OUTCOME_ZOMBIE,
+                error_code=error_code,
+            )
         )

@@ -11,12 +11,19 @@ from takler.logging import configure, get_logger
 from .scheduler import Scheduler
 from .network_service import TaklerService
 from .checkpoint import CheckpointManager
+from .audit import AuditLogger
+from .auth import AuthInterceptor, CredentialStore
+from .tls import build_server_credentials, resolve_tls_paths
 from .connect_config import (
     AuthMode,
     ConnectConfig,
     ExceptionPolicy,
+    SecuritySettings,
+    ZombiePolicy,
+    resolve_audit_file,
     resolve_auth_mode,
     resolve_exception_policy,
+    resolve_zombie_policy,
 )
 
 
@@ -135,6 +142,13 @@ class TaklerServer:
         # (Requirements 3.5, 3.6).
         self.auth_mode: AuthMode = resolve_auth_mode(connect_config=connect_config)
 
+        # Resolved with the same precedence as the Auth_Mode (Requirement 3.5).
+        # Held on the server because it is a server-global setting that the
+        # start-up record reports together with the Auth_Mode (Requirement 3.11).
+        self.zombie_policy: ZombiePolicy = resolve_zombie_policy(
+            connect_config=connect_config
+        )
+
         # Explicit TLS pair, the highest precedence source for the server
         # certificate and private key (Requirement 1.10). Only kept here; the
         # pair is turned into gRPC server credentials -- and the Connect_Config
@@ -142,6 +156,38 @@ class TaklerServer:
         # -- when the network service is started.
         self.tls_cert_file: Optional[str] = _as_optional_path_str(tls_cert_file)
         self.tls_key_file: Optional[str] = _as_optional_path_str(tls_key_file)
+
+        # The credential store and the interceptor are built here, before any
+        # service exists, because ``grpc.aio`` only accepts interceptors as an
+        # argument of ``grpc.aio.server()``: there is no way to add one to a
+        # server that is already constructed. Neither construction touches the
+        # filesystem, so building them is safe even when authentication is off
+        # and the credential files do not exist -- whether they must exist is
+        # decided by the explicit start-up validation in :meth:`start`.
+        security = self.security_settings
+        self.credential_store: CredentialStore = CredentialStore(
+            secret_file=None if security is None else security.operator_secret_file,
+            whitelist_file=(
+                None if security is None else security.operator_whitelist_file
+            ),
+        )
+        # One Audit_Logger for the whole server, shared by its record points:
+        # the Control_Command handler in the Network_Service (Requirement 11.2)
+        # and the rejection path of the Auth_Interceptor (Requirement 11.3).
+        # Resolved with the usual precedence -- ``TAKLER_AUDIT_FILE`` env var >
+        # the ``audit_file`` field of the Connect_Config ``security`` section >
+        # no Audit_File (Requirement 3.5) -- and resolved here rather than in
+        # ``start()`` because ``configure()`` needs the same value to install
+        # the audit sink.
+        self.audit_file: Optional[str] = resolve_audit_file(
+            connect_config=connect_config
+        )
+        self.audit_logger: AuditLogger = AuditLogger(self.audit_file)
+        self.auth_interceptor: AuthInterceptor = AuthInterceptor(
+            auth_mode=self.auth_mode,
+            credential_store=self.credential_store,
+            audit_logger=self.audit_logger,
+        )
 
         # Shared fatal-error signal. In ``FAIL_FAST`` mode the scheduler / service
         # request a clean server exit by triggering this event; ``run()`` waits on
@@ -166,6 +212,12 @@ class TaklerServer:
             port=port,
             exception_policy=self.exception_policy,
             fatal_shutdown=self._trigger_fatal_shutdown,
+            # The TLS credentials are *not* passed here: resolving them reads
+            # files and may abort the start-up, which belongs to ``start()``
+            # (Requirement 1.6). ``start()`` assigns them to the service before
+            # it binds the port.
+            interceptors=(self.auth_interceptor,),
+            audit_logger=self.audit_logger,
         )
         # The manager keeps a reference to the same live bunch the scheduler and
         # the network service hold, so a restored snapshot is visible to both
@@ -176,6 +228,18 @@ class TaklerServer:
             interval=checkpoint_interval,
             connect_config=connect_config,
         )
+
+    @property
+    def security_settings(self) -> Optional[SecuritySettings]:
+        """The ``security`` section of the Connect_Config, or ``None``.
+
+        ``None`` when the server runs without a config file at all. Every
+        consumer treats that the same way as an all-default section, so the
+        command line options alone can still enable TLS (Requirement 1.10).
+        """
+        if self.connect_config is None:
+            return None
+        return self.connect_config.security
 
     def _trigger_fatal_shutdown(self):
         """Signal that the server must exit (the ``FAIL_FAST`` path).
@@ -223,12 +287,79 @@ class TaklerServer:
             f"set the server process umask to {_RECOMMENDED_UMASK:04o}."
         )
 
+    def _start_security(self):
+        """Validate the security configuration and report the resulting posture.
+
+        Three things happen here, in this order, and all of them before the
+        service binds its port:
+
+        1. the credential files are validated against the Auth_Mode, which
+           aborts the start-up when authentication is enabled but the
+           Operator_Secret_File is unusable (Requirements 7.3, 7.4);
+        2. the TLS pair is turned into gRPC server credentials, which aborts the
+           start-up when the pair is half configured or unreadable
+           (Requirements 1.4, 1.5), and is handed to the Network_Service so it
+           can pick ``add_secure_port`` over ``add_insecure_port``
+           (Requirements 1.1, 1.2);
+        3. the effective Auth_Mode is stated in the log.
+
+        Both failures raise :class:`~takler.exceptions.SecurityConfigError`,
+        which the Server_CLI turns into one line on stderr and exit code 1
+        (Requirement 1.6). Refusing to start is the point: an operator who asked
+        for TLS or for authentication and silently got neither has no way to
+        find out, because both sides of the wire keep working.
+
+        The Auth_Mode record is asymmetric on purpose. ``enabled`` is an INFO
+        naming the Auth_Mode, the Zombie_Policy and the Operator_Whitelist_File,
+        which is the configuration an operator wants echoed back after a change
+        (Requirement 3.11). ``disabled`` is a WARNING spelling out what it means
+        in practice -- any caller who can reach the port may run a
+        Control_Command -- because it is the default, and therefore the state a
+        server ends up in without anyone choosing it (Requirement 3.12).
+        """
+        # Raises when authentication is enabled but the secret file is unusable;
+        # also warns about a missing whitelist and about wide file permissions.
+        self.credential_store.validate_at_startup(self.auth_mode)
+
+        security = self.security_settings
+        # Resolved separately from the credentials because the INFO record of
+        # Requirement 1.7 names the certificate file, and a ServerCredentials
+        # object does not remember where its bytes came from.
+        cert_file, _ = resolve_tls_paths(
+            security, self.tls_cert_file, self.tls_key_file
+        )
+        # Warns about the mTLS extension point, raises on a half configured or
+        # unreadable pair, returns ``None`` when TLS is simply not configured.
+        credentials = build_server_credentials(
+            security, self.tls_cert_file, self.tls_key_file
+        )
+        self.network_service.server_credentials = credentials
+        self.network_service.tls_cert_file = cert_file
+
+        if self.auth_mode is AuthMode.ENABLED:
+            whitelist_file = self.credential_store.whitelist_file
+            logger.info(
+                f"authentication enabled: auth_mode={self.auth_mode.value}, "
+                f"zombie_policy={self.zombie_policy.value}, "
+                f"operator_whitelist_file="
+                f"{None if whitelist_file is None else str(whitelist_file)!r}"
+            )
+        else:
+            logger.warning(
+                f"authentication is disabled (auth_mode="
+                f"{self.auth_mode.value}): any caller able to reach the served "
+                f"port may run control commands such as requeue, suspend, force "
+                f"and load, and may read the whole node tree; set auth_mode to "
+                f"{AuthMode.ENABLED.value!r} to require operator credentials"
+            )
+
     async def start(self):
         """
         Start services:
 
         * configure logging
         * check the umask that job script permissions will be derived from
+        * validate the security configuration and report the security posture
         * restore the bunch from the Checkpoint_File
         * start scheduler
         * start network service
@@ -244,16 +375,26 @@ class TaklerServer:
         """
         # Configure logging before the first server record is emitted so that
         # startup, command, and shutdown activity is captured at the configured
-        # level and destinations. No explicit arguments are passed, so the
-        # configuration is derived from environment variables and built-in
-        # defaults (Requirements 10.1, 10.2).
+        # level and destinations. Only the Audit_File is passed explicitly: the
+        # rest is derived from environment variables and built-in defaults
+        # (Requirements 10.1, 10.2), while the Audit_File may come from the
+        # ``security`` section of the Connect_Config, which the logging
+        # subsystem does not read (Requirements 11.1, 11.12).
         #
         # Configuration is guarded so that any failure does not abort server
         # startup: on failure we fall back to a console sink at INFO, emit a
         # WARNING describing the failure, and let startup proceed
         # (Requirements 10.3, 10.4).
+        #
+        # The Audit_File is passed only when one is configured, so that a server
+        # without auditing calls ``configure()`` with no explicit argument at
+        # all and the whole configuration keeps coming from the environment and
+        # the defaults, exactly as in M1.
+        configure_kwargs = {}
+        if self.audit_file is not None:
+            configure_kwargs["audit_file"] = self.audit_file
         try:
-            configure()
+            configure(**configure_kwargs)
         except Exception as exc:  # noqa: BLE001 - never let logging abort startup
             try:
                 configure(level="INFO", console=True)
@@ -274,6 +415,12 @@ class TaklerServer:
         # destinations, before ``restore()`` and before any of the three services
         # -- and therefore any worker thread or task -- exists (Requirement 12.8).
         self._check_job_script_umask()
+
+        # Before ``restore()``: an unusable security configuration must abort the
+        # start-up while nothing has been brought up yet, so the Server_CLI can
+        # exit non-zero without a half-started server to shut down
+        # (Requirement 1.6).
+        self._start_security()
 
         # Restore before the scheduler main loop exists (Requirement 6.1).
         # ``restore()`` never raises: an unusable snapshot degrades to the backup

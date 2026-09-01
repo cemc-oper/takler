@@ -40,6 +40,7 @@ __all__ = [
     "KEY_OPTION_NAME",
     "KEY_SETTING_NAME",
     "build_server_credentials",
+    "resolve_tls_paths",
 ]
 
 
@@ -99,6 +100,39 @@ def _resolve_path(
         return configured.strip()
 
     return None
+
+
+def resolve_tls_paths(
+    settings: Optional[SecuritySettings],
+    cert_file: "Optional[Union[str, Path]]" = None,
+    key_file: "Optional[Union[str, Path]]" = None,
+) -> "tuple[Optional[str], Optional[str]]":
+    """Resolve the effective certificate and private key paths.
+
+    Exposed next to :func:`build_server_credentials`, which applies the very
+    same resolution, because the Takler_Server needs the certificate path for
+    something the credentials object cannot answer: the Requirement 1.7 INFO
+    record names the certificate file, and a :class:`grpc.ServerCredentials` is
+    an opaque handle that no longer knows where its bytes came from. Sharing one
+    resolver keeps the path that gets logged and the path that gets read from
+    drifting apart.
+
+    Args:
+        settings: The ``security`` section of a Connect_Config, or ``None``.
+        cert_file: Certificate path from the Server_CLI ``--tls-cert`` option.
+        key_file: Private key path from the Server_CLI ``--tls-key`` option.
+
+    Returns:
+        The ``(certificate, private key)`` pair of effective paths, each one
+        ``None`` when no source provides it (Requirement 1.10).
+    """
+    cert_path = _resolve_path(
+        cert_file, None if settings is None else settings.server_cert_file
+    )
+    key_path = _resolve_path(
+        key_file, None if settings is None else settings.server_key_file
+    )
+    return cert_path, key_path
 
 
 def _fatal(message: str, cause: Optional[BaseException] = None) -> NoReturn:
@@ -285,12 +319,7 @@ def build_server_credentials(
             f"has no effect on the served port"
         )
 
-    cert_path = _resolve_path(
-        cert_file, None if settings is None else settings.server_cert_file
-    )
-    key_path = _resolve_path(
-        key_file, None if settings is None else settings.server_key_file
-    )
+    cert_path, key_path = resolve_tls_paths(settings, cert_file, key_file)
 
     if cert_path is None and key_path is None:
         logger.debug("no TLS certificate and no private key configured")

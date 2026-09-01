@@ -22,7 +22,8 @@ and the abort handler it returns.
 
 Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11, 6.12,
 6.13, 7.1, 7.2, 7.3,
-7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11, 7.12, 7.13, 11.8, 12.1, 12.3.
+7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11, 7.12, 7.13, 11.3, 11.7, 11.8, 12.1,
+12.3.
 """
 
 from __future__ import annotations
@@ -50,18 +51,32 @@ import grpc
 
 from takler.exceptions import SecurityConfigError
 from takler.logging import get_logger
+from takler.server.audit import (
+    DENIED_ERROR_CODE,
+    EVENT_DENIED,
+    OUTCOME_DENIED,
+    AuditLogger,
+    AuditRecord,
+    audit_command_name,
+    audit_peer,
+    audit_timestamp,
+)
 from takler.server.connect_config import DEFAULT_AUTH_MODE, AuthMode
 
 __all__ = [
     "AUDIT_UNKNOWN_USER",
     "COMMENT_PREFIX",
     "CREDENTIAL_METADATA_KEYS",
+    "MAX_ECHOED_LENGTH",
     "METADATA_KEY_JOB_PASSWORD",
     "METADATA_KEY_SECRET",
     "METADATA_KEY_USER",
+    "MIN_REDACTED_LENGTH",
     "PRIVILEGE_BY_METHOD",
+    "REDACTED",
     "SERVICE_METHOD_PREFIX",
     "STATUS_CODE_BY_REJECTION",
+    "TRUNCATION_MARKER",
     "AuthInterceptor",
     "CallCredentials",
     "CredentialFileContent",
@@ -72,6 +87,7 @@ __all__ = [
     "get_call_credentials",
     "privilege_for_method",
     "reset_call_credentials",
+    "sanitize_echoed_value",
     "set_call_credentials",
 ]
 
@@ -1325,6 +1341,95 @@ def reset_call_credentials(token: contextvars.Token) -> None:
     _CALL_CREDENTIALS.reset(token)
 
 
+#: Text written in place of a credential value that would otherwise be echoed
+#: into a rejection record (Requirements 6.12, 12.1).
+REDACTED: str = "<redacted>"
+
+#: Longest client-supplied string echoed into a rejection record or into the
+#: gRPC abort details.
+#:
+#: Both the method name and the ``takler-user`` value are chosen by the caller,
+#: and a refused caller is by definition one whose input is not trusted. gRPC
+#: accepts a method name of several kilobytes and a metadata value of more, so
+#: without a bound one refused RPC could write an arbitrarily large log line --
+#: which is a way to fill a disk, and a way to push the interesting records out
+#: of a rotated log. 200 characters is far more than the longest real method
+#: name (~45) or POSIX user name (32), so nothing legitimate is ever truncated.
+MAX_ECHOED_LENGTH: int = 200
+
+#: Marker appended to a value that :func:`sanitize_echoed_value` truncated.
+TRUNCATION_MARKER: str = "...(truncated)"
+
+#: Shortest credential value that :func:`sanitize_echoed_value` will redact by
+#: substring match.
+#:
+#: The redaction exists for one narrow case: a caller who sets its
+#: ``takler-user`` -- or invokes a method named -- exactly like the secret it
+#: presents, so that the value it sent comes back out through the record.
+#: Substituting a *short* value would do more harm than good: a one-character
+#: secret occurs inside almost every method name, and blanking it out would
+#: turn every rejection record into unreadable rubble while protecting a value
+#: that is guessable in a handful of attempts anyway. Below this length the
+#: containment that matters is the one that is unconditional -- no field of a
+#: record is ever *taken from* a credential.
+MIN_REDACTED_LENGTH: int = 8
+
+
+def sanitize_echoed_value(
+    value: Optional[str],
+    credentials: Optional["CallCredentials"] = None,
+) -> str:
+    """Make a caller-supplied string safe to put in a log line or abort details.
+
+    Three things are done to it, in this order:
+
+    1. **Control characters are escaped.** A ``takler-user`` of
+       ``"alice\\nWARNING refused nothing: ok"`` would otherwise write a second,
+       forged line into the log file, and a log reader cannot tell it from a
+       real record. The escaping is by code point (``\\x0a``) and leaves
+       printable non-ASCII alone, so a user name or a path in any script stays
+       readable.
+    2. **A presented credential value is redacted** when it occurs as a
+       substring and is at least :data:`MIN_REDACTED_LENGTH` long. This is the
+       belt to the braces of Requirements 6.12 and 12.1: no field of a rejection
+       record is *taken from* a credential in the first place, and if a caller
+       arranges for one to arrive through a field that is echoed, the value
+       still does not reach the log or the client. It runs before the
+       truncation, so a value parked past the length limit is removed rather
+       than cut in half.
+    3. **The result is truncated** to :data:`MAX_ECHOED_LENGTH`, so one refused
+       RPC cannot write an unbounded record (see there).
+
+    Args:
+        value: The caller-supplied text, for example the method name or the
+            ``takler-user`` value. ``None`` yields ``"None"``, so a caller need
+            not special-case an absent field.
+        credentials: The credentials the caller presented, whose
+            :attr:`~CallCredentials.job_password` and
+            :attr:`~CallCredentials.secret` are redacted from the result.
+            ``None`` skips that step.
+
+    Returns:
+        The sanitized text, safe to interpolate into a log record or into gRPC
+        status details.
+    """
+    if value is None:
+        return "None"
+
+    escaped = "".join(
+        ch if ch.isprintable() or ch == " " else f"\\x{ord(ch):02x}" for ch in value
+    )
+    if credentials is not None:
+        for secret in (credentials.job_password, credentials.secret):
+            if secret is not None and len(secret) >= MIN_REDACTED_LENGTH:
+                escaped = escaped.replace(secret, REDACTED)
+
+    if len(escaped) > MAX_ECHOED_LENGTH:
+        escaped = escaped[:MAX_ECHOED_LENGTH] + TRUNCATION_MARKER
+
+    return escaped
+
+
 #: gRPC status code each :class:`RejectionReason` is answered with
 #: (Requirements 6.4, 6.5, 6.6, 6.7).
 #:
@@ -1392,7 +1497,7 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
         self,
         auth_mode: AuthMode = DEFAULT_AUTH_MODE,
         credential_store: Optional[CredentialStore] = None,
-        audit_logger: Optional[Any] = None,
+        audit_logger: Optional[AuditLogger] = None,
         privilege_table: Optional[Mapping[str, PrivilegeLevel]] = None,
     ) -> None:
         """Build the interceptor.
@@ -1407,10 +1512,11 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
                 ``OPERATOR`` method is then always refused with an ERROR naming
                 the missing configuration, never let through
                 (Requirement 7.7).
-            audit_logger: The Audit_Logger the rejection path will write its
-                ``denied`` record to (Requirement 11.3). Wired in a later step;
-                held here so the interceptor's construction site does not have
-                to change again.
+            audit_logger: The Audit_Logger the rejection path writes its
+                ``denied`` record to (Requirement 11.3). ``None`` skips the
+                record, which is what a test or an in-process server that
+                configures no auditing gets; the WARNING of Requirement 6.10 is
+                emitted either way.
             privilege_table: The method name to Privilege_Level table,
                 defaulting to :data:`PRIVILEGE_BY_METHOD`. Injectable for tests
                 that stand up a service of their own.
@@ -1419,7 +1525,7 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
         self.credential_store: CredentialStore = (
             credential_store if credential_store is not None else CredentialStore()
         )
-        self._audit_logger = audit_logger
+        self._audit_logger: Optional[AuditLogger] = audit_logger
         self._privilege_table: Optional[Mapping[str, PrivilegeLevel]] = privilege_table
 
     async def intercept_service(
@@ -1529,9 +1635,18 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
         """
         status_code = STATUS_CODE_BY_REJECTION[reason]
         # Only the classification and the method name, never a credential value
-        # and never a hint about which check failed on the server's files
+        # and never a hint about which check failed on the server's files -- an
+        # attacker learning "the secret was right but the user is not
+        # whitelisted" learns that the secret they hold is live
         # (Requirements 6.12, 12.1).
-        details = f"{method} refused: {reason.value}"
+        #
+        # The method name is sanitized even though it looks like server-side
+        # data: it is whatever the caller put on the wire, and an unregistered
+        # method is refused rather than dropped, so this string is
+        # caller-controlled on exactly this path (see
+        # :func:`sanitize_echoed_value`).
+        safe_method = sanitize_echoed_value(method, credentials)
+        details = f"{safe_method} refused: {reason.value}"
 
         async def abort(request: Any, context: Any) -> None:
             peer = None
@@ -1542,7 +1657,7 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
                 # refuse the call; the address is diagnostic, not part of the
                 # decision.
                 pass
-            self._log_rejection(method, credentials.with_peer(peer), reason)
+            self._log_rejection(safe_method, credentials.with_peer(peer), reason)
             await context.abort(status_code, details)
 
         return grpc.unary_unary_rpc_method_handler(abort)
@@ -1555,13 +1670,85 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
     ) -> None:
         """Record one refusal (Requirement 6.10).
 
-        The record carries the method name, the ``takler-user`` value, the
-        caller's address and the classification -- and none of the credential
-        values, which is why the user name is taken through
-        :meth:`CallCredentials.audit_user` and the password and secret are not
-        touched at all (Requirements 6.10, 12.1).
+        The record carries exactly the four things a refusal has to be
+        actionable from -- the method name, the ``takler-user`` value, the
+        caller's network address and the classification -- and nothing else. In
+        particular it carries no credential value: the user name is taken
+        through :meth:`CallCredentials.audit_user` and
+        :attr:`~CallCredentials.job_password` and
+        :attr:`~CallCredentials.secret` are never read on this path
+        (Requirements 6.10, 12.1).
+
+        **Both caller-controlled fields are sanitized.** The method name and the
+        user name arrive from the wire, and this is the one path where an
+        unregistered method name and an arbitrary user name are echoed rather
+        than dropped. Without the escaping a ``takler-user`` holding a newline
+        would write a forged second line into the log file, which is worse than
+        a missing record because it is indistinguishable from a real one; and
+        without the length bound a refused caller could choose how many bytes
+        each refusal costs the log. See :func:`sanitize_echoed_value`. The
+        method name is sanitized by the caller, which needs the same text for
+        the abort details.
+
+        The peer address is not sanitized: it comes from the gRPC stack, not
+        from the caller.
+
+        Args:
+            method: The already sanitized method name that was refused.
+            credentials: The credentials the caller presented, for the user name
+                and the peer address, and for the redaction.
+            reason: The classification to report.
         """
+        user = sanitize_echoed_value(credentials.audit_user(), credentials)
         logger.warning(
-            f"refused {method}: {reason.value} "
-            f"(user={credentials.audit_user()}, peer={credentials.peer})"
+            f"refused {method}: {reason.value} (user={user}, peer={credentials.peer})"
+        )
+        self._audit_rejection(method, user, credentials)
+
+    def _audit_rejection(
+        self,
+        method: str,
+        user: str,
+        credentials: CallCredentials,
+    ) -> None:
+        """Write the ``denied`` Audit_Record of one refusal (Requirement 11.3).
+
+        Exactly one record per refused RPC, alongside the WARNING: the log line
+        is what an operator watching the server sees, the record is what a query
+        over the audit trail finds, and the two report the same refusal.
+
+        ``event`` and ``outcome`` are both fixed -- ``denied`` -- and
+        ``error_code`` is :data:`~takler.server.audit.DENIED_ERROR_CODE`, since
+        a refused call never reaches a handler and therefore has no
+        ``ServiceResponse.flag`` to copy (Requirement 11.7).
+
+        ``target`` is empty: the request body is never deserialized on this path,
+        so the server does not know which nodes the caller meant to act on -- and
+        must not know, since parsing an unauthenticated request is work an
+        unauthenticated caller could ask for at will.
+
+        Both caller-controlled fields are the already sanitized ones, so a
+        ``takler-user`` cannot smuggle a credential value or an unbounded string
+        into the audit trail either (Requirements 6.12, 12.1).
+
+        Args:
+            method: The already sanitized method name that was refused.
+            user: The already sanitized ``takler-user`` value, or the
+                ``unknown`` placeholder (Requirement 11.8).
+            credentials: The credentials the caller presented, for the peer
+                address. No value of them is read here.
+        """
+        if self._audit_logger is None:
+            return
+        self._audit_logger.record(
+            AuditRecord(
+                timestamp=audit_timestamp(),
+                event=EVENT_DENIED,
+                command=audit_command_name(method),
+                user=user,
+                peer=audit_peer(credentials.peer),
+                target=[],
+                outcome=OUTCOME_DENIED,
+                error_code=DENIED_ERROR_CODE,
+            )
         )

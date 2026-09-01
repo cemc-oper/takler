@@ -1,17 +1,78 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 import asyncio
 import inspect
 
 import grpc
 
 from takler.server.protocol import takler_pb2, takler_pb2_grpc
-from takler.server.protocol.error_code import error_code_for_exception
+from takler.server.protocol.error_code import SUCCESS, error_code_for_exception
 from takler.logging import get_logger
+from takler.server.audit import (
+    EVENT_CONTROL,
+    OUTCOME_ERROR,
+    OUTCOME_SUCCESS,
+    AuditLogger,
+    AuditRecord,
+    audit_command_name,
+    audit_peer,
+    audit_timestamp,
+)
+from takler.server.auth import (
+    PRIVILEGE_BY_METHOD,
+    SERVICE_METHOD_PREFIX,
+    PrivilegeLevel,
+    get_call_credentials,
+)
 from takler.server.scheduler import Scheduler
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
 
 
 logger = get_logger("server.service")
+
+
+#: Methods that need operator credentials but change nothing, and are therefore
+#: not Control_Commands.
+#:
+#: Requirement 11.2 audits Control_Commands, i.e. the commands that write to the
+#: Bunch. ``show`` and ``coroutine`` are Operator level because they expose the
+#: whole flow definition, not because they modify anything, and ``ping`` is
+#: public. Auditing them would bury the eight records that matter under one
+#: record per TUI refresh -- the TUI polls ``show`` continuously.
+_READ_ONLY_OPERATOR_METHODS: "frozenset[str]" = frozenset(
+    {
+        "RunRequestShow",
+        "QueryCoroutine",
+    }
+)
+
+
+def _control_method_names() -> "frozenset[str]":
+    """Return the bare names of the Control_Command RPC methods.
+
+    Derived from :data:`~takler.server.auth.PRIVILEGE_BY_METHOD` rather than
+    listed again here: the privilege table is the one place a method's
+    classification is decided, and a second list would be a second place for a
+    new command to be forgotten. A new Operator level rpc is therefore audited
+    from the moment it is classified, and a read-only one has to be named in
+    :data:`_READ_ONLY_OPERATOR_METHODS` to opt out.
+
+    Returns:
+        The bare method names, for example ``"RunCommandRequeue"``, as the
+        handlers pass them to :meth:`TaklerService._handle_command`.
+    """
+    names = set()
+    for full_name, level in PRIVILEGE_BY_METHOD.items():
+        if level is not PrivilegeLevel.OPERATOR:
+            continue
+        bare_name = full_name[len(SERVICE_METHOD_PREFIX) :]
+        if bare_name in _READ_ONLY_OPERATOR_METHODS:
+            continue
+        names.add(bare_name)
+    return frozenset(names)
+
+
+#: The RPC methods whose handling produces one Audit_Record (Requirement 11.2).
+CONTROL_METHOD_NAMES: "frozenset[str]" = _control_method_names()
 
 
 def _command_error_response(exc: Exception) -> "takler_pb2.ServiceResponse":
@@ -47,6 +108,21 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
         Service host
     port : int
         Service port
+    server_credentials : Optional[grpc.ServerCredentials]
+        TLS credentials the listen address is bound with. ``None`` means TLS is
+        not configured and the port is bound in plaintext (Requirements 1.1,
+        1.2).
+    interceptors : Sequence[grpc.aio.ServerInterceptor]
+        Server interceptors, the Auth_Interceptor among them. They have to be
+        known before :meth:`start` because ``grpc.aio`` only accepts them when
+        the server object is constructed.
+    tls_cert_file : Optional[str]
+        Path the ``server_credentials`` were built from, kept only so the
+        start-up INFO record can name it (Requirement 1.7).
+    audit_logger : Optional[AuditLogger]
+        Audit_Logger every Control_Command is recorded to (Requirement 11.2).
+        ``None`` disables the record, which is what a service built directly by
+        a test gets.
     """
 
     def __init__(
@@ -56,6 +132,10 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
         port: int = None,
         exception_policy: Optional[ExceptionPolicy] = None,
         fatal_shutdown: Optional[Callable[[], None]] = None,
+        server_credentials: Optional[grpc.ServerCredentials] = None,
+        interceptors: "Optional[Sequence[grpc.aio.ServerInterceptor]]" = None,
+        tls_cert_file: Optional[str] = None,
+        audit_logger: Optional[AuditLogger] = None,
     ):
         self.scheduler: Scheduler = scheduler
         if host is None:
@@ -79,6 +159,23 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
         )
         self.fatal_shutdown: Optional[Callable[[], None]] = fatal_shutdown
 
+        # TLS credentials and interceptors are decided by ``TaklerServer`` and
+        # only consumed here, in ``start()``. Both are plain attributes rather
+        # than read-only properties because the owning server resolves the TLS
+        # pair during its own ``start()`` -- a security misconfiguration must
+        # abort the start-up, not the construction of the service (Requirement
+        # 1.6 relies on the Server_CLI catching it around the start-up).
+        self.server_credentials: Optional[grpc.ServerCredentials] = server_credentials
+        self.tls_cert_file: Optional[str] = tls_cert_file
+        # ``grpc.aio`` has no way to add an interceptor to an existing server, so
+        # the list has to be complete before ``grpc.aio.server()`` is called.
+        self.interceptors: "tuple[grpc.aio.ServerInterceptor, ...]" = (
+            tuple(interceptors) if interceptors else ()
+        )
+        # One Audit_Logger is shared by the three record points; this service
+        # owns the Control_Command one (Requirement 11.2).
+        self.audit_logger: Optional[AuditLogger] = audit_logger
+
     @property
     def listen_address(self) -> str:
         """
@@ -89,10 +186,39 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
     async def start(self):
         """
         Start gRPC server.
+
+        The listen address is bound with :attr:`server_credentials` when TLS is
+        configured and in plaintext when it is not (Requirements 1.1, 1.2), and
+        which of the two happened is stated in the log: an INFO naming the
+        address and the certificate file for TLS (Requirement 1.7), a WARNING
+        naming the address and saying the transport is unencrypted otherwise
+        (Requirement 1.3). The plaintext case is a warning and not merely an
+        info because it is the default, so it is the case an operator is most
+        likely to be in without having decided to be.
+
+        :attr:`interceptors` are handed to ``grpc.aio.server()`` here because
+        that is the only place they can be handed over at all -- unlike the
+        synchronous server, ``grpc.aio`` offers no way to register an
+        interceptor afterwards.
         """
-        self.grpc_server = grpc.aio.server()
+        self.grpc_server = grpc.aio.server(interceptors=self.interceptors)
         takler_pb2_grpc.add_TaklerServerServicer_to_server(self, self.grpc_server)
-        self.grpc_server.add_insecure_port(self.listen_address)
+        if self.server_credentials is None:
+            self.grpc_server.add_insecure_port(self.listen_address)
+            logger.warning(
+                f"listening on {self.listen_address} without TLS: the transport "
+                f"is unencrypted, so commands, node paths and credentials cross "
+                f"the network in the clear; configure a server certificate and "
+                f"private key to enable TLS"
+            )
+        else:
+            self.grpc_server.add_secure_port(
+                self.listen_address, self.server_credentials
+            )
+            logger.info(
+                f"listening on {self.listen_address} with TLS, certificate file "
+                f"{self.tls_cert_file!r}"
+            )
         await self.grpc_server.start()
         logger.info(f"service started: {self.listen_address}")
 
@@ -128,6 +254,8 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
         request_info: str,
         op: Callable,
         error_response: Optional[Callable[[Exception], object]] = None,
+        audit_target: Optional[Sequence[str]] = None,
+        context: object = None,
     ):
         """Run a handler body behind the RPC exception boundary.
 
@@ -169,6 +297,22 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             Callable mapping the caught exception to the error representation of
             this handler's response type. Defaults to the command-style
             non-zero ``flag`` ``ServiceResponse``.
+        audit_target
+            Node paths or flow names this command acts on, for the ``target``
+            field of the Audit_Record (Requirement 11.9). Only the
+            Control_Command handlers pass it; see :meth:`_audit_control`.
+        context
+            The gRPC ``ServicerContext`` of the call, from which the caller's
+            network address is read for the Audit_Record when the credentials
+            published by the Auth_Interceptor do not carry one. ``None`` for a
+            handler that is not audited.
+
+        Notes
+        -----
+        Whichever way the handling ends -- normal response, error response under
+        ``RESILIENT``, or error response on the way out under ``FAIL_FAST`` -- a
+        Control_Command produces exactly one Audit_Record, built from the
+        response that is about to be returned (Requirement 11.2).
         """
         if error_response is None:
             error_response = _command_error_response
@@ -176,6 +320,7 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             result = op()
             if inspect.isawaitable(result):
                 result = await result
+            self._audit_control(operation_name, audit_target, result, context)
             return result
         except Exception as exc:  # noqa: BLE001 - boundary is intentional
             logger.error(
@@ -189,7 +334,76 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
                     f"failure; shutting server down"
                 )
                 self._trigger_fatal_shutdown()
-            return error_response(exc)
+            response = error_response(exc)
+            self._audit_control(operation_name, audit_target, response, context)
+            return response
+
+    def _audit_control(
+        self,
+        operation_name: str,
+        audit_target: Optional[Sequence[str]],
+        response: object,
+        context: object,
+    ) -> None:
+        """Write the ``control`` Audit_Record of one handled RPC (Req 11.2).
+
+        Only a Control_Command is recorded: ``show``, ``coroutine`` and ``ping``
+        are not (see :data:`CONTROL_METHOD_NAMES`). The membership test is what
+        makes it safe for every handler to funnel through
+        :meth:`_handle_command` while only eight of them produce records.
+
+        ``outcome`` and ``error_code`` come from the response that is about to be
+        returned, so they agree with what the client sees by construction: a
+        ``flag`` of 0 is ``success`` and anything else is ``error``
+        (Requirement 11.7).
+
+        ``user`` and ``peer`` come from the Credential_Metadata the
+        Auth_Interceptor published for this call (Requirement 11.8). The peer
+        address is not part of the metadata, so it is taken from the
+        ``ServicerContext`` when the published credentials do not carry it, which
+        is the ordinary case: an ``grpc.aio`` interceptor sees the invocation
+        metadata but no context to read an address from.
+
+        Nothing here can fail the RPC. :meth:`AuditLogger.record` already absorbs
+        every write failure (Requirement 11.15), and the record building is
+        wrapped as well: a command must not fail because its audit record could
+        not be assembled.
+
+        Args:
+            operation_name: The bare RPC method name, as the handler passes it.
+            audit_target: Node paths or flow names the command acted on.
+            response: The response about to be returned, read for its ``flag``.
+            context: The gRPC ``ServicerContext``, or ``None``.
+        """
+        if self.audit_logger is None or operation_name not in CONTROL_METHOD_NAMES:
+            return
+
+        try:
+            flag = int(getattr(response, "flag", SUCCESS) or SUCCESS)
+            credentials = get_call_credentials()
+            peer = credentials.peer
+            if peer is None and context is not None:
+                try:
+                    peer = context.peer()
+                except Exception:  # noqa: BLE001 - the address is diagnostic
+                    peer = None
+            self.audit_logger.record(
+                AuditRecord(
+                    timestamp=audit_timestamp(),
+                    event=EVENT_CONTROL,
+                    command=audit_command_name(operation_name),
+                    user=credentials.audit_user(),
+                    peer=audit_peer(peer),
+                    target=list(audit_target) if audit_target else [],
+                    outcome=OUTCOME_SUCCESS if flag == SUCCESS else OUTCOME_ERROR,
+                    error_code=flag,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - auditing is never fatal
+            logger.warning(
+                f"could not build the audit record of {operation_name}: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
     # Child command -----------------------------------------------------
 
@@ -272,7 +486,11 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             return takler_pb2.ServiceResponse(flag=0, message="")
 
         return await self._handle_command(
-            "RunCommandRequeue", f"node_path={list(node_path_list)}", op
+            "RunCommandRequeue",
+            f"node_path={list(node_path_list)}",
+            op,
+            audit_target=list(node_path_list),
+            context=context,
         )
 
     async def RunCommandSuspend(self, request: takler_pb2.SuspendCommand, context):
@@ -285,7 +503,11 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             return takler_pb2.ServiceResponse(flag=0, message="")
 
         return await self._handle_command(
-            "RunCommandSuspend", f"node_path={list(node_paths)}", op
+            "RunCommandSuspend",
+            f"node_path={list(node_paths)}",
+            op,
+            audit_target=list(node_paths),
+            context=context,
         )
 
     async def RunCommandResume(self, request: takler_pb2.SuspendCommand, context):
@@ -298,7 +520,11 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             return takler_pb2.ServiceResponse(flag=0, message="")
 
         return await self._handle_command(
-            "RunCommandResume", f"node_path={list(node_paths)}", op
+            "RunCommandResume",
+            f"node_path={list(node_paths)}",
+            op,
+            audit_target=list(node_paths),
+            context=context,
         )
 
     async def RunCommandRun(self, request, context):
@@ -315,7 +541,11 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             return takler_pb2.ServiceResponse(flag=0, message="")
 
         return await self._handle_command(
-            "RunCommandRun", f"node_path={list(node_paths)}, force={force}", op
+            "RunCommandRun",
+            f"node_path={list(node_paths)}, force={force}",
+            op,
+            audit_target=list(node_paths),
+            context=context,
         )
 
     async def RunCommandForce(self, request: takler_pb2.ForceCommand, context):
@@ -338,6 +568,8 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             "RunCommandForce",
             f"path={list(paths)}, state={state}, recursive={recursive}",
             op,
+            audit_target=list(paths),
+            context=context,
         )
 
     async def RunCommandFreeDep(self, request: takler_pb2.FreeDepCommand, context):
@@ -351,7 +583,11 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             return takler_pb2.ServiceResponse(flag=0, message="")
 
         return await self._handle_command(
-            "RunCommandFreeDep", f"path={list(paths)}, dep_type={dep_type}", op
+            "RunCommandFreeDep",
+            f"path={list(paths)}, dep_type={dep_type}",
+            op,
+            audit_target=list(paths),
+            context=context,
         )
 
     async def RunCommandBegin(self, request: takler_pb2.BeginCommand, context):
@@ -364,7 +600,13 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             return takler_pb2.ServiceResponse(flag=0, message="")
 
         return await self._handle_command(
-            "RunCommandBegin", f"flow_name={flow_name}, force={force}", op
+            "RunCommandBegin",
+            f"flow_name={flow_name}, force={force}",
+            op,
+            # A ``begin`` acts on one flow, named rather than pathed
+            # (Requirement 11.9).
+            audit_target=[flow_name],
+            context=context,
         )
 
     async def RunCommandLoad(self, request: takler_pb2.LoadCommand, context):
@@ -377,7 +619,15 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             return takler_pb2.ServiceResponse(flag=0, message="")
 
         return await self._handle_command(
-            "RunCommandLoad", f"flow_type={flow_type}", op
+            "RunCommandLoad",
+            f"flow_type={flow_type}",
+            op,
+            # A ``load`` carries a serialized flow, not a name: the flow it
+            # defines is only known once the scheduler has deserialized it, so
+            # there is no target to name before the command runs and none to
+            # name at all when it fails.
+            audit_target=None,
+            context=context,
         )
 
     # Query command -----------------------------------------------------
