@@ -14,6 +14,7 @@ from .checkpoint import CheckpointManager
 from .audit import AuditLogger
 from .auth import AuthInterceptor, CredentialStore
 from .tls import build_server_credentials, resolve_tls_paths
+from .zombie import ZombieDetector
 from .connect_config import (
     AuthMode,
     ConnectConfig,
@@ -199,12 +200,26 @@ class TaklerServer:
         # task completes / the fatal-error event fires.
         self._stopped: bool = False
 
+        # The one Zombie_Detector of this server, built from the settings already
+        # resolved above so the Scheduler receives a detector that is in force
+        # from the very first Child_Command. Without this the Scheduler's
+        # ``zombie_detector`` would stay ``None`` in a real server -- the "no
+        # policy configured" case meant for a directly driven scheduler -- and
+        # the whole feature would be unreachable in production
+        # (Requirements 9.1, 10.1).
+        self.zombie_detector: ZombieDetector = ZombieDetector(
+            auth_mode=self.auth_mode,
+            zombie_policy=self.zombie_policy,
+            audit_logger=self.audit_logger,
+        )
+
         port_str = str(port)
         self.bunch: Bunch = Bunch(host=host, port=port_str)
         self.scheduler: Scheduler = Scheduler(
             bunch=self.bunch,
             exception_policy=self.exception_policy,
             fatal_shutdown=self._trigger_fatal_shutdown,
+            zombie_detector=self.zombie_detector,
         )
         self.network_service: TaklerService = TaklerService(
             scheduler=self.scheduler,

@@ -24,6 +24,8 @@ Command order is dictated by the semantics, not by taste:
 * ``begin`` before ``requeue`` / ``run`` / ``force`` / ``free-dep``: those four
   are rejected on a flow which has not begun (``_require_begun``,
   Requirement 8.10), so ``begin`` is what makes them legal,
+* ``run`` before the Child_Commands of a task: a Child_Command on a queued task
+  is a zombie (``Z2``), so each task is submitted before its job reports,
 * the ``Query_Command``s last, once there is interesting state to query.
 
 The flow is built from plain :class:`~takler.core.Task` nodes on purpose: a
@@ -183,6 +185,17 @@ def test_all_commands_over_the_wire(takler_server, tmp_path: Path):
         for node in (task1, task2, task3):
             assert node.state.node_status == NodeStatus.queued
 
+        # -- Control: run (to give the Child_Commands a job to report as) -
+        # Every Child_Command is judged against the run instance the server
+        # records for its target: a report on a *queued* task is the
+        # requeue-then-report zombie (``Z2``), and the default Zombie_Policy
+        # rejects it with ``flag=31`` (Requirements 9.5, 10.2). A queued task is
+        # precisely the state no job of it exists in, so the four
+        # Child_Commands below are preceded by ``run``, which submits the task
+        # the way the scheduler would before a real job starts talking.
+        log.command("run", client.run_command_run(node_path=[TASK1], force=False))
+        assert task1.state.node_status == NodeStatus.submitted
+
         # -- Child: init ------------------------------------------------
         log.command("init", client.run_command_init(node_path=TASK1, task_id="job-42"))
         assert task1.state.node_status == NodeStatus.active
@@ -208,6 +221,10 @@ def test_all_commands_over_the_wire(takler_server, tmp_path: Path):
         assert task1.state.node_status == NodeStatus.complete
 
         # -- Child: abort -----------------------------------------------
+        # Submitted first, for the same reason as ``init`` above: ``abort`` is a
+        # Child_Command, so it only belongs to a task that has a job.
+        log.command("run", client.run_command_run(node_path=[TASK3], force=False))
+        assert task3.state.node_status == NodeStatus.submitted
         log.command("abort", client.run_command_abort(node_path=TASK3, reason="boom"))
         assert task3.state.node_status == NodeStatus.aborted
         assert task3.aborted_reason == "boom"
