@@ -159,9 +159,16 @@ omit = [
 [tool.coverage.report]
 # 缺失行默认展示，便于本地直接定位未覆盖分支。
 show_missing = true
-# 这里**不**设置 `fail_under`：需求 16.11 的门槛只针对 `takler/client` 与 Protocol_Layer，
-# 而非整个包，且 `pytest tests/some_file.py` 这类局部运行不应因门槛失败。门槛因此放在 CI
-# 的独立一步（见 `.github/workflows/test.yml`）：
+# 这里**不**设置 `fail_under`：需求 16.11 的门槛只针对特定模块而非整个包（包一级现为 79%，
+# 主因是 `takler/tui` 缺测试），且 `pytest tests/some_file.py` 这类局部运行不应因门槛失败。
+# 门槛因此放在 CI 的独立步骤（见 `.github/workflows/test.yml`），复用本段写出的同一份
+# 覆盖率数据、各自限定 `--include` 范围：
+#   # M1：客户端与 Protocol_Layer
 #   coverage report \
 #     --include="takler/client/*,takler/server/network_service.py,takler/server/protocol/*" \
 #     --fail-under=85
+#   # M2：安全相关新增模块，逐个模块检查（合并成一次 `--include` 会让高覆盖率的小模块
+#   # 把回退的大模块托过门槛，因为 `--fail-under` 比的是included文件的合计值）
+#   for module in auth zombie audit tls; do
+#     coverage report --include="takler/server/$module.py" --fail-under=85
+#   done

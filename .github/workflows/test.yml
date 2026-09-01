@@ -80,3 +80,22 @@ jobs:
     - name: Coverage gate for client and protocol layer
       run: |
         uv run coverage report --include="takler/client/*,takler/server/network_service.py,takler/server/protocol/*" --fail-under=85
+    # M2 requirement 16.11 puts the same 85% floor on the four modules the
+    # security work added. It is a separate step from the gate above, and it
+    # checks the four modules *one at a time* rather than passing all four to a
+    # single `--include`: `--fail-under` compares the total over the included
+    # files, so one aggregate check would let `tls.py` (100%, 70 statements)
+    # carry a regressed `auth.py` (301 statements) over the line. The loop keeps
+    # going after the first failure so a run reports every module that dropped,
+    # not just the first one alphabetically.
+    - name: Coverage gate for security modules
+      run: |
+        failed=""
+        for module in auth zombie audit tls; do
+          echo "== takler/server/$module.py"
+          uv run coverage report --include="takler/server/$module.py" --fail-under=85 || failed="$failed takler/server/$module.py"
+        done
+        if [ -n "$failed" ]; then
+          echo "statement coverage below 85% for:$failed" >&2
+          exit 1
+        fi
