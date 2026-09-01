@@ -44,12 +44,13 @@ head.takler 头文件放在 takler 脚本的开头，用于：
 
     date
 
-    # Defines the three variables that are needed for any
-    # communication with SMS
+    # Defines the variables that are needed for any
+    # communication with the takler server
 
     export TAKLER_HOST={{ TAKLER_HOST }}
     export TAKLER_PORT={{ TAKLER_PORT }}
     export TAKLER_NAME={{ TAKLER_NAME }}
+    export TAKLER_PASS={{ TAKLER_PASS }}
 
     # for ksh
     . /etc/profile.d/modules.sh
@@ -82,6 +83,17 @@ head.takler 头文件放在 takler 脚本的开头，用于：
 
     trap '{ echo "Killed by a signal";trap 0;ERROR; }' 1 2 3 4 5 6 7 8 10 12 13 15
     echo "exec on hostname:" "$(hostname)"
+
+上面示例中的 ``TAKLER_PASS`` 是 takler 为每个 task 生成的作业一次性口令，
+在服务启用鉴权模式 (auth mode) 后，child 命令需要携带该口令才能被服务接受。
+``takler_client`` 从环境变量 ``TAKLER_PASS`` 中读取它，因此头文件中需要把该变量导出。
+
+.. note::
+
+    takler 不提供 ``head.takler``，该文件由使用方自行编写和维护。
+    在启用鉴权模式之前，请先在自己的 ``head.takler`` 中加入
+    ``export TAKLER_PASS={{TAKLER_PASS}}`` 一行，
+    否则该 task 的 child 命令会被服务拒绝。
 
 
 tail.takler
