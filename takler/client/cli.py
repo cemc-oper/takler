@@ -37,7 +37,11 @@ from takler.client.service_client import TaklerServiceClient
 from takler.exceptions import TaklerError
 from takler.logging import get_logger
 from takler.logging.config import resolve_config
-from takler.server.connect_config import load_connect_config, TAKLER_CONNECT_FILE
+from takler.server.connect_config import (
+    ConnectConfig,
+    load_connect_config,
+    TAKLER_CONNECT_FILE,
+)
 from takler.server.protocol.error_code import SUCCESS, error_name_for_code
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 
@@ -158,13 +162,39 @@ def _run_command(command: Callable[[], Any]) -> Any:
     return _check_response(response)
 
 
+def _load_connect_config() -> Optional[ConnectConfig]:
+    """Load the Connect_Config named by ``TAKLER_CONNECT_FILE``, if any.
+
+    Returns
+    -------
+    Optional[ConnectConfig]
+        The parsed config, or ``None`` when the environment variable is unset.
+        A parse failure propagates, so it lands on the one line plus exit code
+        contract of :func:`_run_command` like any other failure.
+    """
+    path = os.environ.get(TAKLER_CONNECT_FILE)
+    if path is None:
+        return None
+    return load_connect_config(path)
+
+
 def _create_client(
     host: Optional[str] = None,
     port: Optional[Union[str, int]] = None,
 ) -> TaklerServiceClient:
-    """Resolve the server address and build a client for it."""
-    resolved_host, resolved_port = get_host_and_prot(host, port)
-    return TaklerServiceClient(host=resolved_host, port=resolved_port)
+    """Resolve the server address and build a client for it.
+
+    The Connect_Config is parsed once and used for both the address and the
+    ``security`` section, which is the third precedence level of the client's
+    TLS knobs (requirements 2.3, 2.5).
+    """
+    connect_config = _load_connect_config()
+    resolved_host, resolved_port = get_host_and_prot(host, port, connect_config)
+    return TaklerServiceClient(
+        host=resolved_host,
+        port=resolved_port,
+        connect_config=connect_config,
+    )
 
 
 def _run_client_command(
@@ -500,7 +530,9 @@ def coroutine(
 
 # ----------------------------
 def get_host_and_prot(
-    host: Optional[str] = None, port: Optional[Union[str, int]] = None
+    host: Optional[str] = None,
+    port: Optional[Union[str, int]] = None,
+    connect_config: Optional[ConnectConfig] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
     """
     get host and port.
@@ -514,6 +546,10 @@ def get_host_and_prot(
     ----------
     host
     port
+    connect_config
+        An already parsed Connect_Config, so a caller that needs other sections
+        of the same file does not have to read it twice. ``None`` keeps the
+        previous behaviour of loading it from ``TAKLER_CONNECT_FILE``.
 
     Returns
     -------
@@ -528,8 +564,9 @@ def get_host_and_prot(
     if TAKLER_PORT in os.environ:
         result_port = os.environ[TAKLER_PORT]
 
-    if TAKLER_CONNECT_FILE in os.environ:
+    if connect_config is None and TAKLER_CONNECT_FILE in os.environ:
         connect_config = load_connect_config(os.environ[TAKLER_CONNECT_FILE])
+    if connect_config is not None:
         result_host = connect_config.server.address.hostname
         result_port = connect_config.server.address.port
 

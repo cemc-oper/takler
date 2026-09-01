@@ -1,13 +1,16 @@
 """Credential and TLS path resolution for the client side.
 
-This module answers two questions for :mod:`takler.client.service_client`,
+This module answers three questions for :mod:`takler.client.service_client`,
 deliberately kept out of it so that the RPC plumbing stays about RPCs:
 
 * *where* the client's TLS and credential inputs live -- the CA certificate
   file, the certificate host name override and the Operator_Secret_File
   (:func:`resolve_ca_file`, :func:`resolve_server_name`,
   :func:`resolve_secret_file`),
-* *what* the Operator_Secret_File carries (:func:`read_first_secret`).
+* *what* the Operator_Secret_File carries (:func:`read_first_secret`),
+* *who* the caller is (:func:`current_user_name`), and under which metadata
+  keys the three credentials travel (:data:`METADATA_KEY_JOB_PASSWORD` and its
+  two siblings).
 
 The three ``resolve_*`` functions share the shape of the ``resolve_*`` family
 in :mod:`takler.server.connect_config`: four precedence levels, from an
@@ -17,28 +20,48 @@ reads; this one resolves the knobs a client reads, which is why the two live in
 different modules while sharing the same signature ``(explicit,
 connect_config, env)``.
 
-The environment variable names, the comment marker and the "first valid line"
-rule are part of the cross-language contract shared with the Go client's
-``common/tlsconfig.go`` and ``common/credentials.go``; any change here must be
-applied there as well.
+The three metadata key names are re-exported from :mod:`takler.server.auth`
+rather than spelled out again here. A second copy of ``"takler-pass"`` would not
+fail loudly if it drifted from the server's: the interceptor would simply see a
+call carrying no credentials. :mod:`takler.server.auth` depends on nothing but
+the standard library and :mod:`takler.logging`, and the client already reads
+:mod:`takler.server.connect_config` and the generated protocol modules, so the
+import direction is the established one in this package rather than a new one.
 
-Requirements: 2.3, 2.5, 8.5, 8.6, 8.8, 12.7.
+The environment variable names, the metadata key names, the comment marker, the
+"first valid line" rule and the user name fallback order are part of the
+cross-language contract shared with the Go client's ``common/tlsconfig.go`` and
+``common/credentials.go``; any change here must be applied there as well.
+
+Requirements: 2.3, 2.5, 8.2, 8.4, 8.5, 8.6, 8.8, 12.7.
 """
 
 from __future__ import annotations
 
+import getpass
 import os
 from pathlib import Path
-from typing import Mapping, Optional, Union
+from typing import Mapping, Optional, Tuple, Union
 
 from takler.logging import get_logger
+from takler.server.auth import (
+    METADATA_KEY_JOB_PASSWORD,
+    METADATA_KEY_SECRET,
+    METADATA_KEY_USER,
+)
 from takler.server.connect_config import ConnectConfig
 
 __all__ = [
+    "ENV_JOB_PASSWORD",
     "ENV_TLS_CA_FILE",
     "ENV_TLS_SERVER_NAME",
     "ENV_SECRET_FILE",
     "COMMENT_PREFIX",
+    "USER_NAME_ENV_NAMES",
+    "METADATA_KEY_JOB_PASSWORD",
+    "METADATA_KEY_SECRET",
+    "METADATA_KEY_USER",
+    "current_user_name",
     "resolve_ca_file",
     "resolve_server_name",
     "resolve_secret_file",
@@ -47,6 +70,15 @@ __all__ = [
 
 logger = get_logger("client")
 
+
+#: Environment variable holding the Job_Password of the running job
+#: (Requirement 8.2).
+#:
+#: The name is the same as the ``TAKLER_PASS`` generated parameter of
+#: :mod:`takler.core.parameter`, and that is the whole mechanism: the job script
+#: exports the generated parameter, and the client of a Child_Command reads it
+#: back out of its own environment.
+ENV_JOB_PASSWORD: str = "TAKLER_PASS"
 
 #: Environment variable holding the CA certificate file the client trusts as
 #: its root of trust (Requirement 2.3).
@@ -78,6 +110,51 @@ def _is_blank(value: Optional[str]) -> bool:
     client's ``isBlank``.
     """
     return value is None or value.strip() == ""
+
+
+#: Environment variables naming the current user, consulted in this order when
+#: :func:`getpass.getuser` cannot answer. Same list and same order as the Go
+#: client's ``osUsername``, so both clients send the same ``takler-user``.
+USER_NAME_ENV_NAMES: Tuple[str, str] = ("LOGNAME", "USER")
+
+
+def current_user_name() -> Optional[str]:
+    """Return the OS user name of the current process (Requirement 8.4).
+
+    :func:`getpass.getuser` is the primary source: it consults ``LOGNAME``,
+    ``USER``, ``LNAME`` and ``USERNAME`` before falling back to the process
+    owner's passwd entry. It *raises* when neither source answers -- a process
+    running under a uid with no passwd entry and no name in the environment,
+    which is the normal state of a container started with ``--user $(id -u)``.
+
+    That exception is caught rather than propagated, and the two environment
+    variables the Go client's ``osUsername`` falls back to are tried next.
+    Reason: ``takler-user`` is one metadata key among three, and a missing user
+    name must not take a command down before it reaches the server. Sending the
+    call without the key leaves the decision to the server, which is what the
+    rest of the credential path does for every absent credential (Requirements
+    8.3, 8.7).
+
+    Returns:
+        The user name with surrounding whitespace removed, or ``None`` when no
+        source names the user, in which case the caller omits ``takler-user``.
+    """
+    try:
+        name = getpass.getuser()
+    except (KeyError, OSError, ImportError):
+        # KeyError: no passwd entry (Python < 3.13). OSError: the same, as
+        # raised since 3.13. ImportError: no ``pwd`` module, i.e. Windows.
+        name = None
+
+    if not _is_blank(name):
+        return name.strip()
+
+    for env_name in USER_NAME_ENV_NAMES:
+        value = os.environ.get(env_name)
+        if not _is_blank(value):
+            return value.strip()
+
+    return None
 
 
 def _security_setting(

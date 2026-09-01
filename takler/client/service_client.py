@@ -21,19 +21,47 @@ for the duration of one command, and the ``run_command_xxx`` /
 ``run_request_xxx`` methods, which assume an already established channel: the
 TUI keeps one channel open across many calls and only uses the latter.
 
-Requirements: 9.1, 9.2, 9.5, 9.6, 9.7, 9.8, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6.
+Credential_Metadata is built in the same one place, by
+:meth:`TaklerServiceClient._build_metadata` from the command's
+:class:`~takler.client.retry.CommandKind` (m2 requirement 8.1), so none of the
+RPC methods contains credential code. Where the credentials come from is
+:mod:`takler.client.credentials`'s business.
+
+Transport security is decided once, in :meth:`TaklerServiceClient.create_channel`
+(m2 requirements 2.1, 2.2, 2.4): a configured CA certificate turns the channel
+into a TLS one, no CA leaves it plaintext exactly as in M1. Neither the RPC
+methods nor the Call_Wrapper know which of the two they are running over, so
+the timeout, retry and Retry_Window semantics are unchanged by TLS
+(requirement 2.8).
+
+Requirements: 9.1, 9.2, 9.5, 9.6, 9.7, 9.8, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6,
+2.1, 2.2, 2.4, 2.6, 2.8, 8.1, 8.2, 8.3, 8.4, 8.5, 8.7, 8.8, 8.9.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import ssl
 import sys
 import time
 from datetime import datetime
-from typing import Any, Callable, List, Optional, TypeVar, Union
+from pathlib import Path
+from typing import Any, Callable, List, Optional, Tuple, TypeVar, Union
 
 import grpc
 
+from takler.client.credentials import (
+    ENV_JOB_PASSWORD,
+    METADATA_KEY_JOB_PASSWORD,
+    METADATA_KEY_SECRET,
+    METADATA_KEY_USER,
+    current_user_name,
+    read_first_secret,
+    resolve_ca_file,
+    resolve_secret_file,
+    resolve_server_name,
+)
 from takler.client.retry import (
     DEFAULT_SINGLE_TIMEOUT,
     NON_RETRYABLE_EXCEPTION_BY_STATUS,
@@ -46,10 +74,12 @@ from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 from takler.core import Bunch
 from takler.exceptions import (
     ClientConnectionError,
+    InvalidRequestError,
     ServerResponseError,
     TransportError,
 )
 from takler.logging import get_logger
+from takler.server.connect_config import ConnectConfig
 from takler.server.protocol import takler_pb2
 from takler.server.protocol.error_code import error_name_for_code
 from takler.server.protocol.takler_pb2_grpc import TaklerServerStub
@@ -68,6 +98,102 @@ SHOW_ERROR_PREFIX: str = "error:"
 #: (requirement 11.2). Enough to identify the payload, short enough for a
 #: single terminal line's worth of context.
 SHOW_SNIPPET_LENGTH: int = 200
+
+#: gRPC channel option carrying the name the server certificate's host name is
+#: verified against, used when that name differs from the host the client
+#: connects to (m2 requirement 2.4). On HPC a server certificate is typically
+#: issued for the login node's short name while job scripts connect through the
+#: long one, so without this override TLS cannot be deployed there at all.
+SSL_TARGET_NAME_OVERRIDE_OPTION: str = "grpc.ssl_target_name_override"
+
+
+def _is_blank(value: Optional[str]) -> bool:
+    """Return ``True`` when a configured path counts as "not provided"."""
+    return value is None or value.strip() == ""
+
+
+def _validate_ca_file(path: str) -> None:
+    """Check that ``path`` really holds PEM certificate material.
+
+    :func:`grpc.ssl_channel_credentials` takes the root certificates as opaque
+    bytes and never looks at them, so a truncated or wrong-format CA file
+    builds a credentials object happily and only fails later, at handshake
+    time, as ``UNAVAILABLE``. The Call_Wrapper classifies that status as
+    retryable, so the real symptom would be the command spending its whole
+    Retry_Window before reporting "server unreachable" -- with the actual cause,
+    the CA file, named nowhere. Requirement 2.6 asks for the path and the
+    reason instead, which means parsing the file before it is used.
+
+    The parser is :meth:`ssl.SSLContext.load_verify_locations` from the
+    standard library, i.e. OpenSSL reading the same PEM material gRPC ends up
+    reading: no extra dependency, and the same accept/reject boundary. This
+    mirrors what :func:`takler.server.tls._validate_pair` does for the server
+    side pair.
+
+    Args:
+        path: The configured CA certificate file path.
+
+    Raises:
+        InvalidRequestError: The content cannot be parsed as certificates. The
+            message carries the path and the reason (requirement 2.6).
+    """
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    try:
+        context.load_verify_locations(cafile=path)
+    except (ssl.SSLError, OSError, ValueError) as exc:
+        raise InvalidRequestError(
+            f"cannot use TLS CA certificate file {path!r} as a root of trust: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+
+def build_channel_credentials(
+    ca_file: Optional[str],
+) -> Optional[grpc.ChannelCredentials]:
+    """Build the client TLS credentials, or ``None`` when no CA is configured.
+
+    Args:
+        ca_file: The resolved CA certificate file path, typically from
+            :func:`takler.client.credentials.resolve_ca_file`. ``None`` or
+            blank means no CA certificate is configured.
+
+    Returns:
+        A :class:`grpc.ChannelCredentials` trusting ``ca_file`` as its root
+        (requirement 2.1), or ``None`` when no CA certificate is configured, in
+        which case the caller builds an unencrypted channel just as in M1
+        (requirement 2.2).
+
+    Raises:
+        InvalidRequestError: The CA certificate file does not exist, is not
+            readable, is empty, or cannot be parsed as a certificate. The
+            message carries the path and the reason (requirement 2.6).
+
+            The type is deliberate. ``SecurityConfigError`` is documented as a
+            start-up-only failure of the *server*, so it is not the right one
+            here; among the client visible types, ``InvalidRequestError`` is the
+            one whose Error_Code (15) maps to exit code 1, "the request was
+            wrong". That is the correct signal: a job script that names an
+            unusable CA file has a wrong invocation, not an unreachable server,
+            and must not be retried by the caller.
+    """
+    if _is_blank(ca_file):
+        return None
+
+    path = ca_file.strip()
+    try:
+        root_certificates = Path(path).read_bytes()
+    except OSError as exc:
+        raise InvalidRequestError(
+            f"cannot read TLS CA certificate file {path!r}: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    if not root_certificates.strip():
+        raise InvalidRequestError(f"TLS CA certificate file {path!r} is empty")
+
+    _validate_ca_file(path)
+
+    logger.debug(f"built TLS channel credentials from CA certificate file {path!r}")
+    return grpc.ssl_channel_credentials(root_certificates=root_certificates)
 
 
 def _status_code(exc: grpc.RpcError) -> Optional[grpc.StatusCode]:
@@ -121,6 +247,10 @@ class TaklerServiceClient:
         retry_window: Optional[float] = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        ca_file: Optional[str] = None,
+        server_name: Optional[str] = None,
+        secret_file: Optional[str] = None,
+        connect_config: Optional[ConnectConfig] = None,
     ):
         """
         Parameters
@@ -140,6 +270,32 @@ class TaklerServiceClient:
         sleep
             Blocking sleep used between retries. Together with ``clock`` this is
             the injection point that lets tests span a long outage instantly.
+        ca_file
+            CA certificate file the client trusts, as the highest precedence
+            source of :func:`~takler.client.credentials.resolve_ca_file`
+            (m2 requirement 2.3). ``None`` falls through to
+            ``TAKLER_TLS_CA_FILE``, then to ``connect_config``, then to "no CA",
+            which means an unencrypted channel (m2 requirement 2.2).
+        server_name
+            Host name the server certificate is verified against, as the highest
+            precedence source of
+            :func:`~takler.client.credentials.resolve_server_name`
+            (m2 requirement 2.5).
+        secret_file
+            Operator_Secret_File the client reads its ``takler-secret`` from, as
+            the highest precedence source of
+            :func:`~takler.client.credentials.resolve_secret_file`
+            (m2 requirement 8.6). ``None`` falls through to
+            ``TAKLER_SECRET_FILE``, then to ``connect_config``, then to "no
+            shared secret", which means Operator_Commands carry no
+            ``takler-secret`` and the server decides whether to refuse them
+            (m2 requirement 8.7).
+        connect_config
+            A loaded Connect_Config whose ``security`` section supplies the
+            third precedence level of all three values, or ``None`` when no
+            config file is in play. Passed in rather than loaded here, so that
+            the address, the TLS knobs and the secret file path come from the
+            same parse of the same file.
         """
         self.host: str = host
         self.port: str = str(port)
@@ -149,6 +305,18 @@ class TaklerServiceClient:
         self.retry_window: Optional[float] = retry_window
         self.clock: Callable[[], float] = clock
         self.sleep: Callable[[float], None] = sleep
+        # Resolved once here rather than per channel or per call: the resolution
+        # reads the environment and the config, neither of which changes during
+        # one command, and this way ``create_channel`` only decides plaintext vs
+        # TLS and ``_build_metadata`` only reads the file. All three stay
+        # writable, which is what the TUI and the tests use.
+        self.ca_file: Optional[str] = resolve_ca_file(ca_file, connect_config)
+        self.server_name: Optional[str] = resolve_server_name(
+            server_name, connect_config
+        )
+        self.secret_file: Optional[str] = resolve_secret_file(
+            secret_file, connect_config
+        )
 
     def set_host_port(self, host: str, port: Union[int, str]):
         self.host = host
@@ -162,7 +330,29 @@ class TaklerServiceClient:
         return f"{self.host}:{self.port}"
 
     def create_channel(self):
-        self.channel = grpc.insecure_channel(self.listen_address)
+        """Open the channel, encrypted when a CA certificate is configured.
+
+        Raises
+        ------
+        InvalidRequestError
+            The configured CA certificate file cannot be read or parsed
+            (requirement 2.6). Raised here, before any RPC, so the failure names
+            the file instead of showing up as an unreachable server after the
+            Retry_Window.
+        """
+        credentials = build_channel_credentials(self.ca_file)
+        if credentials is None:
+            # Requirement 2.2: unchanged M1 behaviour when no CA is configured.
+            self.channel = grpc.insecure_channel(self.listen_address)
+            return
+
+        options: List[Tuple[str, str]] = []
+        if not _is_blank(self.server_name):
+            options.append((SSL_TARGET_NAME_OVERRIDE_OPTION, self.server_name.strip()))
+        # Requirement 2.1.
+        self.channel = grpc.secure_channel(
+            self.listen_address, credentials, options=options
+        )
 
     def close_channel(self):
         """
@@ -193,6 +383,61 @@ class TaklerServiceClient:
 
     # Call wrapper -------------------------------------------------
 
+    def _build_metadata(self, kind: CommandKind) -> List[Tuple[str, str]]:
+        """Build the Credential_Metadata one logical call of ``kind`` carries.
+
+        A Child_Command carries ``takler-pass`` taken from ``TAKLER_PASS``
+        (requirement 8.2); unset or whitespace-only means the key is left out
+        (requirement 8.3). Every other kind is an Operator_Command, which carries
+        ``takler-user`` (requirement 8.4) and, when a secret file is configured
+        and holds a secret, ``takler-secret`` (requirement 8.5).
+
+        ``CommandKind.CONTROL`` and ``CommandKind.QUERY`` are both Operator, so
+        ``ping`` carries credentials it does not need. The server does not check
+        them on a ``PUBLIC`` method, and the redundancy saves the client a second
+        per-method classification table.
+
+        An absent credential is left out and the call goes ahead, letting the
+        server decide whether to refuse it (requirements 8.3, 8.7, 8.8). Failing
+        here instead would stop a client from talking to a server running with
+        ``Auth_Mode=disabled``, which is the default.
+
+        Nothing on this path logs a value (requirements 8.9, 12.7): the WARNING
+        for an unusable secret file is
+        :func:`~takler.client.credentials.read_first_secret`'s, and it names the
+        path and the reason only.
+
+        Parameters
+        ----------
+        kind
+            Command classification of the logical call.
+
+        Returns
+        -------
+        The metadata pairs to hand to every attempt of this call, possibly
+        empty. The order matches the documented key order of the
+        Cross-Language Contract.
+        """
+        if kind is CommandKind.CHILD:
+            password = os.environ.get(ENV_JOB_PASSWORD)
+            if password is not None and password.strip():
+                return [(METADATA_KEY_JOB_PASSWORD, password)]
+            return []
+
+        metadata: List[Tuple[str, str]] = []
+        # A Child_Command never carries an operator credential, and an
+        # Operator_Command never carries the job password: the two credential
+        # sets stay disjoint, so a job script's ``TAKLER_PASS`` cannot leak into
+        # a control call.
+        secret = read_first_secret(self.secret_file)
+        if secret is not None:
+            metadata.append((METADATA_KEY_SECRET, secret))
+
+        user_name = current_user_name()
+        if user_name is not None:
+            metadata.append((METADATA_KEY_USER, user_name))
+        return metadata
+
     def _retry_policy(self, kind: CommandKind) -> RetryPolicy:
         """Build the policy for one logical call of ``kind``."""
         retry_window = self.retry_window
@@ -220,7 +465,7 @@ class TaklerServiceClient:
             The command name used in log messages, for example ``complete``.
         rpc
             The stub method to call; invoked as
-            ``rpc(request, timeout=single_timeout)``.
+            ``rpc(request, timeout=single_timeout, metadata=metadata)``.
         request
             The protobuf request message.
         kind
@@ -241,6 +486,13 @@ class TaklerServiceClient:
         TransportError
             For any other gRPC status code.
         """
+        # Credential_Metadata is built here, once per logical call, and handed
+        # to every attempt (m2 requirement 8.1). Once per logical call rather
+        # than once per attempt because a retry is the same call: re-reading the
+        # secret file mid-retry would let a rotation land halfway through one
+        # command. And here rather than in the RPC methods because that is what
+        # keeps credential handling out of all twenty of them.
+        metadata = self._build_metadata(kind)
         policy = self._retry_policy(kind)
         started = policy.clock()
         attempt = 0
@@ -248,7 +500,7 @@ class TaklerServiceClient:
         while True:
             attempt += 1
             try:
-                return rpc(request, timeout=policy.single_timeout)
+                return rpc(request, timeout=policy.single_timeout, metadata=metadata)
             except grpc.RpcError as exc:
                 code = _status_code(exc)
                 status_name = _status_name(code)

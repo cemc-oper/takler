@@ -32,9 +32,10 @@ class FakeClient:
 
     instances: list = []
 
-    def __init__(self, host=None, port=None, outcome=None):
+    def __init__(self, host=None, port=None, connect_config=None, outcome=None):
         self.host = host
         self.port = port
+        self.connect_config = connect_config
         self.outcome = outcome
         self.calls = []
         FakeClient.instances.append(self)
@@ -51,8 +52,13 @@ def fake_client(monkeypatch):
     FakeClient.instances = []
     holder = {"outcome": FakeResponse(flag=0)}
 
-    def factory(host=None, port=None):
-        return FakeClient(host=host, port=port, outcome=holder["outcome"])
+    def factory(host=None, port=None, connect_config=None):
+        return FakeClient(
+            host=host,
+            port=port,
+            connect_config=connect_config,
+            outcome=holder["outcome"],
+        )
 
     monkeypatch.setattr(cli, "TaklerServiceClient", factory)
     return holder

@@ -59,9 +59,16 @@ class FakeRpc:
     def __init__(self, *outcomes):
         self.outcomes = list(outcomes)
         self.calls = []
+        #: The ``metadata`` argument of each call, in call order. The
+        #: Call_Wrapper hands Credential_Metadata to every attempt (m2
+        #: requirement 8.1); what it contains is asserted in
+        #: ``test_credential_injection.py``, this only keeps the double
+        #: accepting the real call signature.
+        self.metadata_calls = []
 
-    def __call__(self, request, timeout=None):
+    def __call__(self, request, timeout=None, metadata=None):
         self.calls.append((request, timeout))
+        self.metadata_calls.append(metadata)
         outcome = self.outcomes[min(len(self.calls), len(self.outcomes)) - 1]
         if isinstance(outcome, BaseException):
             raise outcome
