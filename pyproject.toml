@@ -57,6 +57,12 @@ test = [
     "pytest-cov>=5.0",
     # Property-based testing.
     "hypothesis>=6.100",
+    # Self-signed certificates and keys for the TLS tests, generated in the
+    # test process rather than committed: a checked-in certificate expires and
+    # then fails the suite on a date nobody changed anything on. The `>=42`
+    # floor is the first release whose `not_valid_before`/`not_valid_after`
+    # accept timezone-aware datetimes, which is what the generators pass.
+    "cryptography>=42",
     # `ruff` is deliberately *not* here: a linter is not something a user of
     # `pip install takler[test]` needs in order to run the suite. It lives in
     # `[dependency-groups] dev`, which is locked by `uv.lock` and therefore
