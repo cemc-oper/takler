@@ -102,6 +102,85 @@ def test_step3_start_server_flow_matches_step1():
     assert flow.find_node("/test/t1") is not None
 
 
+def test_step4_add_tasks_and_containers_builds_expected_tree():
+    """``step4_add_tasks_and_containers.py`` nests two tasks under a container.
+
+    Mirrors the tree printed in add-tasks-and-containers.rst: ``t1`` sits
+    directly under the flow, ``group1`` is a :class:`~takler.core.NodeContainer`
+    holding ``t2`` and ``t3``.
+    """
+    module = _load_module(EXAMPLES_DIR / "step4_add_tasks_and_containers.py")
+
+    flow = module.create_flow()
+
+    assert flow.find_node("/test/t1") is not None
+    group1 = flow.find_node("/test/group1")
+    assert group1 is not None
+    assert flow.find_node("/test/group1/t2") is not None
+    assert flow.find_node("/test/group1/t3") is not None
+
+
+def test_step4_container_status_aggregates_to_the_most_significant_child():
+    """A container's status is the most significant status among its children.
+
+    Asserts the exact scenario add-tasks-and-containers.rst walks through:
+    ``t2`` active + ``t3`` complete aggregates ``group1`` (and the flow) to
+    ``active``, because ``active`` outranks ``complete`` in ``NodeStatus``.
+    """
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step4_add_tasks_and_containers.py")
+    flow = module.create_flow()
+
+    task2 = flow.find_node("/test/group1/t2")
+    task3 = flow.find_node("/test/group1/t3")
+    group1 = flow.find_node("/test/group1")
+
+    task2.set_node_status(NodeStatus.active)
+    task3.set_node_status(NodeStatus.complete)
+
+    assert group1.state.node_status == NodeStatus.active
+    assert flow.state.node_status == NodeStatus.active
+
+
+def test_step5_variables_resolve_by_nearest_ancestor():
+    """``step5_variables.py`` demonstrates parameter shadowing along the tree.
+
+    Mirrors the exact scenario walked through in variables.rst: ``t2``
+    shadows both its container and the flow with its own ``GREETING``; ``t3``
+    falls back to the container's value; ``t1`` (outside ``group1``) falls
+    back all the way to the flow's value.
+    """
+    module = _load_module(EXAMPLES_DIR / "step5_variables.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task2 = flow.find_node("/test/group1/t2")
+    task3 = flow.find_node("/test/group1/t3")
+
+    assert task1.find_parent_parameter("GREETING").value == "hello from flow"
+    assert task2.find_parent_parameter("GREETING").value == "hello from t2"
+    assert task3.find_parent_parameter("GREETING").value == "hello from group1"
+
+
+def test_step5_user_parameter_takes_priority_over_generated_of_same_name():
+    """A user-defined ``TAKLER_SCRIPT`` wins over the generated placeholder.
+
+    ``find_parameter`` looks at user parameters first: ``t1`` has both a user
+    ``TAKLER_SCRIPT`` (the script path it was configured with) and a
+    generated ``TAKLER_SCRIPT`` (still ``None`` before job creation runs), and
+    the user value must be what callers see.
+    """
+    module = _load_module(EXAMPLES_DIR / "step5_variables.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+
+    resolved = task1.find_parameter("TAKLER_SCRIPT")
+
+    assert resolved.value == str(Path(module.TAKLER_HOME, "test/task1.takler"))
+
+
 def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
     """The head/tail/task1 templates referenced by understanding-includes.rst
     render together as one job script without a Jinja2 error.

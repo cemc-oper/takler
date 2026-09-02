@@ -1,0 +1,3 @@
+{% include "head.takler" %}
+echo "I am part of group1"
+{% include "tail.takler" %}
