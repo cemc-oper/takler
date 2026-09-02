@@ -10,7 +10,11 @@ formats:
 build:
   os: "ubuntu-24.04"
   tools:
-    python: "mambaforge-22.9"
+    python: "3.12"
 
-conda:
-  environment: doc/environment.yml
+python:
+  install:
+    - method: uv
+      command: sync
+      groups:
+        - docs

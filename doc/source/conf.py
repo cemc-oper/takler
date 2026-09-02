@@ -57,12 +57,17 @@ exclude_patterns = []
 #
 # html_theme = 'alabaster'
 # html_theme = 'sphinx_rtd_theme'
-html_theme = "sphinx_book_theme"
+# html_theme = 'sphinx_book_theme'
+html_theme = "pydata_sphinx_theme"
 
 html_theme_options = {
-    "repository_url": "https://github.com/cemc-oper/takler",
-    "use_repository_button": True,
-    "home_page_in_toc": False,
+    "github_url": "https://github.com/cemc-oper/takler",
+    # 顶层 toctree 中的每一项（教程/运维/开发者）会分别展示为顶部横条上的一个菜单，
+    # 有子页面的项会带下拉列表。这里设为较大值以避免被折叠进「More」下拉菜单。
+    "header_links_before_dropdown": 5,
+    "navigation_with_keys": False,
+    "show_toc_level": 2,
+    "use_edit_page_button": False,
 }
 html_title = "Takler文档"
 

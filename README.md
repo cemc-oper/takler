@@ -15,6 +15,26 @@ A task scheduler tool for Numerical Weather Prediction (NWP) workflows.
 
 Chinese documentation (中文文档)：[https://takler.readthedocs.io/](https://takler.readthedocs.io/)
 
+### Build documentation locally
+
+Documentation dependencies (Sphinx, pydata-sphinx-theme, etc.) live in the `docs`
+dependency group in `pyproject.toml`, kept separate from the `dev` group so a docs
+build doesn't also pull in the linter or test tooling. Build the HTML docs with:
+
+```bash
+uv run --group docs sphinx-build -b html doc/source doc/build/html
+```
+
+or, using the Sphinx Makefile:
+
+```bash
+cd doc
+uv run --project .. --group docs make html
+```
+
+The generated HTML is written to `doc/build/html/index.html`. This is the same
+`uv sync --group docs` toolchain that Read the Docs uses (see `.readthedocs.yml`).
+
 ## History
 
 Takler was initially developed in 2014 during perillaroc's second year at NWPC/CMA as a work project 

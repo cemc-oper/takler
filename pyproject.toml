@@ -107,6 +107,14 @@ dev = [
     # reproducible.
     "grpcio-tools>=1.83",
 ]
+# Read the Docs installs this group via `uv sync --group docs` (see
+# `.readthedocs.yml`). Kept separate from `dev` so a docs-only build doesn't
+# also pull in `ruff`/`grpcio-tools`, which it doesn't need.
+docs = [
+    "sphinx>=8.1",
+    "pydata-sphinx-theme>=0.16",
+    "sphinx-autodoc-typehints>=2.5",
+]
 
 [tool.pytest.ini_options]
 # Use importlib import mode so test packages can mirror source package names
