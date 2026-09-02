@@ -7,7 +7,7 @@
 
 .. code-block:: bash
 
-    /g11/wangdp/project/course/takler/tutorial/test/task1.takler
+    ${TAKLER_HOME}/test/task1.takler
 
 创建任务脚本
 ------------
@@ -22,11 +22,8 @@
 
 在 test 目录中创建 task1.takler 文件：
 
-.. code-block:: bash
-
-    {% include "head.takler" %}
-    echo "I am part of a flow that lives in {{ TAKLER_HOME }}"
-    {% include "tail.takler" %}
+.. literalinclude:: /../examples/getting_started/test/task1.takler
+    :language: jinja
 
 
 作业生成
@@ -58,4 +55,4 @@
 练习
 ------
 
-1. 在 ``$TAKLER_HOME/test`` 目录中创建 takler 脚本 **task1.ecf**
+1. 在 ``$TAKLER_HOME/test`` 目录中创建 takler 脚本 **task1.takler**

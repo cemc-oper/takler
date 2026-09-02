@@ -7,12 +7,9 @@ Takler 教程
 
 .. note::
 
-    本教程以中国气象局国家级气象超算子系统3 (CMA-HPC2023-SC3) 为例说明如何在 HPC 环境中使用 Takler。
-    相关代码也同样适用于其他 Linux 服务器。
-
-.. note::
-
-    本教程使用 CMA-HPC2023-SC3 上的 wangdp 个人账户。
+    本教程使用一台普通 Linux 服务器，不依赖任何特定 HPC 系统或账户。
+    如果你在 HPC 环境（如通过 ``module`` 加载预安装环境、离线安装）中使用 Takler，
+    请参考 :doc:`hpc-appendix`。
 
 
 .. toctree::
@@ -21,4 +18,5 @@ Takler 教程
 
    overview
    getting-started/index
+   hpc-appendix
 

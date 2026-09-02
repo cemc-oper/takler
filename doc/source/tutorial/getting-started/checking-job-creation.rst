@@ -28,33 +28,9 @@ task1.takler 脚本需要经过预处理生成作业文件 (job file)。
 
 更新 **test.py**
 
-.. code-block:: py
-
-    import sys
-    from pathlib import Path
-
-    from takler.core import Bunch, Flow
-    from takler.tasks.shell import ShellScriptTask, check_job_creation
-    from takler.visitor import pre_order_travel, PrintVisitor
-
-
-    TAKLER_HOME = Path(__file__).parent
-
-
-    def create_flow():
-        flow = Flow("test")
-        flow.add_parameter("TAKLER_HOME", TAKLER_HOME)
-        task1 = flow.add_task(ShellScriptTask("t1"))
-        task1.add_parameter("TAKLER_SCRIPT", Path(TAKLER_HOME, "test/task1.takler"))
-        return flow
-
-
-    if __name__ == "__main__":
-        flow = create_flow()
-        bunch = Bunch()
-        bunch.add_flow(flow)
-        pre_order_travel(flow, PrintVisitor(sys.stdout))
-        check_job_creation(flow)
+.. literalinclude:: /../examples/getting_started/step2_check_job_creation.py
+    :language: python
+    :linenos:
 
 运行脚本
 
@@ -68,8 +44,8 @@ task1.takler 脚本需要经过预处理生成作业文件 (job file)。
 
     |- test [unknown]
       |- t1 [unknown]
-    Job generation success: /g11/wangdp/project/course/takler/tutorial/test/t1.job
-    Render run command success: /g11/wangdp/project/course/takler/tutorial/test/t1.job 1> /g11/wangdp/project/course/takler/tutorial/test/t1.out 2>&1
+    Job generation success: ${TAKLER_HOME}/test/t1.job
+    Render run command success: ${TAKLER_HOME}/test/t1.job 1> ${TAKLER_HOME}/test/t1.out 2>&1
     check job creation results: 1 total, 1 success, 0 failed.
 
 

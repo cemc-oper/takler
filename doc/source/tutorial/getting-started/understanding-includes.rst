@@ -30,59 +30,68 @@ head.takler 头文件放在 takler 脚本的开头，用于：
 * 定义脚本错误处理，当脚本出错捕获 trap 信号时，通知服务该任务 abort
 * 使用 child 命令 (child command) ``init`` 通知服务该任务已经开始
 
-应用在 CMA-PI 上的示例 head.takler
+通用 Linux 环境下的示例 head.takler
 
-.. code-block:: bash
-    :linenos:
+.. tab-set::
 
-    #!/bin/bash
+    .. tab-item:: takler_client
 
-    set -e          # stop the shell on first error
-    set -u          # fail when using an undefined variable
-    set -x          # echo script lines as they are executed
-    # set -o pipefail # fail if last(rightmost) command exits with a non-zero status
+        .. literalinclude:: /../examples/getting_started/test/head.takler
+            :language: bash
+            :linenos:
 
-    date
+    .. tab-item:: takler-client-py
 
-    # Defines the variables that are needed for any
-    # communication with the takler server
+        .. code-block:: bash
+            :linenos:
 
-    export TAKLER_HOST={{ TAKLER_HOST }}
-    export TAKLER_PORT={{ TAKLER_PORT }}
-    export TAKLER_NAME={{ TAKLER_NAME }}
-    export TAKLER_PASS={{ TAKLER_PASS }}
+            #!/bin/bash
 
-    # for ksh
-    . /etc/profile.d/modules.sh
+            set -e          # stop the shell on first error
+            set -u          # fail when using an undefined variable
+            set -x          # echo script lines as they are executed
+            # set -o pipefail # fail if last(rightmost) command exits with a non-zero status
 
-    RID=$( echo ${SLURM_JOB_ID:-0} )
-    if [ $RID -eq 0 ] ; then
-      RID=$$
-    fi
-    export TAKLER_RID=$RID
+            date
 
-    export PATH=~/bin:$PATH
+            # Defines the variables that are needed for any
+            # communication with the takler server
 
-    takler_client init --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
-      --task-id ${TAKLER_RID} --node-path ${TAKLER_NAME}
+            export TAKLER_HOST={{ TAKLER_HOST }}
+            export TAKLER_PORT={{ TAKLER_PORT }}
+            export TAKLER_NAME={{ TAKLER_NAME }}
+            export TAKLER_PASS={{ TAKLER_PASS }}
 
-    # Define a error handler
-    ERROR() {
-       set +e                      # Clear -e flag, so we don't fail
-       wait                        # wait for background process to stop
-       takler_client abort --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
-          --node-path ${TAKLER_NAME}
-       trap 0                      # Remove the trap
-       exit 0                      # End the script
-    }
-    # Trap any calls to exit and errors caught by the -e flag
+            # 若在作业调度系统（如 Slurm、PBS）中运行，可以用调度系统提供的作业号作为
+            # TAKLER_RID；不在调度系统中运行时，退回使用当前进程号 (PID)。
+            RID=$( echo ${SLURM_JOB_ID:-0} )
+            if [ $RID -eq 0 ] ; then
+              RID=$$
+            fi
+            export TAKLER_RID=$RID
 
-    trap ERROR 0
+            export PATH=~/bin:$PATH
 
-    # Trap any signal that may cause the script to fail
+            takler-client-py init --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
+              --task-id ${TAKLER_RID} --node-path ${TAKLER_NAME}
 
-    trap '{ echo "Killed by a signal";trap 0;ERROR; }' 1 2 3 4 5 6 7 8 10 12 13 15
-    echo "exec on hostname:" "$(hostname)"
+            # Define a error handler
+            ERROR() {
+               set +e                      # Clear -e flag, so we don't fail
+               wait                        # wait for background process to stop
+               takler-client-py abort --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
+                  --node-path ${TAKLER_NAME}
+               trap 0                      # Remove the trap
+               exit 0                      # End the script
+            }
+            # Trap any calls to exit and errors caught by the -e flag
+
+            trap ERROR 0
+
+            # Trap any signal that may cause the script to fail
+
+            trap '{ echo "Killed by a signal";trap 0;ERROR; }' 1 2 3 4 5 6 7 8 10 12 13 15
+            echo "exec on hostname:" "$(hostname)"
 
 上面示例中的 ``TAKLER_PASS`` 是 takler 为每个 task 生成的作业一次性口令，
 在服务启用鉴权模式 (auth mode) 后，child 命令需要携带该口令才能被服务接受。
@@ -102,14 +111,23 @@ tail.takler
 tail.takler 放在 takler 脚本文件的结尾，通知服务该任务已经完成。
 使用 child command 中的 ``complete`` 命令。
 
-.. code-block:: bash
+.. tab-set::
 
-    date
-    wait                      # wait for background process to stop
-    takler_client complete --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
-          --node-path ${TAKLER_NAME}
-    trap 0                    # Remove all traps
-    exit 0                    # End the shell
+    .. tab-item:: takler_client
+
+        .. literalinclude:: /../examples/getting_started/test/tail.takler
+            :language: bash
+
+    .. tab-item:: takler-client-py
+
+        .. code-block:: bash
+
+            date
+            wait                      # wait for background process to stop
+            takler-client-py complete --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
+                  --node-path ${TAKLER_NAME}
+            trap 0                    # Remove all traps
+            exit 0                    # End the shell
 
 
 这两个头文件主要用于与 takler 服务通讯：

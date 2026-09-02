@@ -1,0 +1,3 @@
+{% include "head.takler" %}
+echo "I am part of a flow that lives in {{ TAKLER_HOME }}"
+{% include "tail.takler" %}

@@ -1,0 +1,6 @@
+date
+wait                      # wait for background process to stop
+takler_client complete --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
+      --node-path ${TAKLER_NAME}
+trap 0                    # Remove all traps
+exit 0                    # End the shell
