@@ -150,5 +150,5 @@ jspm_packages
 
 generated/
 
-takler/_version.py
+src/takler/_version.py
 

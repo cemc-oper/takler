@@ -97,8 +97,8 @@ dev = [
     # this project's configuration was validated against.
     "ruff>=0.15",
     # protoc + the gRPC python plugin, needed to regenerate the stubs after
-    # editing `takler/server/protocol/takler.proto`:
-    #     python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. \
+    # editing `src/takler/server/protocol/takler.proto`:
+    #     python -m grpc_tools.protoc -Isrc --python_out=src --grpc_python_out=src \
     #         takler/server/protocol/takler.proto
     # The `>=1.83` floor is not cosmetic: grpcio-tools pins a protobuf range,
     # and everything below 1.83 caps it at `<7`, which contradicts this
@@ -119,16 +119,14 @@ markers = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]
-# 只打包 takler 自身：不加 include 时自动发现会把仓库根下的 `tests` 和 `doc` 也当作
-# 顶层包装进 wheel，装到 site-packages 后会占用（并可能遮蔽）这两个通用名字。
-include = ["takler*"]
+where = ["src"]
 
 [tool.setuptools]
 include-package-data = true
+package-dir = { "" = "src" }
 
 [tool.setuptools_scm]
-version_file = "takler/_version.py"
+version_file = "src/takler/_version.py"
 
 [tool.ruff]
 # 排除 protobuf 生成目录
@@ -165,10 +163,10 @@ show_missing = true
 # 覆盖率数据、各自限定 `--include` 范围：
 #   # M1：客户端与 Protocol_Layer
 #   coverage report \
-#     --include="takler/client/*,takler/server/network_service.py,takler/server/protocol/*" \
+#     --include="src/takler/client/*,src/takler/server/network_service.py,src/takler/server/protocol/*" \
 #     --fail-under=85
 #   # M2：安全相关新增模块，逐个模块检查（合并成一次 `--include` 会让高覆盖率的小模块
 #   # 把回退的大模块托过门槛，因为 `--fail-under` 比的是included文件的合计值）
 #   for module in auth zombie audit tls; do
-#     coverage report --include="takler/server/$module.py" --fail-under=85
+#     coverage report --include="src/takler/server/$module.py" --fail-under=85
 #   done

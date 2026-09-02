@@ -79,7 +79,7 @@ jobs:
     # code only.
     - name: Coverage gate for client and protocol layer
       run: |
-        uv run coverage report --include="takler/client/*,takler/server/network_service.py,takler/server/protocol/*" --fail-under=85
+        uv run coverage report --include="src/takler/client/*,src/takler/server/network_service.py,src/takler/server/protocol/*" --fail-under=85
     # M2 requirement 16.11 puts the same 85% floor on the four modules the
     # security work added. It is a separate step from the gate above, and it
     # checks the four modules *one at a time* rather than passing all four to a
@@ -92,8 +92,8 @@ jobs:
       run: |
         failed=""
         for module in auth zombie audit tls; do
-          echo "== takler/server/$module.py"
-          uv run coverage report --include="takler/server/$module.py" --fail-under=85 || failed="$failed takler/server/$module.py"
+          echo "== src/takler/server/$module.py"
+          uv run coverage report --include="src/takler/server/$module.py" --fail-under=85 || failed="$failed src/takler/server/$module.py"
         done
         if [ -n "$failed" ]; then
           echo "statement coverage below 85% for:$failed" >&2
