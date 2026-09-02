@@ -31,8 +31,17 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
+    "sphinx.ext.intersphinx",
     "sphinx_autodoc_typehints",
+    "sphinxcontrib.mermaid",
+    "sphinx_design",
 ]
+
+# 让标准库类型（``datetime.datetime``、``typing.Literal`` 等）的交叉引用能解析到
+# 官方 Python 文档，而不是在 nitpicky 模式下报“找不到目标”。
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+}
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -48,6 +57,33 @@ language = "zh_CN"
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
+
+# 严格模式：交叉引用目标缺失时报 warning（配合 `-W` 即失败），
+# 用于在文档构建阶段捕获断链的 `:py:class:` / `:py:func:` 等引用。
+nitpicky = True
+
+# 允许缺失的交叉引用目标：本项目 API 页面尚未覆盖的对象（覆盖计划见
+# doc/documentation-plan.md 批次 R），在此显式列出并注明原因，而不是关闭 nitpicky。
+nitpick_ignore = [
+    # typing 中的容器/别名类型不在本项目文档范围内。
+    ("py:class", "typing.Any"),
+    # 以下对象在源码中已用 :py:class: / :py:exc: / :py:attr: / :py:obj: 交叉引用，
+    # 但对应的 API 页面（tree.rst / attribute.rst / exceptions.rst 等）尚未补齐
+    # 这些条目，计划在批次 R（T40~T42）随对应页面一并从本列表移除。
+    ("py:class", "takler.core.util.SerializationType"),
+    ("py:obj", "takler.core.SerializationType.Status"),
+    ("py:obj", "takler.core.SerializationType.Tree"),
+    ("py:class", "takler.core.calendar.Calendar"),
+    ("py:attr", "takler.core.state.NodeStatus.queued"),
+    ("py:attr", "takler.core.state.NodeStatus.complete"),
+    ("py:exc", "ExpressionSyntaxError"),
+    ("py:exc", "FlowStateError"),
+    ("py:exc", "JobSubmissionError"),
+]
+
+# linkcheck 构建（`-b linkcheck`）中允许跳过的链接模式，例如尚未发布的锚点或
+# 本地开发环境专用地址。目前为空，后续任务如遇到需要跳过的外部链接再补充。
+linkcheck_ignore = []
 
 
 # -- Options for HTML output -------------------------------------------------

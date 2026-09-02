@@ -130,7 +130,7 @@ class Limit:
 class InLimit:
     """
     An attribution of Node to mark current Node and all its children to use some Limit.
-    One Node could have multiply :py:class:`~takler.core.limit.InLimit`s.
+    One Node could have multiply :py:class:`~takler.core.limit.InLimit` objects.
     :py:class:`~takler.core.limit.InLimit` is managed by :py:class:`~takler.core.limit.InLimitManager`.
 
     Attributes
@@ -192,7 +192,7 @@ class InLimit:
 
 class InLimitManager:
     """
-    Manager :py:class:`~takler.core.limit.InLimit`s in one :py:class:`~takler.core.node.Node`.
+    Manager :py:class:`~takler.core.limit.InLimit` objects in one :py:class:`~takler.core.node.Node`.
     Deal with Limit increment and decrement.
 
     Attributes

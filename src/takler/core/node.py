@@ -816,9 +816,9 @@ class Node(ABC):
         value: Optional[Union[str, float, int, bool]] = None,
     ) -> Optional[Parameter]:
         """
-        Add ``Parameter``(s) to this node.
+        Add ``Parameter`` (s) to this node.
 
-        If ``param` is a dict or list, ``value`` must be None.
+        If ``param`` is a dict or list, ``value`` must be None.
         If ``param`` is a str, ``value`` must not be None.
 
         TODO: add_parameter([dict])
@@ -959,7 +959,7 @@ class Node(ABC):
 
         Notes
         -----
-        Return value is dict of reference of ``Parameter``s, so it's value will be updated automatically.
+        Return value is dict of reference of ``Parameter`` objects, so it's value will be updated automatically.
         """
         p = dict()
         if self.repeat is not None:

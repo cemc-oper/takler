@@ -114,6 +114,10 @@ docs = [
     "sphinx>=8.1",
     "pydata-sphinx-theme>=0.16",
     "sphinx-autodoc-typehints>=2.5",
+    # 架构组件图、job 生命周期时序图、状态迁移图。
+    "sphinxcontrib-mermaid>=2.1",
+    # 客户端命令的 tab 并列展示（`takler_client` 与 `takler-client-py`）。
+    "sphinx-design>=0.7",
 ]
 
 [tool.pytest.ini_options]
