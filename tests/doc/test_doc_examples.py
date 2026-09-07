@@ -181,6 +181,28 @@ def test_step5_user_parameter_takes_priority_over_generated_of_same_name():
     assert resolved.value == str(Path(module.TAKLER_HOME, "test/task1.takler"))
 
 
+def test_step6_triggers_block_until_upstream_task_completes():
+    """``step6_triggers.py``'s ``t2`` depends on ``t1 == complete``.
+
+    Mirrors the exact scenario walked through in triggers.rst: before ``t1``
+    completes, ``t2``'s dependencies do not resolve; once ``t1`` is marked
+    complete, they do.
+    """
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step6_triggers.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task2 = flow.find_node("/test/t2")
+
+    flow.requeue()
+    assert task2.resolve_dependencies() is False
+
+    task1.set_node_status(NodeStatus.complete)
+    assert task2.resolve_dependencies() is True
+
+
 def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
     """The head/tail/task1 templates referenced by understanding-includes.rst
     render together as one job script without a Jinja2 error.

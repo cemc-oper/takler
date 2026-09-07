@@ -20,5 +20,6 @@ Takler 教程
    getting-started/index
    add-tasks-and-containers
    variables
+   triggers
    hpc-appendix
 
