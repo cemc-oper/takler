@@ -21,5 +21,6 @@ Takler 教程
    add-tasks-and-containers
    variables
    triggers
+   events-and-meters
    hpc-appendix
 

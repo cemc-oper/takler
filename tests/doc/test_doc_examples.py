@@ -203,6 +203,85 @@ def test_step6_triggers_block_until_upstream_task_completes():
     assert task2.resolve_dependencies() is True
 
 
+def test_step7_event_and_meter_triggers_gate_downstream_tasks():
+    """``step7_events_and_meters.py`` gates ``t2``/``t3`` on t1's self-report.
+
+    Mirrors the exact scenario walked through in events-and-meters.rst:
+    ``t2`` waits for event ``a`` to be set and ``t3`` waits for meter
+    ``step`` to reach 50; neither resolves while ``t1`` has not reported,
+    and both resolve once the corresponding attribute value arrives.
+    """
+    module = _load_module(EXAMPLES_DIR / "step7_events_and_meters.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task2 = flow.find_node("/test/t2")
+    task3 = flow.find_node("/test/t3")
+
+    flow.requeue()
+    assert task2.resolve_dependencies() is False
+    assert task3.resolve_dependencies() is False
+
+    # Meter below the threshold still blocks t3; reaching it releases t3.
+    task1.set_meter("step", 25)
+    assert task3.resolve_dependencies() is False
+    task1.set_meter("step", 50)
+    assert task3.resolve_dependencies() is True
+
+    # Setting the event releases t2 while t1 is still running.
+    task1.set_event("a", True)
+    assert task2.resolve_dependencies() is True
+
+
+def test_step7_requeue_resets_events_and_meters():
+    """``requeue`` returns t1's event and meter to their initial values.
+
+    events-and-meters.rst promises that a requeued node reports from a clean
+    slate: the event falls back to ``initial_value`` (``unset``) and the meter
+    falls back to its range minimum, so downstream triggers wait for fresh
+    reports on the next run.
+    """
+    module = _load_module(EXAMPLES_DIR / "step7_events_and_meters.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task1.set_event("a", True)
+    task1.set_meter("step", 50)
+
+    task1.requeue()
+
+    assert task1.find_event("a").value is False
+    assert task1.find_meter("step").value == 0
+
+
+def test_step7_meter_rejects_values_outside_its_range():
+    """Meter updates outside ``[min_value, max_value]`` raise ``ValueError``.
+
+    events-and-meters.rst states that out-of-range reports are refused; the
+    example's meter ``step`` spans 0~100, so 101 must be rejected.
+    """
+    module = _load_module(EXAMPLES_DIR / "step7_events_and_meters.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+
+    with pytest.raises(ValueError):
+        task1.set_meter("step", 101)
+
+
+def test_step7_task1_with_events_renders_cleanly(cleanup_generated_files):
+    """The ``task1_with_events.takler`` script renders without Jinja2 errors."""
+    from takler.tasks.shell import ShellScriptTask
+
+    test_dir = EXAMPLES_DIR / "test"
+    task1 = ShellScriptTask("t1", str(test_dir / "task1_with_events.takler"))
+    task1.add_parameter("TAKLER_HOME", str(test_dir))
+    task1.update_generated_parameters()
+
+    assert task1.check_job_creation()
+
+
+
 def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
     """The head/tail/task1 templates referenced by understanding-includes.rst
     render together as one job script without a Jinja2 error.

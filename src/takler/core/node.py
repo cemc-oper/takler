@@ -971,6 +971,22 @@ class Node(ABC):
     def add_event(
         self, name: str, initial_value: bool = False, check: bool = True
     ) -> Event:
+        """
+        Add an Event to this node.
+
+        Parameters
+        ----------
+        name
+            event name. Event names on one node should not be duplicated.
+        initial_value
+            event's initial value, default is False (unset).
+        check
+            whether to check for duplicate event names, default is True.
+
+        Returns
+        -------
+        Event
+        """
         if check:
             if self.find_event(name):
                 raise RuntimeError(f"add event failed: event name is duplicate: {name}")
@@ -1007,6 +1023,22 @@ class Node(ABC):
     # Meter ----------------------------------------------------------
 
     def add_meter(self, name: str, min_value: int, max_value: int) -> Meter:
+        """
+        Add a Meter to this node.
+
+        Parameters
+        ----------
+        name
+            meter name.
+        min_value
+            meter's minimum value. Meter's initial value is ``min_value``.
+        max_value
+            meter's maximum value.
+
+        Returns
+        -------
+        Meter
+        """
         meter = Meter(name, min_value=min_value, max_value=max_value)
         self.meters.append(meter)
         return meter
