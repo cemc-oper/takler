@@ -22,5 +22,7 @@ Takler 教程
    variables
    triggers
    events-and-meters
+   limits
+   repeat-and-time
    hpc-appendix
 

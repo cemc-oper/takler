@@ -1245,6 +1245,26 @@ class Node(ABC):
     # Repeat ---------------------------------------------------------
 
     def add_repeat(self, r: RepeatBase) -> RepeatBase:
+        """
+        Add a Repeat attribute to Node. A node can have at most one repeat;
+        calling this method again replaces the existing one.
+
+        When the node completes, the scheduler increments the repeat value and
+        requeues the node (without resetting the repeat), so the subtree runs
+        once per repeat value. A manual ``requeue`` resets the repeat back to
+        its start value.
+
+        Parameters
+        ----------
+        r
+            The repeat attribute, e.g. a
+            :py:class:`~takler.core.repeat.RepeatDate` for a daily loop.
+
+        Returns
+        -------
+        RepeatBase
+            The ``r`` passed in.
+        """
         self.repeat = Repeat(r)
         return r
 

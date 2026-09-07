@@ -47,6 +47,11 @@ Repeat
 .. autoclass:: takler.core.Repeat
     :members:
 
+.. autoclass:: takler.core.repeat.RepeatBase
+
+.. autoclass:: takler.core.RepeatDate
+    :members:
+
 Event
 -------
 

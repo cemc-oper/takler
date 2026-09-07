@@ -18,6 +18,7 @@ test so repeated local runs don't accumulate stray files under
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -52,7 +53,10 @@ def cleanup_generated_files():
     yield
     for path in test_dir.iterdir():
         if path not in before:
-            path.unlink()
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
 
 
 def test_step1_define_flow_builds_expected_tree():
@@ -280,6 +284,179 @@ def test_step7_task1_with_events_renders_cleanly(cleanup_generated_files):
 
     assert task1.check_job_creation()
 
+
+def test_step8_limit_tokens_track_task_status_changes():
+    """``step8_limits.py``'s limit counts running tasks and gates the rest.
+
+    Mirrors the exact scenario walked through in limits.rst: a task holds one
+    token of ``work`` while it is ``submitted``; once both tokens are taken
+    ``t3`` may not start; completing or aborting a running task releases its
+    token and lets the next task in.
+    """
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step8_limits.py")
+    flow = module.create_flow()
+
+    group1 = flow.find_node("/test/group1")
+    limit = group1.find_limit("work")
+    assert limit.limit == 2
+    assert limit.value == 0
+
+    task1 = flow.find_node("/test/group1/t1")
+    task2 = flow.find_node("/test/group1/t2")
+    task3 = flow.find_node("/test/group1/t3")
+
+    # A task occupies one token while it is submitted.
+    task1.set_node_status(NodeStatus.submitted)
+    assert limit.value == 1
+    task2.set_node_status(NodeStatus.submitted)
+    assert limit.value == 2
+
+    # The pool is exhausted: t3 may not start until a token is released.
+    assert task3.check_in_limit_up() is False
+
+    # Completing t1 releases its token, so t3 fits again.
+    task1.set_node_status(NodeStatus.complete)
+    assert limit.value == 1
+    assert task3.check_in_limit_up() is True
+
+    # Aborting a running task releases its token as well.
+    task2.set_node_status(NodeStatus.aborted)
+    assert limit.value == 0
+
+
+def test_step8_in_limit_resolves_limit_up_the_node_tree():
+    """An in-limit without ``node_path`` finds the nearest limit up the tree.
+
+    limits.rst states the lookup rule mirrors variable lookup: ``t1`` sits
+    under ``group1`` which holds ``work``, so the bare ``add_in_limit("work")``
+    binds to that limit.
+    """
+    module = _load_module(EXAMPLES_DIR / "step8_limits.py")
+    flow = module.create_flow()
+
+    group1 = flow.find_node("/test/group1")
+    task1 = flow.find_node("/test/group1/t1")
+
+    assert task1.find_limit_up("work") is group1.find_limit("work")
+
+
+def test_step9_repeat_generates_date_variable_for_children():
+    """``step9_repeat_and_time.py``'s repeat exposes ``TAKLER_DATE`` to children.
+
+    repeat-and-time.rst promises that a repeat generates a same-named variable
+    holding the current loop value (an integer ``YYYYMMDD``) which the whole
+    subtree — including task scripts — can reference.
+    """
+    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/daily/t1")
+
+    assert task1.parameters()["TAKLER_DATE"].value == 20240101
+
+
+def test_step9_repeat_advances_and_requeues_when_node_completes():
+    """Completing a repeat node advances the date and requeues the subtree.
+
+    Mirrors the exact scenario walked through in repeat-and-time.rst: each
+    time ``daily`` completes, the repeat moves to the next day and the
+    container (with its task) is requeued; past the end date the container
+    stays ``complete``.
+    """
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
+    flow = module.create_flow()
+
+    daily = flow.find_node("/test/daily")
+    task1 = flow.find_node("/test/daily/t1")
+
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240102
+    assert daily.state.node_status == NodeStatus.queued
+    assert task1.state.node_status == NodeStatus.queued
+
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240103
+    assert daily.state.node_status == NodeStatus.queued
+
+    # 20240103 is the end date: no next value, so the container stays complete.
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240103
+    assert daily.state.node_status == NodeStatus.complete
+
+
+def test_step9_requeue_resets_repeat_to_start():
+    """A manual ``requeue`` returns the repeat to its start date.
+
+    repeat-and-time.rst warns about this asymmetry: the scheduler's internal
+    requeue during loop advancement keeps the current value, but an explicit
+    ``requeue`` resets it.
+    """
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
+    flow = module.create_flow()
+
+    daily = flow.find_node("/test/daily")
+    task1 = flow.find_node("/test/daily/t1")
+
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240102
+
+    flow.requeue()
+    assert daily.repeat.value() == 20240101
+
+
+def test_step9_time_dependency_waits_for_flow_calendar():
+    """``t2``'s ``12:00`` time attribute follows the flow's logical calendar.
+
+    Mirrors the exact scenario walked through in repeat-and-time.rst: the
+    dependency blocks while the flow time is before 12:00; once the calendar
+    reaches 12:00 a free latch keeps it satisfied (so later times still pass);
+    requeuing the node re-arms the dependency.
+    """
+    import datetime
+
+    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
+    flow = module.create_flow()
+
+    task2 = flow.find_node("/test/t2")
+
+    # Start the flow's logical calendar at 11:59: the 12:00 time dependency
+    # is not yet satisfied.
+    flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
+    assert task2.resolve_time_dependencies() is False
+
+    # One (real) minute later the flow time reaches 12:00 and the dependency
+    # is satisfied.
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
+    assert flow.calendar.flow_time.hour == 12
+    assert flow.calendar.flow_time.minute == 0
+    assert task2.resolve_time_dependencies() is True
+
+    # The free latch keeps it satisfied after the exact minute has passed...
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
+    assert task2.resolve_time_dependencies() is True
+
+    # ...until the node is requeued, which re-arms the time dependency.
+    task2.requeue()
+    assert task2.resolve_time_dependencies() is False
+
+
+def test_step9_task1_with_repeat_renders_cleanly(cleanup_generated_files):
+    """The ``task1_with_repeat.takler`` script renders the repeat date variable."""
+    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/daily/t1")
+    assert task1.check_job_creation()
+
+    jobs = list((EXAMPLES_DIR / "test" / "daily").glob("t1.job*"))
+    assert len(jobs) == 1
+    assert "processing date 20240101" in jobs[0].read_text()
 
 
 def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
