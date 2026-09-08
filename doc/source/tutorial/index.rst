@@ -24,5 +24,7 @@ Takler 教程
    events-and-meters
    limits
    repeat-and-time
+   controlling-the-flow
+   zombies-and-restart
    hpc-appendix
 

@@ -459,6 +459,412 @@ def test_step9_task1_with_repeat_renders_cleanly(cleanup_generated_files):
     assert "processing date 20240101" in jobs[0].read_text()
 
 
+def test_step10_builds_expected_tree():
+    """``step10_control.py`` defines ``test`` with t1 (event), t2 (trigger), t3 (time)."""
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task2 = flow.find_node("/test/t2")
+    task3 = flow.find_node("/test/t3")
+    assert task1.find_event("a") is not None
+    assert task2.trigger_expression.expression_str == "./t1 == complete"
+    assert len(task3.times) == 1
+
+
+def test_step10_begin_starts_calendar_and_rejects_second_begin():
+    """``begin`` marks the flow begun and requeues the tree; only begun flows run.
+
+    controlling-the-flow.rst walks through this: the first ``begin`` starts the
+    calendar and resets the node tree; a second ``begin`` without ``--force``
+    is refused; ``--force`` begins it again.
+    """
+    from takler.core import Bunch, NodeStatus
+    from takler.exceptions import FlowStateError
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    flow = scheduler.bunch.add_flow(module.create_flow())
+
+    assert flow.begun is False
+
+    scheduler.run_command_begin("")
+
+    assert flow.begun is True
+    assert flow.state.node_status == NodeStatus.queued
+
+    with pytest.raises(FlowStateError):
+        scheduler.run_command_begin("test")
+
+    # ``--force`` begins an already begun flow again.
+    scheduler.run_command_begin("test", force=True)
+
+
+def test_step10_control_commands_require_a_begun_flow():
+    """``requeue``/``run``/``force``/``free-dep`` on an un-begun flow are refused.
+
+    controlling-the-flow.rst notes that a freshly ``load``-ed flow (or any flow
+    before its first ``begin``) rejects these commands with a flow-state error.
+    """
+    from takler.core import Bunch
+    from takler.exceptions import FlowStateError
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    scheduler.bunch.add_flow(module.create_flow())
+
+    with pytest.raises(FlowStateError):
+        scheduler.run_command_requeue("/test")
+    with pytest.raises(FlowStateError):
+        scheduler.run_command_run("/test/t1")
+    with pytest.raises(FlowStateError):
+        scheduler.run_command_force("/test/t1", "complete")
+    with pytest.raises(FlowStateError):
+        scheduler.run_command_free_dep("/test/t3", "time")
+
+
+def test_step10_suspending_a_flow_blocks_its_whole_subtree():
+    """A suspended container is never descended into, so its children never run.
+
+    controlling-the-flow.rst states the suspended marker is orthogonal to node
+    status: the child itself is not flagged, but the scheduler's dependency
+    walk stops at the suspended container.
+    """
+    from takler.core import Bunch
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    flow = scheduler.bunch.add_flow(module.create_flow())
+    scheduler.run_command_begin("")
+
+    scheduler.run_command_suspend("/test")
+
+    assert flow.is_suspended() is True
+    # The marker is not pushed down to children...
+    task1 = flow.find_node("/test/t1")
+    assert task1.state.suspended is False
+    # ...but a suspended container's own dependency check fails, so the walk
+    # never reaches the children (see NodeContainer.resolve_dependencies).
+    assert flow.check_dependencies() is False
+
+    scheduler.run_command_resume("/test")
+    assert flow.is_suspended() is False
+
+
+def test_step10_force_sets_node_status_recursively():
+    """``force`` rewrites node status regardless of its current value.
+
+    Mirrors controlling-the-flow.rst: with recursion on (the CLI default) the
+    whole subtree takes the status; with ``--no-recursive`` only the target
+    node changes and the parents re-aggregate from their children.
+    """
+    from takler.core import Bunch, NodeStatus
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    flow = scheduler.bunch.add_flow(module.create_flow())
+    scheduler.run_command_begin("")
+
+    scheduler.run_command_force("/test", "complete", recursive=True)
+
+    assert flow.state.node_status == NodeStatus.complete
+    for child in flow.children:
+        assert child.state.node_status == NodeStatus.complete
+
+    # Non-recursive: only t1 changes; the flow re-aggregates to queued.
+    scheduler.run_command_force("/test/t1", "queued", recursive=False)
+
+    assert flow.find_node("/test/t1").state.node_status == NodeStatus.queued
+    assert flow.state.node_status == NodeStatus.queued
+
+
+def test_step10_force_sets_and_clears_events():
+    """``force set|clear`` on a ``node:event`` path toggles the event.
+
+    controlling-the-flow.rst uses ``force set /test/t1:a`` as the example; an
+    unsupported state is rejected and leaves the event untouched.
+    """
+    from takler.core import Bunch
+    from takler.exceptions import UnsupportedValueError
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    flow = scheduler.bunch.add_flow(module.create_flow())
+    scheduler.run_command_begin("")
+
+    event_a = flow.find_node("/test/t1").find_event("a")
+    assert event_a.value is False
+
+    scheduler.run_command_force("/test/t1:a", "set")
+    assert event_a.value is True
+
+    scheduler.run_command_force("/test/t1:a", "clear")
+    assert event_a.value is False
+
+    with pytest.raises(UnsupportedValueError):
+        scheduler.run_command_force("/test/t1:a", "bogus")
+    assert event_a.value is False
+
+
+def test_step10_free_dep_releases_time_and_trigger():
+    """``free-dep`` marks a dependency as satisfied for the current run.
+
+    Mirrors controlling-the-flow.rst: freeing ``t2``'s trigger makes the
+    trigger expression evaluate to true without ``t1`` completing; freeing
+    ``t3``'s time attribute sets its free latch without the calendar reaching
+    12:00. A requeue re-arms both.
+    """
+    from takler.core import Bunch
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    flow = scheduler.bunch.add_flow(module.create_flow())
+    scheduler.run_command_begin("")
+
+    task2 = flow.find_node("/test/t2")
+    task3 = flow.find_node("/test/t3")
+    assert task2.evaluate_trigger() is False
+    assert task3.times[0].free is False
+
+    scheduler.run_command_free_dep("/test/t2", "trigger")
+    scheduler.run_command_free_dep("/test/t3", "time")
+
+    assert task2.evaluate_trigger() is True
+    assert task3.times[0].free is True
+
+    # Requeuing re-arms the freed dependencies.
+    flow.requeue()
+    assert task2.evaluate_trigger() is False
+    assert task3.times[0].free is False
+
+
+def test_step10_run_skips_a_submitted_task():
+    """``run`` on a submitted/active task is a no-op unless forced.
+
+    controlling-the-flow.rst states the guard exists so one task never runs two
+    jobs at once; the forced form is exercised in zombies-and-restart.rst.
+    """
+    from takler.core import Bunch, NodeStatus
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    flow = scheduler.bunch.add_flow(module.create_flow())
+    scheduler.run_command_begin("")
+
+    task1 = flow.find_node("/test/t1")
+    task1.set_node_status(NodeStatus.submitted)
+
+    assert scheduler.run_command_run("/test/t1") is False
+    assert task1.state.node_status == NodeStatus.submitted
+
+    # ``run`` only applies to tasks; targeting a container is refused.
+    assert scheduler.run_command_run("/test") is False
+
+
+def test_step10_load_registers_a_flow_without_beginning_it():
+    """``load`` registers a JSON flow definition; the flow starts un-begun.
+
+    controlling-the-flow.rst loads ``Flow.to_dict`` output and stresses that an
+    explicit ``begin`` is still required before the scheduler touches the flow.
+    """
+    import json
+
+    from takler.core import Bunch
+    from takler.exceptions import InvalidRequestError
+    from takler.server.scheduler import Scheduler
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    flow = module.create_flow()
+
+    scheduler = Scheduler(bunch=Bunch(name="bunch"))
+    scheduler.run_command_load("json", json.dumps(flow.to_dict()).encode())
+
+    loaded = scheduler.bunch.find_flow("test")
+    assert loaded is not None
+    assert loaded.begun is False
+    assert loaded.find_node("/test/t2") is not None
+
+    with pytest.raises(InvalidRequestError):
+        scheduler.run_command_load("json", b"not a json")
+
+
+def test_step10_try_no_and_job_password_lifecycle():
+    """Each run attempt gets a fresh ``try_no`` and job password; requeue clears both.
+
+    zombies-and-restart.rst builds its zombie story on this invariant: the job
+    file of attempt *n* is ``<node>.job<n>`` and its script carries the
+    ``TAKLER_PASS`` generated for that attempt, so a report from attempt *n-1*
+    can be told apart from the current run.
+    """
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    assert task1.try_no == 0
+    assert task1.job_password is None
+
+    # First run attempt.
+    task1.increment_try_no()
+    first_password = task1.job_password
+    assert task1.try_no == 1
+    assert first_password
+
+    # A resubmission is a new attempt: try_no goes up and the password rotates.
+    task1.increment_try_no()
+    assert task1.try_no == 2
+    assert task1.job_password != first_password
+
+    # Requeue resets the run bookkeeping.
+    task1.requeue()
+    assert task1.try_no == 0
+    assert task1.job_password is None
+
+
+def test_step10_zombie_rejected_after_requeue():
+    """A report arriving after its task was requeued hits zombie condition Z2.
+
+    Mirrors the exact scenario walked through in zombies-and-restart.rst: the
+    task is requeued while its job is still running, so when the old job's
+    ``complete`` arrives the task is ``queued`` -- a status in which no job
+    should be reporting. The default ``fail`` policy raises ``ZombieError``.
+    """
+    from takler.core import NodeStatus
+    from takler.exceptions import ZombieError
+    from takler.server.zombie import ChildAction, ZombieCondition, ZombieDetector
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    flow = module.create_flow()
+    task1 = flow.find_node("/test/t1")
+    detector = ZombieDetector()
+
+    # A report from the current (submitted) run is not a zombie.
+    task1.set_node_status(NodeStatus.submitted)
+    assert detector.detect(task1, "complete") is None
+    assert detector.guard(task1, "complete") is ChildAction.PROCEED
+
+    # Requeue while the old job is still running; its report is a zombie.
+    task1.requeue()
+    assert detector.detect(task1, "complete") is ZombieCondition.Z2
+    with pytest.raises(ZombieError):
+        detector.guard(task1, "complete")
+
+    # The ``fob`` policy drops the report but answers success.
+    from takler.server.connect_config import ZombiePolicy
+
+    fob_detector = ZombieDetector(zombie_policy=ZombiePolicy.FOB)
+    assert fob_detector.guard(task1, "complete") is ChildAction.SKIP
+
+
+def test_step10_zombie_conditions_z1_and_z3():
+    """Z1 checks the job password (auth enabled only); Z3 catches a second init.
+
+    zombies-and-restart.rst explains both: Z1 only applies when the server
+    authenticates callers, and Z3 fires when an ``init`` names a different job
+    id than the one recorded for the active task.
+    """
+    from takler.core import NodeStatus
+    from takler.server.auth import CallCredentials
+    from takler.server.connect_config import AuthMode
+    from takler.server.zombie import ZombieCondition, ZombieDetector
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    flow = module.create_flow()
+    task1 = flow.find_node("/test/t1")
+
+    task1.increment_try_no()
+    task1.init("job-pid-1")
+    assert task1.state.node_status == NodeStatus.active
+
+    # Z3: an init from a different job id claims the already active task.
+    detector = ZombieDetector()
+    assert detector.detect(task1, "init", "job-pid-2") is ZombieCondition.Z3
+    assert detector.detect(task1, "init", "job-pid-1") is None
+
+    # Z1 is skipped entirely with the default (disabled) auth mode...
+    stale = CallCredentials(job_password="stale-password")
+    assert detector.detect(task1, "complete", credentials=stale) is None
+
+    # ...and fires once authentication is enabled.
+    auth_detector = ZombieDetector(auth_mode=AuthMode.ENABLED)
+    assert (
+        auth_detector.detect(task1, "complete", credentials=stale)
+        is ZombieCondition.Z1
+    )
+    current = CallCredentials(job_password=task1.job_password)
+    assert auth_detector.detect(task1, "complete", credentials=current) is None
+
+
+def test_step10_checkpoint_restore_keeps_in_flight_tasks(tmp_path):
+    """A restarted server restores in-flight tasks so their jobs can still report.
+
+    Mirrors the exact scenario walked through in zombies-and-restart.rst: the
+    server is killed while ``t1`` is active, the checkpoint holds its status
+    and job password, and after a restore the old job's ``complete`` passes
+    the zombie guard instead of being rejected.
+    """
+    import json
+
+    from takler.core import Bunch, NodeStatus
+    from takler.server.auth import CallCredentials
+    from takler.server.checkpoint import CheckpointManager
+    from takler.server.zombie import ZombieDetector
+
+    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    bunch = Bunch(name="bunch")
+    flow = bunch.add_flow(module.create_flow())
+    flow.begin()
+
+    # t1 is in flight: one run attempt, initialized by its job.
+    task1 = flow.find_node("/test/t1")
+    task1.increment_try_no()
+    task1.init("job-pid-1")
+    password = task1.job_password
+
+    checkpoint_file = tmp_path / "takler.check"
+    manager = CheckpointManager(bunch, checkpoint_file=checkpoint_file)
+    assert manager.write_checkpoint() is True
+
+    # Only in-flight tasks get their password persisted.
+    payload = json.loads(checkpoint_file.read_text(encoding="utf-8"))
+    assert list(payload["job_passwords"]) == ["/test/t1"]
+
+    # The server restarts: a fresh bunch restores from the snapshot.
+    restored_bunch = Bunch(name="bunch")
+    restored_manager = CheckpointManager(
+        restored_bunch, checkpoint_file=checkpoint_file
+    )
+    assert restored_manager.restore() is True
+
+    restored_task1 = restored_bunch.find_node("/test/t1")
+    assert restored_task1.state.node_status == NodeStatus.active
+    assert restored_task1.try_no == 1
+    assert restored_task1.job_password == password
+
+    # The still-running job's report passes the zombie guard.
+    detector = ZombieDetector()
+    assert detector.detect(restored_task1, "complete") is None
+    assert (
+        detector.detect(
+            restored_task1, "complete", credentials=CallCredentials(job_password=password)
+        )
+        is None
+    )
+
+    # A queued task was never in flight: it restored without a password and a
+    # report against it is a zombie (Z2).
+    restored_task2 = restored_bunch.find_node("/test/t2")
+    from takler.server.zombie import ZombieCondition
+
+    assert detector.detect(restored_task2, "complete") is ZombieCondition.Z2
+
+
 def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
     """The head/tail/task1 templates referenced by understanding-includes.rst
     render together as one job script without a Jinja2 error.
