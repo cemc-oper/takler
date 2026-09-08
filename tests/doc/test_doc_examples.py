@@ -1,4 +1,5 @@
-"""Tests for the tutorial example scripts under ``doc/examples/``.
+"""Tests for the tutorial example scripts under ``doc/examples/`` and for
+behavioral claims made by the user-guide pages under ``doc/source/guide/``.
 
 ``doc/documentation-plan.md`` (D8, batch B / T6) establishes ``doc/examples/``
 as the single source of truth for every Python example shown in the tutorial:
@@ -863,6 +864,267 @@ def test_step10_checkpoint_restore_keeps_in_flight_tasks(tmp_path):
     from takler.server.zombie import ZombieCondition
 
     assert detector.detect(restored_task2, "complete") is ZombieCondition.Z2
+
+
+def test_guide_node_status_is_an_ordered_enum():
+    """node-status.rst states the six statuses form an ordered enum.
+
+    The ordering ``unknown < complete < queued < submitted < active <
+    aborted`` is what the container aggregation rule below relies on.
+    """
+    from takler.core import NodeStatus
+
+    assert (
+        NodeStatus.unknown
+        < NodeStatus.complete
+        < NodeStatus.queued
+        < NodeStatus.submitted
+        < NodeStatus.active
+        < NodeStatus.aborted
+    )
+
+
+def test_guide_container_status_is_the_most_significant_child():
+    """A container's status is the numerically largest of its children.
+
+    Mirrors the aggregation rule in node-status.rst: ``aborted`` wins over
+    everything, ``complete`` only shows when every sibling has completed, and
+    a lone ``queued`` child keeps the container ``queued`` even if the rest
+    are ``complete``.
+    """
+    from takler.core import Flow, NodeStatus
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    task2 = flow.add_task("t2")
+
+    combos = [
+        ((NodeStatus.complete, NodeStatus.complete), NodeStatus.complete),
+        ((NodeStatus.complete, NodeStatus.queued), NodeStatus.queued),
+        ((NodeStatus.complete, NodeStatus.active), NodeStatus.active),
+        ((NodeStatus.complete, NodeStatus.aborted), NodeStatus.aborted),
+        ((NodeStatus.queued, NodeStatus.submitted), NodeStatus.submitted),
+    ]
+    for (status1, status2), expected in combos:
+        task1.set_node_status_only(status1)
+        task2.set_node_status_only(status2)
+        assert flow.computed_status(immediate=True) == expected
+
+
+def test_guide_default_node_status_only_allows_queued_or_complete():
+    """``set_default_node_status`` rejects transient statuses.
+
+    node-status.rst documents that only ``queued`` and ``complete`` are valid
+    requeue targets, and that a container whose default is ``complete`` sinks
+    ``complete`` over its whole subtree on requeue.
+    """
+    from takler.core import Flow, NodeStatus
+    from takler.exceptions import UnsupportedValueError
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+
+    for bad_status in (
+        NodeStatus.unknown,
+        NodeStatus.submitted,
+        NodeStatus.active,
+        NodeStatus.aborted,
+    ):
+        with pytest.raises(UnsupportedValueError):
+            task1.set_default_node_status(bad_status)
+
+    task1.set_default_node_status(NodeStatus.complete)
+    task1.requeue()
+    assert task1.state.node_status == NodeStatus.complete
+
+    # A container with default status complete sinks it over the subtree.
+    group1 = flow.add_container("group1")
+    task2 = group1.add_task("t2")
+    group1.set_default_node_status(NodeStatus.complete)
+    group1.requeue()
+    assert task2.state.node_status == NodeStatus.complete
+
+
+def test_guide_suspended_flag_is_orthogonal_to_status():
+    """Suspending a node never changes its node status.
+
+    node-status.rst documents ``State = node_status + suspended`` as two
+    orthogonal parts: suspend only stops the scheduler from visiting the
+    node, the status itself is left untouched.
+    """
+    from takler.core import Flow, NodeStatus
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    task1.set_node_status_only(NodeStatus.queued)
+
+    task1.suspend()
+    assert task1.is_suspended()
+    assert task1.state.node_status == NodeStatus.queued
+    assert not task1.check_dependencies()
+
+    task1.resume()
+    assert not task1.is_suspended()
+    assert task1.state.node_status == NodeStatus.queued
+
+
+def test_guide_serialization_tree_restores_definition_status_restores_state():
+    """``Tree`` restores the definition only, ``Status`` also the runtime state.
+
+    defining-flows.rst documents the two ``SerializationType`` modes: the
+    client ``load`` command uses ``Tree`` (fresh definition, un-begun), the
+    server checkpoint uses ``Status`` (status, begun flag and calendar all
+    restored).
+    """
+    from takler.core import Flow, NodeStatus, SerializationType
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    flow.begin()
+    task1.set_node_status_only(NodeStatus.active)
+
+    d = flow.to_dict()
+
+    tree_copy = Flow.from_dict(d, method=SerializationType.Tree)
+    assert tree_copy.begun is False
+    assert (
+        tree_copy.find_node("/test/t1").state.node_status == NodeStatus.unknown
+    )
+
+    status_copy = Flow.from_dict(d, method=SerializationType.Status)
+    assert status_copy.begun is True
+    assert (
+        status_copy.find_node("/test/t1").state.node_status == NodeStatus.active
+    )
+
+
+def test_guide_bunch_holds_multiple_flows_and_server_parameters():
+    """A ``Bunch`` indexes flows by name and exposes server parameters.
+
+    defining-flows.rst states that flows live in one ``Bunch`` per server,
+    are looked up by name, and that the server-level parameters
+    (``TAKLER_HOST``/``TAKLER_PORT``) are visible from any node through the
+    parameter inheritance chain.
+    """
+    from takler.core import Bunch, Flow
+    from takler.exceptions import NodeNotFoundError
+
+    bunch = Bunch()
+    flow1 = bunch.add_flow(Flow("flow1"))
+    flow2 = bunch.add_flow("flow2")
+    task1 = flow1.add_task("t1")
+
+    assert bunch.find_flow("flow2") is flow2
+    assert bunch.find_node("/flow1/t1") is task1
+    assert task1.find_parent_parameter("TAKLER_HOST") is not None
+    assert task1.find_parent_parameter("TAKLER_PORT") is not None
+
+    with pytest.raises(NodeNotFoundError):
+        bunch.delete_flow("missing")
+
+
+def test_guide_with_statement_builds_the_same_tree():
+    """The ``with``-statement style builds the same tree as plain calls.
+
+    defining-flows.rst presents both styles side by side and claims they are
+    equivalent; this test pins that claim.
+    """
+    from takler.core import Flow
+    from takler.tasks.shell import ShellScriptTask
+
+    flow = Flow("test")
+    flow.add_task(ShellScriptTask("t1"))
+    group1 = flow.add_container("group1")
+    group1.add_task(ShellScriptTask("t2"))
+
+    with Flow("test") as flow2:
+        with flow2.add_task(ShellScriptTask("t1")):
+            pass
+        with flow2.add_container("group1") as group2:
+            with group2.add_task(ShellScriptTask("t2")):
+                pass
+
+    assert [c.name for c in flow2.children] == ["t1", "group1"]
+    assert flow2.find_node("/test/t1") is not None
+    assert flow2.find_node("/test/group1/t2") is not None
+
+
+def test_guide_task_decorator_runs_the_function_inline():
+    """The ``task`` decorator wraps a function as an inline ``Task``.
+
+    defining-flows.rst shows ``@task("notify")`` producing a task that runs
+    the function between ``init`` and ``complete`` inside the server process.
+    """
+    from takler.core import Flow, NodeStatus, task
+
+    calls = []
+
+    @task("notify")
+    def notify(self):
+        calls.append(self.node_path)
+
+    flow = Flow("test")
+    notify_task = notify()
+    flow.add_task(notify_task)
+
+    notify_task.run()
+
+    assert notify_task.state.node_status == NodeStatus.complete
+    assert notify_task.try_no == 1
+    assert calls == ["/test/notify"]
+
+
+def test_guide_async_task_decorator_run_is_a_coroutine_function():
+    """``async_task`` builds a task whose ``run`` is a coroutine function.
+
+    defining-flows.rst warns that ``async_task`` does not work with the
+    current scheduler: ``resolve_dependencies`` calls ``run()``
+    synchronously, so the coroutine is never awaited and the function body
+    never executes. This test pins that limitation; if ``async_task`` is
+    fixed to run properly, this test fails and the doc note must be updated.
+    """
+    import inspect
+
+    from takler.core import Flow, NodeStatus, async_task
+
+    calls = []
+
+    @async_task("anotify")
+    async def anotify(self):
+        calls.append(self.node_path)
+
+    flow = Flow("test")
+    async_task_node = anotify()
+    flow.add_task(async_task_node)
+
+    assert inspect.iscoroutinefunction(async_task_node.run)
+
+    # The scheduler calls run() synchronously: the coroutine is never
+    # awaited, the body never runs, and the status stays where it was.
+    with pytest.warns(RuntimeWarning, match="never awaited"):
+        async_task_node.run()
+    assert calls == []
+    assert async_task_node.state.node_status == NodeStatus.unknown
+
+
+def test_guide_check_job_creation_is_a_dry_run(cleanup_generated_files):
+    """``check_job_creation`` renders job scripts without submitting anything.
+
+    defining-flows.rst calls it a dry run: job files appear under
+    ``TAKLER_HOME`` but the task keeps its initial status and ``try_no``.
+    """
+    from takler.core import NodeStatus
+    from takler.tasks.shell import check_job_creation
+
+    module = _load_module(EXAMPLES_DIR / "step1_define_flow.py")
+    flow = module.create_flow()
+    task1 = flow.find_node("/test/t1")
+
+    check_job_creation(flow)
+
+    assert (EXAMPLES_DIR / "test" / "t1.job0").exists()
+    assert task1.state.node_status == NodeStatus.unknown
+    assert task1.try_no == 0
 
 
 def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
