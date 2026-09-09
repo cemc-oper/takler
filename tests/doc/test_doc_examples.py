@@ -1448,3 +1448,330 @@ def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
     task1.update_generated_parameters()
 
     assert task1.check_job_creation()
+
+
+# ---------------------------------------------------------------------------
+# guide/attributes/
+# ---------------------------------------------------------------------------
+
+
+def test_guide_attributes_event_name_uniqueness_and_missing_lookup():
+    """Claims from guide/attributes/event.rst: duplicate event names raise RuntimeError
+    (unless ``check=False``); ``set_event`` returns False for unknown names;
+    requeue resets an event to its ``initial_value`` (not necessarily False).
+    """
+    from takler.core import Flow
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    task1.add_event("a", initial_value=True)
+
+    with pytest.raises(RuntimeError, match="duplicate"):
+        task1.add_event("a")
+    # check=False skips the duplicate check.
+    task1.add_event("a", check=False)
+
+    assert task1.set_event("no_such_event", True) is False
+
+    # requeue resets to initial_value (True here, not False).
+    task1.set_event("a", False)
+    task1.requeue()
+    assert task1.find_event("a").value is True
+
+
+def test_guide_attributes_meter_rejects_out_of_range_on_both_ends():
+    """guide/attributes/meter.rst: assigning a value outside [min_value, max_value]
+    raises ValueError; ``set_meter`` returns False for unknown names.
+    """
+    from takler.core import Flow
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    meter = task1.add_meter("step", 10, 20)
+    assert meter.value == 10  # initial value is the range minimum
+
+    with pytest.raises(ValueError, match=r"\[10, 20\]"):
+        meter.value = 9
+    with pytest.raises(ValueError, match=r"\[10, 20\]"):
+        meter.value = 21
+
+    assert task1.set_meter("no_such_meter", 15) is False
+
+
+def test_guide_attributes_limit_and_in_limit_reject_duplicates():
+    """guide/attributes/limit.rst: duplicate limit names on one node raise RuntimeError;
+    so do duplicate in-limit markers with the same name and node_path.
+    """
+    from takler.core import Flow
+
+    flow = Flow("test")
+    group1 = flow.add_container("g")
+    group1.add_limit("work", 2)
+    with pytest.raises(RuntimeError, match="duplicate limit"):
+        group1.add_limit("work", 3)
+
+    task1 = group1.add_task("t1")
+    task1.add_in_limit("work")
+    with pytest.raises(RuntimeError, match="duplicate InLimit"):
+        task1.add_in_limit("work")
+    # A different node_path makes it a different marker.
+    task1.add_in_limit("work", node_path="/test/g")
+
+
+def test_guide_attributes_in_limit_reference_resolution():
+    """guide/attributes/limit.rst 引用解析 section: with ``node_path=None`` the limit is
+    looked up along the parent chain (nearest wins); with an explicit
+    ``node_path`` only that node is searched; an unresolvable in-limit marker
+    is silently ignored and does not block the task.
+    """
+    from takler.core import Flow
+
+    flow = Flow("test")
+    flow.add_limit("outer", 5)
+    group1 = flow.add_container("g")
+    group1.add_limit("outer", 2)
+
+    # node_path=None resolves to the nearest limit up the tree.
+    task1 = group1.add_task("t1")
+    task1.add_in_limit("outer")
+    assert task1.in_limit_manager.in_limit() is True
+    assert task1.in_limit_manager.in_limit_list[0].limit is group1.find_limit(
+        "outer"
+    )
+
+    # Explicit node_path searches only that node: /test/t2 has no limit.
+    task2 = group1.add_task("t2")
+    task2.add_in_limit("outer", node_path="/test/g/t2")
+    assert task2.in_limit_manager.in_limit() is True
+    assert task2.in_limit_manager.in_limit_list[0].limit is None
+
+    # A marker naming a limit that exists nowhere is ignored, not blocking.
+    task3 = group1.add_task("t3")
+    task3.add_in_limit("no_such_limit")
+    assert task3.check_in_limit_up() is True
+
+
+def test_guide_attributes_limit_tokens_lifecycle():
+    """guide/attributes/limit.rst 占用与释放 section: tokens are occupied at ``submitted``
+    and released at ``complete``/``aborted``; requeue does NOT release;
+    the same limit is occupied only once per task run even when several
+    in-limit markers point at it; ``tokens`` occupies more than one token.
+    """
+    from takler.core import Flow, NodeStatus
+
+    flow = Flow("test")
+    group1 = flow.add_container("g")
+    group1.add_limit("work", 2)
+
+    task1 = group1.add_task("t1")
+    task1.add_in_limit("work")
+    task1.add_in_limit("work", node_path="/test/g")  # same limit, twice
+
+    task1.set_node_status(NodeStatus.submitted)
+    limit = group1.find_limit("work")
+    assert limit.value == 1  # occupied once despite two markers
+
+    task1.requeue()
+    assert limit.value == 1  # requeue does not release
+
+    task1.set_node_status(NodeStatus.submitted)
+    task1.set_node_status(NodeStatus.complete)
+    assert limit.value == 0
+
+    # tokens=2 occupies two tokens and blocks a further token.
+    task2 = group1.add_task("t2")
+    task2.add_in_limit("work", tokens=2)
+    task2.set_node_status(NodeStatus.submitted)
+    assert limit.value == 2
+    assert task1.check_in_limit_up() is False
+
+    task2.set_node_status(NodeStatus.aborted)
+    assert limit.value == 0
+
+
+def test_guide_attributes_repeat_date_change_validates_but_setter_does_not():
+    """guide/attributes/repeat.rst: ``RepeatDate.change`` rejects values outside the range
+    or off the step grid with ValueError; assigning ``value`` directly does
+    no validation.
+    """
+    from takler.core import RepeatDate
+
+    repeat = RepeatDate("D", 20240101, 20240110, step=2)
+
+    with pytest.raises(ValueError, match="in range"):
+        repeat.change("20240111")
+    with pytest.raises(ValueError, match="multiply step"):
+        repeat.change("20240102")
+
+    repeat.change(20240103)  # on the grid: accepted (int form too)
+    assert repeat.value == 20240103
+
+    repeat.value = 20240104  # raw setter: no validation
+    assert repeat.value == 20240104
+    assert repeat.valid() is True  # valid() checks the range only
+
+    # A second add_repeat replaces the existing repeat.
+    from takler.core import Flow
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    first = task1.add_repeat(RepeatDate("A", 20240101, 20240102))
+    second = task1.add_repeat(RepeatDate("B", 20240101, 20240102))
+    assert task1.repeat.r is second
+    assert task1.repeat.r is not first
+
+
+def test_guide_attributes_repeat_generates_same_named_parameter():
+    """guide/attributes/repeat.rst: a repeat generates a parameter with the repeat's name,
+    holding the current value as a YYYYMMDD integer.
+    """
+    from takler.core import Flow, RepeatDate
+
+    flow = Flow("test")
+    daily = flow.add_container("daily")
+    daily.add_repeat(RepeatDate("TAKLER_DATE", "20240101", "20240103"))
+
+    param = daily.find_parameter("TAKLER_DATE")
+    assert param is not None
+    assert param.value == 20240101
+
+    daily.repeat.increment()
+    assert daily.find_parameter("TAKLER_DATE").value == 20240102
+
+
+def test_guide_attributes_time_latch_holds_until_requeue():
+    """guide/attributes/time.rst 判定规则 section: a time dependency is satisfied when
+    the flow calendar's HH:MM matches; the free latch keeps it satisfied
+    afterwards; requeue re-arms it; multiple time attributes are OR-ed.
+    """
+    import datetime
+
+    from takler.core import Flow
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    task1.add_time("12:00")
+    task1.add_time(datetime.time(18, 30))  # datetime.time is accepted too
+
+    flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
+    assert task1.resolve_time_dependencies() is False
+
+    flow.update_calendar(
+        flow.calendar.last_real_time + datetime.timedelta(minutes=1)
+    )
+    assert task1.resolve_time_dependencies() is True
+
+    # The latch holds after the matching minute has passed.
+    flow.update_calendar(
+        flow.calendar.last_real_time + datetime.timedelta(minutes=1)
+    )
+    assert task1.resolve_time_dependencies() is True
+
+    task1.requeue()
+    assert task1.resolve_time_dependencies() is False
+
+
+def test_guide_attributes_time_missed_minute_waits_for_next_day():
+    """guide/attributes/time.rst: a time attribute added after its minute has passed is
+    not satisfied retroactively -- it stays unmet until that time of day
+    comes around again on the logical calendar.
+    """
+    import datetime
+
+    from takler.core import Flow
+
+    flow = Flow("test")
+    flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
+    # The calendar moves past 12:00 before the attribute exists.
+    flow.update_calendar(
+        flow.calendar.last_real_time + datetime.timedelta(minutes=2)
+    )
+
+    task1 = flow.add_task("t1")
+    task1.add_time("12:00")
+    flow.update_calendar(
+        flow.calendar.last_real_time + datetime.timedelta(minutes=1)
+    )
+    assert task1.resolve_time_dependencies() is False
+
+    # Next day at 12:00 the minute matches and the latch is set
+    # (flow time is now 12:02, so +23h58m lands on 12:00).
+    flow.update_calendar(
+        flow.calendar.last_real_time + datetime.timedelta(hours=23, minutes=58)
+    )
+    assert task1.resolve_time_dependencies() is True
+
+
+def test_guide_attributes_time_dependency_requires_a_flow():
+    """guide/attributes/time.rst: checking time dependencies on a node outside any flow
+    raises RuntimeError; ``free_dependencies("time")`` releases the
+    dependency immediately.
+    """
+    from takler.core import Flow, NodeContainer
+
+    orphan = NodeContainer("orphan")
+    orphan.add_time("12:00")
+    with pytest.raises(RuntimeError, match="should be in a flow"):
+        orphan.resolve_time_dependencies()
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    task1.add_time("23:59")
+    task1.free_dependencies("time")
+    assert task1.resolve_time_dependencies() is True
+
+
+def test_guide_attributes_calendar_and_requeue():
+    """guide/attributes/time.rst 日历 section: the calendar advances by real elapsed
+    time; ``Flow.requeue`` resets the node tree but leaves the calendar
+    untouched.
+    """
+    import datetime
+
+    from takler.core import Flow, NodeStatus
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
+    flow.update_calendar(
+        flow.calendar.last_real_time + datetime.timedelta(minutes=5)
+    )
+    assert flow.calendar.flow_time == datetime.datetime(2024, 1, 1, 12, 4)
+
+    task1.set_node_status(NodeStatus.complete)
+    flow.requeue()
+    # Node tree reset, calendar untouched.
+    assert task1.state.node_status == NodeStatus.queued
+    assert flow.calendar.flow_time == datetime.datetime(2024, 1, 1, 12, 4)
+
+
+def test_guide_attributes_serialization_tree_keeps_definition_only():
+    """guide/attributes/index.rst intro: with SerializationType.Status the runtime values
+    survive a round trip; with SerializationType.Tree only definitions do.
+    """
+    from takler.core import Event, Meter, RepeatDate, TimeAttribute
+    from takler.core.util import SerializationType
+
+    event = Event("a", initial_value=True)
+    event.value = False
+    d = event.to_dict()
+    assert Event.from_dict(d, SerializationType.Status).value is False
+    assert Event.from_dict(d, SerializationType.Tree).value is True
+
+    meter = Meter("m", 0, 100)
+    meter.value = 42
+    d = meter.to_dict()
+    assert Meter.from_dict(d, SerializationType.Status).value == 42
+    assert Meter.from_dict(d, SerializationType.Tree).value == 0
+
+    repeat = RepeatDate("D", 20240101, 20240103)
+    repeat.increment()
+    d = repeat.to_dict()
+    assert RepeatDate.from_dict(d, SerializationType.Status).value == 20240102
+    assert RepeatDate.from_dict(d, SerializationType.Tree).value == 20240101
+
+    time_attr = TimeAttribute("12:00")
+    time_attr.set_free()
+    d = time_attr.to_dict()
+    assert TimeAttribute.from_dict(d, SerializationType.Status).free is True
+    assert TimeAttribute.from_dict(d, SerializationType.Tree).free is False

@@ -107,6 +107,10 @@
 
             takler-client-py show --show-event --show-meter
 
+事件与标尺的完整行为（参数、边界情况、与 requeue 和序列化的交互）见
+用户指南的 :doc:`/guide/attributes/event` 与
+:doc:`/guide/attributes/meter` 。
+
 事件与标尺的生命周期
 --------------------
 
