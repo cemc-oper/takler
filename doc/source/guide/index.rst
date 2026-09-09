@@ -39,3 +39,5 @@
    trigger-expression
    variables
    attributes/index
+   task-script
+   job-management

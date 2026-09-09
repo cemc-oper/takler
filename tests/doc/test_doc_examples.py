@@ -1451,6 +1451,209 @@ def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
 
 
 # ---------------------------------------------------------------------------
+# guide/task-script.rst
+# ---------------------------------------------------------------------------
+
+
+def _make_shell_flow(tmp_path: Path, script_text: str = "echo hi\n"):
+    """Build a one-task flow with a ShellScriptTask rooted at ``tmp_path``."""
+    from takler.core import Flow
+    from takler.tasks.shell import ShellScriptTask
+
+    script = tmp_path / "t1.takler"
+    script.write_text(script_text)
+    flow = Flow("test")
+    flow.add_parameter("TAKLER_HOME", str(tmp_path))
+    task1 = flow.add_task(ShellScriptTask("t1", script_path=str(script)))
+    return flow, task1
+
+
+def test_guide_task_script_include_searches_script_dir_first(tmp_path):
+    """task-script.rst: the script's own directory wins over TAKLER_INCLUDE.
+
+    Both directories hold a ``frag.takler``; the one next to the script must
+    be the one rendered into the job file.
+    """
+    include_dir = tmp_path / "includes"
+    include_dir.mkdir()
+    (include_dir / "frag.takler").write_text("from include dir\n")
+
+    flow, task1 = _make_shell_flow(tmp_path, '{% include "frag.takler" %}\n')
+    (tmp_path / "frag.takler").write_text("from script dir\n")
+    flow.add_parameter("TAKLER_INCLUDE", str(include_dir))
+
+    task1.create_job_script()
+    job_text = (tmp_path / "test/t1.job0").read_text()
+    assert "from script dir" in job_text
+
+    # Without a script-dir match, TAKLER_INCLUDE is consulted.
+    (tmp_path / "frag.takler").unlink()
+    task1.create_job_script()
+    job_text = (tmp_path / "test/t1.job0").read_text()
+    assert "from include dir" in job_text
+
+
+def test_guide_task_script_include_dirs_searched_in_order(tmp_path):
+    """task-script.rst: TAKLER_INCLUDE directories are tried in listed order."""
+    dir1 = tmp_path / "inc1"
+    dir2 = tmp_path / "inc2"
+    dir1.mkdir()
+    dir2.mkdir()
+    (dir1 / "frag.takler").write_text("first\n")
+    (dir2 / "frag.takler").write_text("second\n")
+
+    flow, task1 = _make_shell_flow(tmp_path, '{% include "frag.takler" %}\n')
+    flow.add_parameter("TAKLER_INCLUDE", f"{dir1}:{dir2}")
+
+    task1.create_job_script()
+    assert "first" in (tmp_path / "test/t1.job0").read_text()
+
+
+def test_guide_task_script_render_context_is_the_merged_parameter_view(tmp_path):
+    """task-script.rst: scripts see parameters inherited up the parent chain."""
+    flow, task1 = _make_shell_flow(tmp_path, "echo {{ GREETING }}\n")
+    flow.add_parameter("GREETING", "hello from flow")
+
+    task1.create_job_script()
+    assert "hello from flow" in (tmp_path / "test/t1.job0").read_text()
+
+
+def test_guide_task_script_render_failures_raise_job_submission_error(tmp_path):
+    """task-script.rst: missing script, unresolvable include and template
+    syntax errors all surface as ``JobSubmissionError`` from job creation.
+    """
+    from takler.exceptions import JobSubmissionError
+
+    # Script file does not exist.
+    flow, task1 = _make_shell_flow(tmp_path)
+    task1.script_path = str(tmp_path / "no_such.takler")
+    task1.user_parameters.pop("TAKLER_SCRIPT", None)
+    with pytest.raises(JobSubmissionError):
+        task1.create_job_script()
+
+    # Include cannot be resolved in any search path.
+    flow, task1 = _make_shell_flow(tmp_path, '{% include "missing.takler" %}\n')
+    with pytest.raises(JobSubmissionError):
+        task1.create_job_script()
+
+    # Template syntax error.
+    flow, task1 = _make_shell_flow(tmp_path, "echo {{ unclosed\n")
+    with pytest.raises(JobSubmissionError):
+        task1.create_job_script()
+
+
+# ---------------------------------------------------------------------------
+# guide/job-management.rst
+# ---------------------------------------------------------------------------
+
+
+def test_guide_job_management_submission_failure_aborts_without_submitting(tmp_path):
+    """job-management.rst: a submission failure aborts the task directly.
+
+    ``ShellRunner.spwan`` needs a running event loop; calling ``run()`` from
+    synchronous code therefore exercises the documented path: the error is
+    wrapped in ``JobSubmissionError`` and the task goes straight to
+    ``aborted`` without ever being ``submitted`` (``try_no`` was still
+    incremented beforehand).
+    """
+    from takler.core import NodeStatus
+
+    flow, task1 = _make_shell_flow(tmp_path)
+
+    task1.run()
+
+    assert task1.state.node_status == NodeStatus.aborted
+    assert task1.try_no == 1
+    assert task1.aborted_reason.startswith("JobSubmissionError")
+
+
+def test_guide_job_management_job_command_template_and_override(tmp_path):
+    """job-management.rst: TAKLER_SHELL_JOB_CMD defaults to running the job
+    file with output redirection, and a user parameter anywhere up the parent
+    chain overrides it; the template renders against the same merged
+    parameter view as the script.
+    """
+    from takler.tasks.shell.constant import (
+        DEFAULT_TAKLER_SHELL_JOB_CMD,
+        TAKLER_SHELL_JOB_CMD,
+    )
+    from takler.tasks.shell.shell_render import ShellRender
+
+    flow, task1 = _make_shell_flow(tmp_path)
+    task1.update_generated_parameters()
+    render = ShellRender(task1)
+
+    expected_default = DEFAULT_TAKLER_SHELL_JOB_CMD.replace(
+        "{{TAKLER_JOB}}", str(tmp_path / "test/t1.job0")
+    ).replace("{{TAKLER_JOBOUT}}", str(tmp_path / "test/t1.0"))
+    assert render.render_job_command() == expected_default
+
+    # A definition on the flow overrides the default for the whole subtree.
+    flow.add_parameter(TAKLER_SHELL_JOB_CMD, "sh {{TAKLER_JOB}}")
+    assert render.render_job_command() == f"sh {tmp_path / 'test/t1.job0'}"
+
+
+def test_guide_job_management_job_script_permissions_follow_umask(tmp_path):
+    """job-management.rst: takler only adds the owner execute bit; the
+    read/write bits are whatever the process umask produced.
+    """
+    import os
+    import stat
+
+    flow, task1 = _make_shell_flow(tmp_path)
+
+    previous_umask = os.umask(0o077)
+    try:
+        task1.create_job_script()
+    finally:
+        os.umask(previous_umask)
+
+    mode = (tmp_path / "test/t1.job0").stat().st_mode
+    assert mode & stat.S_IXUSR  # owner execute bit added by takler
+    assert mode & 0o077 == 0  # group/other bits left as the umask created them
+
+
+def test_guide_job_management_failure_does_not_overwrite_reported_status(tmp_path):
+    """job-management.rst: on_job_failure only aborts a task that is still
+    submitted/active; a status already reported by a child command wins over
+    the wrapper process's exit code.
+    """
+    from subprocess import CalledProcessError
+
+    from takler.core import NodeStatus
+
+    flow, task1 = _make_shell_flow(tmp_path)
+    exc = CalledProcessError(returncode=137, cmd="killed")
+
+    # Still active: the failure aborts the task.
+    task1.set_node_status(NodeStatus.active)
+    task1.on_job_failure(exc)
+    assert task1.state.node_status == NodeStatus.aborted
+    assert "CalledProcessError" in task1.aborted_reason
+
+    # Already complete: the failure is logged and skipped.
+    task1.requeue()
+    task1.set_node_status(NodeStatus.complete)
+    task1.on_job_failure(exc)
+    assert task1.state.node_status == NodeStatus.complete
+
+
+def test_guide_job_management_attempt_files_coexist_per_try_no(tmp_path):
+    """job-management.rst: each attempt writes its own job file; earlier
+    attempts' files are kept alongside.
+    """
+    flow, task1 = _make_shell_flow(tmp_path)
+
+    task1.increment_try_no()
+    task1.create_job_script()
+    task1.increment_try_no()
+    task1.create_job_script()
+
+    assert (tmp_path / "test/t1.job1").exists()
+    assert (tmp_path / "test/t1.job2").exists()
+
+
+# ---------------------------------------------------------------------------
 # guide/attributes/
 # ---------------------------------------------------------------------------
 
