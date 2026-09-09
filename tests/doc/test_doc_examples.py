@@ -1127,6 +1127,306 @@ def test_guide_check_job_creation_is_a_dry_run(cleanup_generated_files):
     assert task1.try_no == 0
 
 
+def test_guide_trigger_grammar_accepts_documented_forms():
+    """Every expression form listed in trigger-expression.rst must parse.
+
+    Covers absolute/relative node paths, the three status words, ``eq`` as
+    an alias of ``==``, case-insensitivity of keywords, event set/unset,
+    integer meter comparison, parameter-to-variable comparison and the
+    parenthesized ``+`` form.
+    """
+    from takler.core.expression_parser import parse_trigger
+
+    accepted = [
+        "./t1 == complete",
+        "/test/t1 eq COMPLETE",
+        "./t1 == AbOrTeD",
+        "./t1 == complete AND ./t2 == active",
+        "./t1 == complete Or ./t2 == complete",
+        "(./t1 == aborted or ./t2 == aborted) and ./t3 == complete",
+        "../group1/t2 == complete",
+        "./t1:event1 == set",
+        "./t1:event1 == UnSet",
+        "./t1:meter1 >= 4",
+        "./t1:THRESHOLD <= ./t2:meter1",
+        "(./t1:m1 + ./t2:m2) >= 10",
+    ]
+    for expression in accepted:
+        parse_trigger(expression)
+
+
+def test_guide_trigger_grammar_rejects_documented_mistakes():
+    """Each wrong form in trigger-expression.rst's mistake table must fail."""
+    from takler.core.expression_parser import parse_trigger
+    from takler.exceptions import ExpressionSyntaxError
+
+    rejected = [
+        "t1 == complete",  # bare name: path must start with /, ./ or ../
+        "./t1 == queued",  # queued/submitted/unknown are not status words
+        "./t1 == submitted",
+        "./t1 == unknown",
+        "./t1 = complete",  # single = is not a comparison operator
+        "./t1:m1 == 4.5",  # number literals are integers only
+        "./t1 == ./t2 == complete",  # comparisons do not chain
+        "./t1:m1 + ./t2:m2 >= 10",  # + inside a comparison needs parentheses
+        "./t1 == complete and",  # trailing operator
+    ]
+    for expression in rejected:
+        with pytest.raises(ExpressionSyntaxError):
+            parse_trigger(expression)
+
+
+def test_guide_trigger_syntax_error_reports_line_and_column():
+    """``ExpressionSyntaxError`` carries 1-based line/column, None at EOF.
+
+    trigger-expression.rst documents the position attributes: reported by
+    the underlying parser for mid-expression errors, ``None`` when the error
+    is at the end of the input.
+    """
+    from takler.core.expression_parser import parse_trigger
+    from takler.exceptions import ExpressionSyntaxError
+
+    with pytest.raises(ExpressionSyntaxError) as exc_info:
+        parse_trigger("./t1 = complete")
+    assert exc_info.value.expression == "./t1 = complete"
+    assert exc_info.value.line == 1
+    assert exc_info.value.column == 6
+
+    with pytest.raises(ExpressionSyntaxError) as exc_info:
+        parse_trigger("./t1 == queued")
+    assert exc_info.value.line == 1
+    assert exc_info.value.column == 9
+
+    with pytest.raises(ExpressionSyntaxError) as exc_info:
+        parse_trigger("./t1 == complete and")
+    assert exc_info.value.line is None
+    assert exc_info.value.column is None
+
+
+def test_guide_trigger_and_binds_tighter_than_or():
+    """``a or b and c`` evaluates as ``a or (b and c)``.
+
+    Pins the precedence table in trigger-expression.rst.
+    """
+    from takler.core import Flow, NodeStatus
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    task2 = flow.add_task("t2")
+    task1.set_node_status_only(NodeStatus.active)
+    task2.set_node_status_only(NodeStatus.aborted)
+
+    probe = flow.add_task("probe")
+    probe.add_trigger("./t1 == active or ./t2 == complete and ./t1 == complete")
+    # a is True, b and c are both False: True iff and binds tighter than or.
+    assert probe.evaluate_trigger()
+
+    probe2 = flow.add_task("probe2")
+    probe2.add_trigger("(./t1 == active or ./t2 == complete) and ./t1 == complete")
+    assert not probe2.evaluate_trigger()
+
+
+def test_guide_trigger_compares_status_event_meter_and_parameter():
+    """Status words, set/unset, meter integers and parameters all evaluate.
+
+    Mirrors the worked examples in trigger-expression.rst: events compare
+    against ``set``/``unset``, meters against integers, and a parameter can
+    appear on either side of a comparison.
+    """
+    from takler.core import Flow, NodeStatus
+
+    flow = Flow("test")
+    group1 = flow.add_container("g1")
+    task2 = group1.add_task("t2")
+    task2.add_meter("m1", 0, 10)
+    task2.add_event("e1")
+    task2.add_parameter("THRESHOLD", 4)
+
+    probe = group1.add_task("probe")
+    probe.add_trigger("./t2:m1 >= 4 and ./t2:e1 == unset")
+    assert not probe.evaluate_trigger()  # m1 is 0
+
+    task2.find_meter("m1").value = 5
+    assert probe.evaluate_trigger()  # m1 ok, e1 still unset
+
+    task2.set_event("e1", True)
+    assert not probe.evaluate_trigger()  # e1 is set now
+
+    probe.add_trigger("./t2:e1 == set and ./t2:m1 >= ./t2:THRESHOLD")
+    assert probe.evaluate_trigger()
+
+    task2.set_node_status_only(NodeStatus.active)
+    probe.add_trigger("./t2 == active")
+    assert probe.evaluate_trigger()
+
+
+def test_guide_trigger_missing_node_and_variable_fail_at_first_evaluation():
+    """Bad paths and bad variables surface as errors on first evaluation.
+
+    trigger-expression.rst documents that parsing is lazy: a missing node
+    raises ``NodeNotFoundError`` and a missing variable raises
+    ``ExpressionSyntaxError`` when the trigger is first evaluated, not when
+    ``add_trigger`` is called.
+    """
+    from takler.core import Flow
+    from takler.exceptions import ExpressionSyntaxError, NodeNotFoundError
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+
+    bad_path = flow.add_task("bad_path")
+    bad_path.add_trigger("./nope == complete")
+    with pytest.raises(NodeNotFoundError):
+        bad_path.evaluate_trigger()
+
+    bad_variable = flow.add_task("bad_variable")
+    bad_variable.add_trigger("./t1:nosuchvar == 1")
+    with pytest.raises(ExpressionSyntaxError):
+        bad_variable.evaluate_trigger()
+
+
+def test_guide_variable_resolution_walks_up_and_shadows():
+    """Nearest definition along the parent chain wins (shadowing).
+
+    Pins the resolution order in variables.rst: node, then parents up to the
+    flow, then the bunch.
+    """
+    from takler.core import Bunch, Flow
+
+    bunch = Bunch()
+    flow = Flow("test")
+    bunch.add_flow(flow)
+    group1 = flow.add_container("g1")
+    task2 = group1.add_task("t2")
+    task3 = flow.add_task("t3")
+
+    flow.add_parameter("G", "flow")
+    group1.add_parameter("G", "group")
+    task2.add_parameter("G", "task")
+
+    assert task2.find_parent_parameter("G").value == "task"
+    assert group1.find_parent_parameter("G").value == "group"
+    assert task3.find_parent_parameter("G").value == "flow"
+
+    # The bunch's generated server parameters are the last resort.
+    assert task2.find_parent_parameter("TAKLER_HOME").value == "."
+    flow.add_parameter("TAKLER_HOME", "/data/flow_home")
+    assert task2.find_parent_parameter("TAKLER_HOME").value == "/data/flow_home"
+
+
+def test_guide_user_parameter_shadows_generated_parameter():
+    """A user parameter wins over a same-named generated one on a node.
+
+    variables.rst documents this as the reason generated parameters should
+    not be redefined via ``add_parameter`` (and, conversely, why a user
+    ``TAKLER_SCRIPT`` can override the generated script path).
+    """
+    from takler.core import Flow
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    assert task1.find_generated_parameter("TASK") is not None
+
+    task1.add_parameter("TASK", "user-defined")
+    assert task1.find_parameter("TASK").value == "user-defined"
+
+
+def test_guide_generated_parameters_fill_in_when_the_node_runs():
+    """Generated parameters are None until the flow calendar or job starts.
+
+    Pins variables.rst: flow ``DATE``/``TIME`` appear at the first calendar
+    tick after ``begin``, task-level parameters at first job creation, and a
+    repeat exposes its current value as a parameter named after the repeat.
+    """
+    import datetime
+
+    from takler.core import Flow, RepeatDate
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+
+    assert flow.find_parameter("DATE").value is None
+    assert flow.find_parameter("TIME").value is None
+    for name in ("TASK", "TAKLER_NAME", "TAKLER_RID", "TAKLER_TRY_NO", "TAKLER_PASS"):
+        assert task1.find_parameter(name).value is None
+
+    flow.begin()
+    flow.update_calendar(datetime.datetime.now())
+    assert flow.find_parameter("DATE").value == datetime.datetime.now().strftime(
+        "%Y-%m-%d"
+    )
+
+    task1.add_repeat(RepeatDate("REPEAT_DATE", 20260101, 20261231, 1))
+    assert task1.find_parameter("REPEAT_DATE").value == 20260101
+
+    # Constants that exist in takler.core.parameter but are NOT generated:
+    # FLOW, TAKLER_DATE, TAKLER_TIME and TAKLER_TRIES.
+    assert flow.find_parameter("FLOW") is None
+    assert flow.find_parameter("TAKLER_DATE") is None
+    assert task1.find_parameter("TAKLER_TRIES") is None
+
+
+def test_guide_shell_task_generated_job_paths(tmp_path):
+    """``TAKLER_JOB``/``TAKLER_JOBOUT`` follow the documented patterns.
+
+    variables.rst gives ``{TAKLER_HOME}{node_path}.job{try_no}`` for the job
+    file and ``{TAKLER_HOME}{node_path}.{try_no}`` for the output file, both
+    resolved to absolute paths.
+    """
+    from takler.core import Flow
+    from takler.tasks.shell import ShellScriptTask
+
+    flow = Flow("test")
+    flow.add_parameter("TAKLER_HOME", str(tmp_path))
+    task1 = flow.add_task(ShellScriptTask("t1", script_path="test/t1.takler"))
+    task1.update_generated_parameters()
+
+    assert task1.find_parameter("TAKLER_SCRIPT").value == "test/t1.takler"
+    assert task1.find_parameter("TAKLER_JOB").value == tmp_path / "test/t1.job0"
+    assert task1.find_parameter("TAKLER_JOBOUT").value == tmp_path / "test/t1.0"
+
+
+def test_guide_serialization_keeps_user_parameters_only():
+    """``to_dict`` writes user parameters, never generated ones.
+
+    variables.rst relies on this for ``TAKLER_PASS``: the job password stays
+    out of ``show`` output and checkpoint files because it is generated.
+    """
+    from takler.core import Flow
+
+    flow = Flow("test")
+    task1 = flow.add_task("t1")
+    task1.add_parameter("GREETING", "hello")
+    task1.increment_try_no()  # fills TASK/TAKLER_NAME/TAKLER_PASS/...
+
+    serialized = task1.to_dict()
+    assert [p["name"] for p in serialized["user_parameters"]] == ["GREETING"]
+    assert "TAKLER_PASS" not in str(serialized)
+
+
+def test_guide_undefined_variable_renders_as_empty_string(tmp_path):
+    """An undefined Jinja2 variable renders empty instead of failing.
+
+    variables.rst warns about this: neither job rendering nor
+    ``check_job_creation`` treats an undefined variable as an error, so the
+    mistake only shows up in the rendered job file.
+    """
+    from takler.core import Flow
+    from takler.tasks.shell import ShellScriptTask, check_job_creation
+
+    script = tmp_path / "t1.takler"
+    script.write_text('echo "{{ DEFINED }}"{{ UNDEFINED_VAR }}\n')
+
+    flow = Flow("test")
+    flow.add_parameter("TAKLER_HOME", str(tmp_path))
+    flow.add_parameter("DEFINED", "yes")
+    task1 = flow.add_task(ShellScriptTask("t1", script_path=str(script)))
+
+    check_job_creation(flow)
+
+    assert (tmp_path / "test/t1.job0").read_text().strip() == 'echo "yes"'
+
+
 def test_head_and_tail_takler_render_with_task1(cleanup_generated_files):
     """The head/tail/task1 templates referenced by understanding-includes.rst
     render together as one job script without a Jinja2 error.

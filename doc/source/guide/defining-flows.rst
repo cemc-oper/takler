@@ -109,13 +109,14 @@ Bunch 与多 flow
 不启动服务就能验证一份工作流定义：
 ``takler.tasks.shell.check_job_creation(flow)`` 遍历树中所有
 ``ShellScriptTask`` ，把每个任务的作业脚本渲染到 ``TAKLER_HOME`` 下，
-但不提交运行。渲染失败（脚本不存在、 include 无法解析、变量未定义等）
-会抛出 ``JobSubmissionError`` 。换言之，渲染通过说明这份定义在结构上
-是可运行的。
+但不提交运行。渲染失败（脚本不存在、 include 无法解析、模板语法错误
+等）会抛出 ``JobSubmissionError`` 。换言之，渲染通过说明这份定义在
+结构上是可运行的。
 
 教程的 :doc:`/tutorial/getting-started/checking-job-creation` 一节有
 完整示例。注意这是一次「干跑」：它会在 ``TAKLER_HOME`` 下真实生成
-``*.job*`` 文件，只是不执行。
+``*.job*`` 文件，只是不执行。另外，引用未定义的变量不算渲染失败——
+Jinja2 会把它渲染为空字符串（见 :doc:`/guide/variables` ）。
 
 轻量任务：task 装饰器
 -------------------------------------------

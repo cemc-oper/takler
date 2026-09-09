@@ -77,7 +77,8 @@ user 参数与 generated 参数
 常用保留变量
 --------------
 
-takler 会在不同层级自动生成一批「保留变量」，可以直接在脚本或触发器中使用：
+takler 会在不同层级自动生成一批「保留变量」，可以直接在脚本或触发器中使用
+（完整说明见用户指南的 :doc:`/guide/variables` ）：
 
 .. list-table::
     :header-rows: 1
@@ -90,11 +91,11 @@ takler 会在不同层级自动生成一批「保留变量」，可以直接在�
       - ``TAKLER_HOST``、``TAKLER_PORT``、``TAKLER_HOME``
       - 服务连接信息与默认根目录
     * - flow
-      - ``FLOW``、``TAKLER_DATE``、``TAKLER_TIME``、``TIME``、``DATE``
-      - 工作流名称与日历相关变量
+      - ``DATE``、``TIME``
+      - 日历的当前日期与时刻
     * - task
       - ``TASK``、``TAKLER_NAME``、``TAKLER_RID``、``TAKLER_TRY_NO``、
-        ``TAKLER_PASS``、``TAKLER_TRIES``
+        ``TAKLER_PASS``
       - 任务名称、节点路径、运行标识、重试次数、作业口令等
 
 Shell 脚本任务还会额外生成 ``TAKLER_SCRIPT``、``TAKLER_JOB``、``TAKLER_JOBOUT``

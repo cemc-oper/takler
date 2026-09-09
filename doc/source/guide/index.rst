@@ -36,3 +36,5 @@
    concepts
    node-status
    defining-flows
+   trigger-expression
+   variables
