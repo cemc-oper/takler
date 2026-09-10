@@ -2791,3 +2791,200 @@ def test_operation_resilience_fail_fast_triggers_clean_shutdown():
     assert fatal_calls == [1]
 
 
+
+
+# ---------------------------------------------------------------------------
+# operation/reference.rst and operation/troubleshooting.rst
+# ---------------------------------------------------------------------------
+
+
+def _reference_page() -> str:
+    return _operation_page("reference.rst")
+
+
+def test_operation_reference_documents_every_env_var():
+    """Every environment variable read anywhere in the codebase appears in
+    operation/reference.rst."""
+    from takler.client import cli as client_cli
+    from takler.client.credentials import (
+        ENV_JOB_PASSWORD,
+        ENV_SECRET_FILE,
+        ENV_TLS_CA_FILE,
+        ENV_TLS_SERVER_NAME,
+        USER_NAME_ENV_NAMES,
+    )
+    from takler.client.retry import ENV_RETRY_WINDOW
+    from takler.logging.config import ENV_LOG_FILE, ENV_LOG_LEVEL
+    from takler.server.connect_config import (
+        TAKLER_AUDIT_FILE,
+        TAKLER_AUTH_MODE,
+        TAKLER_CONNECT_FILE,
+        TAKLER_EXCEPTION_POLICY,
+        TAKLER_ZOMBIE_POLICY,
+    )
+
+    env_vars = {
+        TAKLER_CONNECT_FILE,
+        TAKLER_EXCEPTION_POLICY,
+        TAKLER_AUTH_MODE,
+        TAKLER_ZOMBIE_POLICY,
+        TAKLER_AUDIT_FILE,
+        ENV_LOG_LEVEL,
+        ENV_LOG_FILE,
+        ENV_JOB_PASSWORD,
+        ENV_TLS_CA_FILE,
+        ENV_TLS_SERVER_NAME,
+        ENV_SECRET_FILE,
+        ENV_RETRY_WINDOW,
+        client_cli.TAKLER_HOST,
+        client_cli.TAKLER_PORT,
+        client_cli.TAKLER_NAME,
+        client_cli.NO_TAKLER,
+        *USER_NAME_ENV_NAMES,
+    }
+    text = _reference_page()
+
+    assert sorted(v for v in env_vars if f"``{v}``" not in text) == []
+
+
+def test_operation_reference_documents_every_connect_config_field():
+    """Every connect.yaml field has a fully qualified literal in the page."""
+    from takler.server.connect_config import (
+        Address,
+        CheckpointSettings,
+        SecuritySettings,
+    )
+
+    expected = {
+        *(f"server.address.{f}" for f in Address.model_fields),
+        *(f"checkpoint.{f}" for f in CheckpointSettings.model_fields),
+        *(f"security.{f}" for f in SecuritySettings.model_fields),
+    }
+    text = _reference_page()
+
+    assert sorted(f for f in expected if f"``{f}``" not in text) == []
+
+
+def test_operation_reference_documents_every_error_code():
+    """Every registered Error_Code appears in the page with its name, and the
+    page's exit-code column matches EXIT_CODE_BY_ERROR_CODE.
+    """
+    from takler.client.exit_code import EXIT_CODE_BY_ERROR_CODE
+    from takler.server.protocol.error_code import ERROR_NAME_BY_CODE
+
+    text = _reference_page()
+
+    for code, name in sorted(ERROR_NAME_BY_CODE.items()):
+        assert f"``{code}``" in text, code
+        assert f"``{name}``" in text, name
+        # The page's table column for the client exit code.
+        assert f"``{EXIT_CODE_BY_ERROR_CODE[code]}``" in text, code
+
+
+def test_operation_reference_error_code_classification_fallbacks():
+    """The documented mapping rules: exact-type lookup, generic 1 for an
+    unregistered TaklerError subclass, 99 for anything else, "unknown" for
+    unregistered codes.
+    """
+    from takler.exceptions import PermissionDeniedError, SecurityConfigError
+    from takler.server.protocol.error_code import (
+        error_code_for_exception,
+        error_name_for_code,
+    )
+
+    assert error_code_for_exception(PermissionDeniedError("x")) == 43
+    # SecurityConfigError is a TaklerError without its own code: falls to 1.
+    assert error_code_for_exception(SecurityConfigError("x")) == 1
+    assert error_code_for_exception(ValueError("x")) == 99
+    assert error_name_for_code(12345) == "unknown"
+
+
+def test_operation_reference_exit_code_mapping():
+    """The documented exit-code mapping: request errors -> 1, server-side
+    failures -> 3, transport -> 4, unregistered codes conservatively -> 3.
+    """
+    from takler.client.exit_code import exit_code_for_error_code
+
+    assert exit_code_for_error_code(0) == 0
+    assert exit_code_for_error_code(43) == 1
+    assert exit_code_for_error_code(31) == 3
+    assert exit_code_for_error_code(30) == 3
+    assert exit_code_for_error_code(99) == 3
+    assert exit_code_for_error_code(41) == 4
+    assert exit_code_for_error_code(40) == 4
+    assert exit_code_for_error_code(12345) == 3
+
+
+def test_operation_reference_broken_connect_file_exits_3():
+    """An unreadable TAKLER_CONNECT_FILE lands on the failure contract: one
+    stderr line naming the exception type, exit code 3 — as both
+    reference.rst and connect-config.rst state.
+    """
+    from typer.testing import CliRunner
+
+    from takler.client.cli import app
+
+    result = CliRunner().invoke(
+        app, ["ping"], env={"TAKLER_CONNECT_FILE": "/nonexistent/connect.yaml"}
+    )
+
+    assert result.exit_code == 3
+    assert "FileNotFoundError" in result.output
+
+
+def test_operation_reference_retry_window_defaults():
+    """The documented retry-window defaults: 86400 s for child commands,
+    60 s for control and query.
+    """
+    from takler.client.retry import DEFAULT_RETRY_WINDOW_BY_KIND, CommandKind
+
+    assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CHILD] == 86400.0
+    assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CONTROL] == 60.0
+    assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.QUERY] == 60.0
+
+
+def test_operation_troubleshooting_covers_documented_symptoms():
+    """The page names every symptom from the plan and links the detail pages
+    behind each entry.
+    """
+    text = _operation_page("troubleshooting.rst")
+
+    for needle in [
+        "连不上服务",
+        "ping 通但其他命令全被拒绝",
+        "任务卡在 queued",
+        "任务卡在 submitted",
+        "作业在跑但状态不动",
+        "zombie 记录刷日志",
+        "快照恢复失败",
+        "TLS 握手失败",
+        "作业脚本渲染失败",
+        # Locating commands and handles each entry must hand the operator.
+        "TAKLER_TIMEOUT",
+        "missing_credential",
+        "invalid_credential",
+        "not_in_whitelist",
+        "--show-all",
+        "free_dep",
+        "TAKLER_SHELL_JOB_CMD",
+        "Z1 / Z2 / Z3",
+        "TAKLER_TLS_SERVER_NAME",
+        "check_job_creation",
+    ]:
+        assert needle in text, needle
+
+    for target in [
+        "/operation/logging",
+        "/operation/audit",
+        "/operation/connect-config",
+        "/operation/security",
+        "/operation/zombie",
+        "/operation/checkpoint",
+        "/guide/cli",
+        "/guide/tui",
+        "/guide/trigger-expression",
+        "/guide/ecflow-differences",
+        "/guide/job-management",
+        "/guide/task-script",
+    ]:
+        assert f":doc:`{target}`" in text, target

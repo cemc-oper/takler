@@ -18,6 +18,9 @@
 分流； :doc:`audit` 说明审计记录的字段、文件与查询方法；
 :doc:`resilience` 说明异常策略、按 flow 的故障隔离与干净停机。
 
+**参考与排查** ：:doc:`reference` 是环境变量、配置项、错误码与
+退出码的总表； :doc:`troubleshooting` 按症状组织值班排查路径。
+
 .. toctree::
    :hidden:
    :maxdepth: 2
@@ -30,3 +33,5 @@
    logging
    audit
    resilience
+   reference
+   troubleshooting

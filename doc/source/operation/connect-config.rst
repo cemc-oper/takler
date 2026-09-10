@@ -21,7 +21,8 @@
 
 客户端（ ``takler-client-py`` 与 ``takler_client`` ）没有 ``--config``
 选项，只认 ``TAKLER_CONNECT_FILE`` ；文件读不到时按客户端的失败契约
-处理（ stderr 一行，退出码 ``1`` ，见 :doc:`/guide/cli` ）。
+处理（ stderr 一行 ``FileNotFoundError: ...`` ，退出码 ``3`` ，见
+:doc:`/guide/cli` ）。
 TUI (``takler-tui``) 只把该文件用于解析地址，不读取 ``security``
 段，见 :doc:`/guide/tui` 。
 

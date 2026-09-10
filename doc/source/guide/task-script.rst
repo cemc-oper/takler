@@ -26,7 +26,7 @@ takler 脚本使用 `Jinja2 <https://jinja.palletsprojects.com/>`_ 模板
 
 .. code-block:: bash
 
-    echo "processing date {{ TAKLER_DATE }}"
+    echo "processing date {{ DATE }}"
     echo "task {{ TAKLER_NAME }} attempt {{ TAKLER_TRY_NO }}"
 
 除变量替换外， Jinja2 的全套模板指令都可用——条件
