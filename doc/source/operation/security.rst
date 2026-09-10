@@ -330,35 +330,9 @@ zombie 检测与处置
 审计日志
 ------------
 
-以下三类事件各写出一条审计记录：运维命令执行结束、鉴权拒绝、zombie 处置。
-
-每条记录是一行 JSON 对象（JSON Lines），含八个键：
-``timestamp``、``event``、``command``、``user``、``peer``、``target``、``outcome``、``error_code``。
-
-.. code-block:: json
-
-    {"timestamp": "2026-07-15T10:30:00.123456", "event": "control", "command": "requeue", "user": "oper", "peer": "ipv4:10.0.0.9:51234", "target": ["/flow1/family1/task1"], "outcome": "success", "error_code": 0}
-
-* ``event`` 取值 ``control``、``denied``、``zombie``
-* ``outcome`` 取值 ``success``、``error``、``denied``、``zombie``
-* ``error_code`` 为该请求返回的 ``flag``，鉴权拒绝时固定为 43
-* ``user`` 为请求携带的 ``takler-user``，未携带时为 ``unknown``
-* 记录中不含口令取值与共享密钥取值
-
-配置了 ``audit_file``（或 ``TAKLER_AUDIT_FILE``）时，审计记录**只**写入该文件，
-不进入 ``TAKLER_LOG_FILE`` 配置的常规日志文件与控制台；
-未配置时，审计记录写入常规日志目标。
-
-审计文件由服务创建，权限为仅所有者可读写 (``0600``)，父目录不存在时自动创建。
-审计文件每行是完整的 JSON，没有时间戳前缀，可以直接交给 ``jq`` 处理：
-
-.. code-block:: bash
-
-    # 今天被拒绝的运维命令，以及是谁发起的
-    jq -r 'select(.event == "denied") | [.timestamp, .user, .command, .peer] | @tsv' audit.jsonl
-
-写审计文件失败时，服务向常规日志记一条含路径与原因的 WARNING，请求的响应不受影响：
-审计是观测手段，不是可用性单点。
+运维命令执行结束、鉴权拒绝与 zombie 处置各写出一条 JSON 格式的审计
+记录，配置 ``audit_file`` 后写入独立文件。记录的八个字段、三类事件、
+文件权限、 ``jq`` 查询示例与写失败的降级行为见 :doc:`/operation/audit` 。
 
 
 从 M1 部署升级到启用鉴权
@@ -400,7 +374,7 @@ zombie 检测与处置
    此后仍在使用旧取值的客户端会被拒绝，拒绝原因分类为 ``invalid_credential``。
 
 第 3 步之后如果还有残留的旧客户端，审计日志中 ``event`` 为 ``denied`` 的记录带 ``user`` 字段，
-可以直接看出还有谁没更新完。
+可以直接看出还有谁没更新完（查询示例见 :doc:`/operation/audit` ）。
 
 
 排查

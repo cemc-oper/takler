@@ -12,7 +12,11 @@
 与 requeue 后旧作业上报的典型场景。
 
 **安全** ：:doc:`security` 覆盖 TLS 、鉴权、作业口令、密钥轮换
-与审计日志。
+与升级路径。
+
+**日志与韧性** ：:doc:`logging` 说明日志级别、格式、落盘与审计
+分流； :doc:`audit` 说明审计记录的字段、文件与查询方法；
+:doc:`resilience` 说明异常策略、按 flow 的故障隔离与干净停机。
 
 .. toctree::
    :hidden:
@@ -23,3 +27,6 @@
    checkpoint
    zombie
    安全部署 <security>
+   logging
+   audit
+   resilience

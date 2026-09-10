@@ -2482,3 +2482,312 @@ def test_operation_zombie_flag_and_exit_code():
 
     assert error_code_for_exception(ZombieError("x")) == 31
     assert exit_code_for_error_code(31) == 3
+
+
+# ---------------------------------------------------------------------------
+# operation/audit.rst, operation/logging.rst and operation/resilience.rst
+# ---------------------------------------------------------------------------
+
+
+def test_operation_audit_documents_record_shape():
+    """The page names the eight keys, the three events, the four outcomes
+    and the fixed error_code of a rejection — the contract AuditRecord
+    implements.
+    """
+    from takler.server.audit import (
+        DENIED_ERROR_CODE,
+        EVENT_CONTROL,
+        EVENT_DENIED,
+        EVENT_ZOMBIE,
+        OUTCOME_DENIED,
+        OUTCOME_ERROR,
+        OUTCOME_SUCCESS,
+        OUTCOME_ZOMBIE,
+        AuditRecord,
+        audit_timestamp,
+    )
+    import json
+
+    text = _operation_page("audit.rst")
+    for key in ("timestamp", "event", "command", "user", "peer", "target",
+                "outcome", "error_code"):
+        assert f"``{key}``" in text
+    for value in (EVENT_CONTROL, EVENT_DENIED, EVENT_ZOMBIE,
+                  OUTCOME_SUCCESS, OUTCOME_ERROR, OUTCOME_DENIED, OUTCOME_ZOMBIE,
+                  "unknown"):
+        assert f"``{value}``" in text
+    assert f"``{DENIED_ERROR_CODE}``" in text
+
+    # Field order in the file is the documented key order.
+    line = AuditRecord(
+        timestamp=audit_timestamp(), event=EVENT_CONTROL, command="requeue",
+        user="oper", peer="ipv4:10.0.0.9:51234", target=["/flow1/task1"],
+        outcome=OUTCOME_SUCCESS, error_code=0,
+    ).to_json_line()
+    assert list(json.loads(line)) == [
+        "timestamp", "event", "command", "user", "peer", "target",
+        "outcome", "error_code",
+    ]
+
+
+def test_operation_audit_one_record_one_line():
+    """A node path holding a line-boundary character cannot split a record
+    across two lines, and non-ASCII paths stay readable — the guarantee the
+    page states before showing jq examples.
+    """
+    import json
+
+    from takler.server.audit import AuditRecord
+
+    record = AuditRecord(
+        timestamp="2026-07-15T10:30:00.123456", event="control",
+        command="requeue", user="oper", peer="unknown",
+        target=["/流程1/任务 1"], outcome="success", error_code=0,
+    )
+    line = record.to_json_line()
+
+    assert len(line.splitlines()) == 1
+    # The CJK part stays readable; the line-boundary character is escaped.
+    assert "/流程1/任务" in line
+    assert "\\u2028" in line
+    assert json.loads(line)["target"] == ["/流程1/任务 1"]
+
+
+def test_operation_audit_command_name_derivation():
+    """The documented derivation RunCommandFreeDep -> free_dep, applied to
+    fully qualified and bare method names.
+    """
+    from takler.server.audit import audit_command_name
+
+    assert audit_command_name("RunCommandFreeDep") == "free_dep"
+    assert audit_command_name(
+        "/takler_protocol.TaklerServer/RunCommandRequeue"
+    ) == "requeue"
+    assert audit_command_name("RunRequestShow") == "show"
+
+
+def test_operation_audit_audited_command_set():
+    """The eight control commands the page lists are exactly what the
+    service audits: operator-level write commands, with the read-only
+    show/coroutine opted out.
+    """
+    from takler.server.network_service import CONTROL_METHOD_NAMES
+
+    assert sorted(CONTROL_METHOD_NAMES) == [
+        "RunCommandBegin", "RunCommandForce", "RunCommandFreeDep",
+        "RunCommandLoad", "RunCommandRequeue", "RunCommandResume",
+        "RunCommandRun", "RunCommandSuspend",
+    ]
+
+
+def test_operation_audit_file_created_owner_only(tmp_path):
+    """The first record pre-creates the audit file 0600 (with its parent
+    directory), as the page's permissions section states.
+    """
+    import stat
+
+    from takler.server.audit import AUDIT_FILE_MODE, AuditLogger, AuditRecord
+
+    audit_file = tmp_path / "sub" / "audit.jsonl"
+    AuditLogger(audit_file).record(AuditRecord(
+        timestamp="2026-07-15T10:30:00.123456", event="control",
+        command="requeue", user="oper", peer="unknown", target=[],
+        outcome="success", error_code=0,
+    ))
+
+    assert audit_file.exists()
+    assert stat.S_IMODE(audit_file.stat().st_mode) == AUDIT_FILE_MODE == 0o600
+
+
+def test_operation_logging_documents_env_vars_and_levels():
+    """The page's env-var table covers exactly the three variables the
+    logging subsystem consults, and all six canonical level names.
+    """
+    from takler.logging import config as logging_config
+    from takler.logging.levels import LEVEL_ORDER
+
+    text = _operation_page("logging.rst")
+    for env in (logging_config.ENV_LOG_LEVEL, logging_config.ENV_LOG_FILE,
+                logging_config.ENV_AUDIT_FILE):
+        assert f"``{env}``" in text
+    for level in LEVEL_ORDER:
+        assert f"``{level.name}``" in text and f"{level.rank}" in text
+
+
+def test_operation_logging_invalid_env_level_falls_back_to_info():
+    """An unrecognized TAKLER_LOG_LEVEL resolves to INFO and carries the
+    offending value for the warning, rather than raising — the graceful
+    degradation the level section documents.
+    """
+    from takler.logging.config import resolve_config
+    from takler.logging.levels import LogLevel
+
+    resolved = resolve_config({}, {"TAKLER_LOG_LEVEL": "chatty"})
+    assert resolved.level is LogLevel.INFO
+    assert resolved.invalid_env_level == "chatty"
+
+    # Blank counts as "not provided"; case is irrelevant.
+    assert resolve_config({}, {"TAKLER_LOG_LEVEL": "  "}).level is LogLevel.INFO
+    assert resolve_config({}, {"TAKLER_LOG_LEVEL": "debug"}).level is LogLevel.DEBUG
+
+
+def test_operation_logging_format_layout():
+    """The rendered record matches the documented layout:
+    RFC 3339 timestamp with millisecond precision and offset, level name,
+    component, message — identical for console and file.
+    """
+    import re
+    from datetime import datetime
+
+    from takler.logging.formatter import format_record
+    from takler.logging.levels import LogLevel
+
+    line = format_record(
+        datetime(2026, 6, 30, 11, 38, 10, 123000),
+        LogLevel.INFO, "server.scheduler", "scheduler shutting down...",
+    )
+    assert re.fullmatch(
+        r"2026-06-30T11:38:10\.123[+-]\d{2}:\d{2} "
+        r"INFO server\.scheduler scheduler shutting down\.\.\.",
+        line,
+    )
+
+
+def test_operation_logging_rotation_and_retention_parsing():
+    """The rotation size/interval strings and retention counts the page
+    lists parse as documented (stdlib backend mappings).
+    """
+    from takler.logging.backends.stdlib_backend import (
+        _parse_interval,
+        _parse_size,
+        _retention_to_backup_count,
+    )
+
+    assert _parse_size("10 MB") == 10 * 1024**2
+    assert _parse_size("512KB") == 512 * 1024
+    assert _parse_size("1048576") == 1048576
+    assert _parse_interval("1 day") == ("D", 1)
+    assert _parse_interval("30 minutes") == ("M", 30)
+    assert _parse_interval("midnight") == ("midnight", 1)
+    assert _parse_interval("1 week") == ("D", 7)
+    # Retention: a count is kept; anything unparsable keeps everything.
+    assert _retention_to_backup_count(5) == 5
+    assert _retention_to_backup_count("7 days") == 0
+
+
+def test_operation_resilience_documents_policy_configuration():
+    """The page documents both policy values, the option and the env var,
+    and the precedence chain the resolver implements.
+    """
+    from takler.server.connect_config import (
+        ExceptionPolicy,
+        resolve_exception_policy,
+    )
+
+    text = _operation_page("resilience.rst")
+    assert "``--exception-policy``" in text
+    assert "``TAKLER_EXCEPTION_POLICY``" in text
+    assert "``resilient``" in text and "``fail_fast``" in text
+
+    # CLI option > env > built-in default; unrecognized degrades with a
+    # warning rather than raising (already pinned for connect-config, here
+    # for the full chain this page states).
+    assert resolve_exception_policy(
+        "fail_fast", {"TAKLER_EXCEPTION_POLICY": "resilient"}
+    ) is ExceptionPolicy.FAIL_FAST
+    assert resolve_exception_policy(
+        None, {"TAKLER_EXCEPTION_POLICY": "fail-fast"}
+    ) is ExceptionPolicy.FAIL_FAST
+    assert resolve_exception_policy(None, {}) is ExceptionPolicy.RESILIENT
+    assert resolve_exception_policy(
+        None, {"TAKLER_EXCEPTION_POLICY": "boom"}
+    ) is ExceptionPolicy.RESILIENT
+
+
+def _isolation_bunch():
+    """Two begun flows; ``flow1`` raises inside its calendar update.
+
+    Assigning on the instance shadows the method, so the failure originates
+    in flow processing exactly where the per-flow boundary wraps it.
+    """
+    from takler.core import Bunch, Flow
+
+    bunch = Bunch("b")
+    flow1, flow2 = Flow("flow1"), Flow("flow2")
+    for flow in (flow1, flow2):
+        with flow:
+            flow.add_task("task1")
+        bunch.add_flow(flow)
+        flow.begin()
+
+    def boom(time_now):
+        raise RuntimeError("calendar exploded")
+
+    flow1.update_calendar = boom
+    return bunch
+
+
+def test_operation_resilience_per_flow_isolation():
+    """The failure radius is one flow for one iteration: the failing flow is
+    skipped, the healthy flow is still processed in the same and following
+    iterations, and the default resilient policy triggers no shutdown.
+    """
+    import asyncio
+
+    from takler.server.scheduler import Scheduler
+
+    bunch = _isolation_bunch()
+    fatal_calls = []
+    scheduler = Scheduler(
+        bunch, interval_main_loop=0.01,
+        fatal_shutdown=lambda: fatal_calls.append(1),
+    )
+
+    processed = []
+    original = scheduler._process_flow
+
+    def spy(name, flow, time_now):
+        processed.append(name)
+        return original(name, flow, time_now)
+
+    scheduler._process_flow = spy
+
+    async def main():
+        task = asyncio.ensure_future(scheduler.main_loop())
+        await asyncio.sleep(0.05)
+        scheduler.should_stop = True
+        await task
+
+    asyncio.run(main())
+
+    # flow1 raised on every iteration, flow2 was reached anyway, and the
+    # loop kept iterating until stopped from outside.
+    assert processed.count("flow1") > 1
+    assert processed.count("flow2") == processed.count("flow1")
+    assert fatal_calls == []
+
+
+def test_operation_resilience_fail_fast_triggers_clean_shutdown():
+    """Under fail_fast the same failure fires the fatal-shutdown trigger and
+    leaves the main loop on its own — the entry into the shared clean
+    shutdown path the page describes.
+    """
+    import asyncio
+
+    from takler.server.connect_config import ExceptionPolicy
+    from takler.server.scheduler import Scheduler
+
+    bunch = _isolation_bunch()
+    fatal_calls = []
+    scheduler = Scheduler(
+        bunch, interval_main_loop=0.01,
+        exception_policy=ExceptionPolicy.FAIL_FAST,
+        fatal_shutdown=lambda: fatal_calls.append(1),
+    )
+
+    # Returns on its own after the first failing iteration; no external stop.
+    asyncio.run(scheduler.main_loop())
+
+    assert fatal_calls == [1]
+
+

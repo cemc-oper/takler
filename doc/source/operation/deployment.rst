@@ -141,7 +141,8 @@ takler-server 选项
     WantedBy=multi-user.target
 
 日志级别与去向由环境变量 ``TAKLER_LOG_LEVEL`` 与 ``TAKLER_LOG_FILE``
-控制，未配置文件时输出到控制台。
+控制，未配置文件时输出到控制台；完整的日志配置面见
+:doc:`/operation/logging` 。
 
 停机与关机快照
 --------------
