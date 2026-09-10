@@ -41,3 +41,6 @@
    attributes/index
    task-script
    job-management
+   cli
+   tui
+   ecflow-differences

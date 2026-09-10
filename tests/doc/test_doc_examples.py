@@ -19,6 +19,7 @@ test so repeated local runs don't accumulate stray files under
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -1978,3 +1979,287 @@ def test_guide_attributes_serialization_tree_keeps_definition_only():
     d = time_attr.to_dict()
     assert TimeAttribute.from_dict(d, SerializationType.Status).free is True
     assert TimeAttribute.from_dict(d, SerializationType.Tree).free is False
+
+
+# ---------------------------------------------------------------------------
+# guide/cli.rst
+# ---------------------------------------------------------------------------
+
+GUIDE_DIR = PROJECT_ROOT / "doc" / "source" / "guide"
+
+
+def _guide_page(name: str) -> str:
+    return (GUIDE_DIR / name).read_text(encoding="utf-8")
+
+
+def _documented_commands(text: str) -> set[str]:
+    """Return every ``name`` literal that appears in a section title.
+
+    The CLI reference gives each command a section whose title is the
+    command name (two commands may share one title, as in
+    "``suspend`` / ``resume``"), so the command table the page claims to
+    cover is readable straight from the markup.
+    """
+    lines = text.splitlines()
+    names: set[str] = set()
+    for title, underline in zip(lines, lines[1:]):
+        if underline.strip() and re.fullmatch(r"[-~^=]+", underline.strip()):
+            names.update(re.findall(r"``([a-z][\w-]*)``", title))
+    return names
+
+
+def test_guide_cli_documents_every_python_subcommand():
+    """guide/cli.rst has a section for every ``takler-client-py`` subcommand."""
+    from typer.main import get_command
+
+    from takler.client.cli import app
+
+    commands = set(get_command(app).commands)
+    documented = _documented_commands(_guide_page("cli.rst"))
+
+    assert commands - documented == set()
+
+
+def test_guide_cli_documents_every_python_option():
+    """Every long option of every subcommand is named in guide/cli.rst."""
+    from typer.main import get_command
+
+    from takler.client.cli import app
+
+    text = _guide_page("cli.rst")
+    missing: dict[str, list[str]] = {}
+    for name, command in get_command(app).commands.items():
+        options = {
+            opt
+            for param in command.params
+            for opt in list(param.opts) + list(param.secondary_opts)
+            if opt.startswith("--")
+        }
+        absent = sorted(opt for opt in options if opt not in text)
+        if absent:
+            missing[name] = absent
+
+    assert missing == {}
+
+
+def test_guide_cli_exit_codes_match_client_exit_code_module():
+    """The exit code table in guide/cli.rst lists the codes the CLI uses."""
+    from takler.client import exit_code as ec
+
+    text = _guide_page("cli.rst")
+    for code in (
+        ec.EXIT_OK,
+        ec.EXIT_REQUEST_ERROR,
+        ec.EXIT_SERVER_ERROR,
+        ec.EXIT_UNREACHABLE,
+    ):
+        assert f"``{code}``" in text
+
+
+def test_guide_cli_free_dep_dep_type_must_be_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """guide/cli.rst warns that ``free-dep`` without ``--dep-type`` is rejected.
+
+    The option's declared default is the string ``"True"``, which is not
+    one of the server's accepted values (all / time / trigger), so omitting
+    it surfaces as an unsupported-value failure rather than as "all".
+    """
+    from typer.testing import CliRunner
+
+    import takler.client.cli as cli
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def free_dep(self, node_paths, dep_type):
+            captured["dep_type"] = dep_type
+            return None
+
+    monkeypatch.setattr(cli, "TaklerServiceClient", FakeClient)
+    result = CliRunner().invoke(cli.app, ["free-dep", "/f/t1"])
+
+    assert result.exit_code == 0, result.output
+    assert captured["dep_type"] == "True"
+
+
+# ---------------------------------------------------------------------------
+# guide/tui.rst
+# ---------------------------------------------------------------------------
+
+
+def test_guide_tui_documents_every_key_binding():
+    """guide/tui.rst names every key the TUI binds, in the case it shows."""
+    pytest.importorskip("textual", reason="the tui extra is not installed")
+
+    from takler.tui.menu import NODE_ACTIONS
+
+    text = _guide_page("tui.rst").lower()
+    missing = [
+        action.key
+        for action in NODE_ACTIONS
+        if action.key is not None and action.key not in text
+    ]
+    assert missing == []
+
+
+def test_guide_tui_connect_file_only_resolves_the_address(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The TUI passes no connect config to its client: the security section
+    of ``connect.yaml`` never reaches TLS / secret resolution there, which is
+    why the page tells the reader to use the environment variables instead.
+    """
+    pytest.importorskip("textual", reason="the tui extra is not installed")
+
+    for name in ("TAKLER_TLS_CA_FILE", "TAKLER_TLS_SERVER_NAME", "TAKLER_SECRET_FILE"):
+        monkeypatch.delenv(name, raising=False)
+
+    from takler.tui.service import TaklerTuiService
+
+    service = TaklerTuiService(host="localhost", port="33083")
+    assert service._inner.ca_file is None
+    assert service._inner.secret_file is None
+
+
+# ---------------------------------------------------------------------------
+# guide/ecflow-differences.rst
+# ---------------------------------------------------------------------------
+
+
+def test_guide_ecflow_differences_repeat_has_only_the_date_variant():
+    """``RepeatDate`` is the only concrete repeat type takler implements."""
+    from takler.core.repeat import RepeatBase, RepeatDate
+
+    concrete = [cls for cls in RepeatBase.__subclasses__() if not cls.__abstractmethods__]
+    assert concrete == [RepeatDate]
+
+
+def test_guide_ecflow_differences_default_node_status_is_limited():
+    """``default_node_status`` accepts only ``queued`` and ``complete`` —
+    the two defstatus values the differences page lists.
+    """
+    from takler.core import Bunch
+    from takler.core.state import NodeStatus
+    from takler.exceptions import UnsupportedValueError
+
+    task = Bunch("b").add_flow("f").add_task("t1")
+    task.set_default_node_status(NodeStatus.complete)
+    with pytest.raises(UnsupportedValueError):
+        task.set_default_node_status(NodeStatus.submitted)
+
+
+# ---------------------------------------------------------------------------
+# operation/deployment.rst and operation/connect-config.rst
+# ---------------------------------------------------------------------------
+
+OPERATION_DIR = PROJECT_ROOT / "doc" / "source" / "operation"
+
+
+def _operation_page(name: str) -> str:
+    return (OPERATION_DIR / name).read_text(encoding="utf-8")
+
+
+def test_operation_deployment_documents_every_server_option():
+    """operation/deployment.rst names every ``takler-server`` option."""
+    from typer.main import get_command
+
+    from takler.server.cli import app
+
+    command = get_command(app)
+    options = {
+        opt
+        for param in command.params
+        for opt in list(param.opts) + list(param.secondary_opts)
+        if opt.startswith("--")
+    }
+    text = _operation_page("deployment.rst")
+
+    assert sorted(opt for opt in options if opt not in text) == []
+
+
+def test_operation_connect_config_documents_every_field():
+    """Every connect.yaml field has a fully qualified literal in the page."""
+    from takler.server.connect_config import (
+        Address,
+        CheckpointSettings,
+        SecuritySettings,
+    )
+
+    expected = {
+        *(f"server.address.{f}" for f in Address.model_fields),
+        *(f"checkpoint.{f}" for f in CheckpointSettings.model_fields),
+        *(f"security.{f}" for f in SecuritySettings.model_fields),
+    }
+    text = _operation_page("connect-config.rst")
+
+    assert sorted(f for f in expected if f"``{f}``" not in text) == []
+
+
+def test_operation_connect_config_precedence_env_beats_file():
+    """The documented chain explicit > env > connect.yaml > default holds,
+    and a blank env value counts as "not provided".
+    """
+    from takler.server.connect_config import (
+        AuthMode,
+        ConnectConfig,
+        resolve_auth_mode,
+    )
+
+    config = ConnectConfig.model_validate(
+        {"server": {"address": {"hostname": "h", "ip": "i", "port": "1"}},
+         "security": {"auth_mode": "enabled"}}
+    )
+
+    # Environment beats the config file...
+    assert resolve_auth_mode(connect_config=config, env={"TAKLER_AUTH_MODE": "disabled"}) is AuthMode.DISABLED
+    # ...a blank environment value is "not provided", so the file applies...
+    assert resolve_auth_mode(connect_config=config, env={"TAKLER_AUTH_MODE": "  "}) is AuthMode.ENABLED
+    # ...and an explicit argument beats both.
+    assert resolve_auth_mode(
+        explicit="disabled", connect_config=config, env={"TAKLER_AUTH_MODE": "enabled"}
+    ) is AuthMode.DISABLED
+
+
+def test_operation_connect_config_invalid_enum_values_degrade_to_defaults():
+    """Unrecognized policy names fall back to the built-in defaults with a
+    warning rather than raising — the "never less resilient" rule the page
+    states.
+    """
+    from takler.server.connect_config import (
+        AuthMode,
+        ExceptionPolicy,
+        ZombiePolicy,
+    )
+
+    assert AuthMode.from_str("on") is AuthMode.DISABLED
+    assert ZombiePolicy.from_str("kill") is ZombiePolicy.FAIL
+    assert ExceptionPolicy.from_str("boom") is ExceptionPolicy.RESILIENT
+    # Case and separator tolerance documented on the page.
+    assert ExceptionPolicy.from_str("Fail-Fast") is ExceptionPolicy.FAIL_FAST
+
+
+def test_operation_connect_config_checkpoint_interval_below_minimum_falls_back():
+    """A snapshot period below 10 s is rejected and falls back to 120 s."""
+    from takler.core import Bunch
+    from takler.server.checkpoint import CheckpointManager
+
+    manager = CheckpointManager(bunch=Bunch("b"), interval=5)
+    assert manager.interval == 120.0
+
+
+def test_operation_deployment_server_address_precedence():
+    """Server-side address chain: --host/--port > connect.yaml > defaults."""
+    from takler.server.cli import resolve_address
+    from takler.server.connect_config import ConnectConfig
+
+    config = ConnectConfig.model_validate(
+        {"server": {"address": {"hostname": "cfg-host", "ip": "i", "port": "40000"}}}
+    )
+
+    assert resolve_address(None, None, config) == ("cfg-host", 40000)
+    assert resolve_address("cli-host", 1234, config) == ("cli-host", 1234)
+    assert resolve_address(None, None, None) == ("localhost", 33083)
