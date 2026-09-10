@@ -3272,3 +3272,318 @@ def test_develop_core_design_serialization_class_type_and_password():
     assert "job_password" not in blob
     assert "TAKLER_PASS" not in blob
     assert restored_task.job_password is None
+
+
+
+
+# ---------------------------------------------------------------------------
+# develop/protocol.rst, develop/contributing.rst and develop/extending.rst
+# ---------------------------------------------------------------------------
+
+
+def test_develop_index_lists_protocol_contributing_extending():
+    """develop/index.rst links the three batch-Q pages and they exist."""
+    text = _develop_page("index.rst")
+
+    for name in ("protocol", "contributing", "extending"):
+        assert name in text, name
+        assert (DEVELOP_DIR / f"{name}.rst").exists(), name
+
+
+def test_develop_protocol_documents_all_rpc_methods():
+    """Every RPC the TaklerServer service declares is named on the page."""
+    from takler.server.protocol import takler_pb2
+
+    text = _develop_page("protocol.rst")
+    service = takler_pb2.DESCRIPTOR.services_by_name["TaklerServer"]
+
+    methods = [m.name for m in service.methods]
+    assert len(methods) == 16
+    for name in methods:
+        assert f"``{name}``" in text, name
+
+    # The request/response message names an implementer has to look up.
+    for message in (
+        "ServiceResponse",
+        "ChildCommandOptions",
+        "InitCommand",
+        "ForceCommand",
+        "FreeDepCommand",
+        "LoadCommand",
+        "BeginCommand",
+        "ShowRequest",
+        "ShowResponse",
+    ):
+        assert f"``{message}``" in text, message
+
+
+def test_develop_protocol_error_code_names_documented():
+    """Every registered Error_Code name appears on the page (the full table
+    itself lives in operation/reference.rst, linked from the page)."""
+    from takler.server.protocol.error_code import ERROR_NAME_BY_CODE
+
+    text = _develop_page("protocol.rst")
+
+    for code, name in ERROR_NAME_BY_CODE.items():
+        assert name in text, (code, name)
+
+    assert ":doc:`/operation/reference`" in text
+    # The lookup rules the page states.
+    assert "``unknown``" in text
+    assert "``1``" in text
+    assert "``99``" in text
+
+
+def test_develop_protocol_metadata_keys_and_rejection_contract():
+    """The three credential metadata keys and the rejection classification
+    strings are documented exactly as the constants spell them."""
+    from takler.server.auth import (
+        CREDENTIAL_METADATA_KEYS,
+        SERVICE_METHOD_PREFIX,
+        RejectionReason,
+    )
+
+    text = _develop_page("protocol.rst")
+
+    for key in CREDENTIAL_METADATA_KEYS:
+        assert key in text, key
+        assert f"``{key}``" in text, key
+
+    for reason in RejectionReason:
+        assert reason.value in text, reason
+
+    assert "UNAUTHENTICATED" in text
+    assert "PERMISSION_DENIED" in text
+    # The privilege table is keyed by the fully qualified method name.
+    assert "/takler_protocol.TaklerServer/" in text
+    assert SERVICE_METHOD_PREFIX == "/takler_protocol.TaklerServer/"
+
+
+def test_develop_protocol_enums_match_generated_stub():
+    """ForceState and DepType values on the page match the generated stub,
+    and ForceState numbering deliberately differs from NodeStatus."""
+    from takler.core import NodeStatus
+    from takler.server.protocol import takler_pb2
+
+    text = _develop_page("protocol.rst")
+
+    for name, value in takler_pb2.ForceCommand.ForceState.items():
+        assert f"{name}={value}" in text, (name, value)
+    for name, value in takler_pb2.FreeDepCommand.DepType.items():
+        assert f"{name}={value}" in text, (name, value)
+
+    # The two numberings must not be conflated: force complete is 1 while
+    # NodeStatus.complete is 2.
+    assert takler_pb2.ForceCommand.ForceState.Value("complete") == 1
+    assert NodeStatus.complete.value == 2
+
+
+def test_develop_protocol_retry_contract_constants():
+    """The retry constants quoted on the page match the client contract."""
+    from takler.client.retry import (
+        DEFAULT_RETRY_WINDOW_BY_KIND,
+        DEFAULT_SINGLE_TIMEOUT,
+        ENV_RETRY_WINDOW,
+        CommandKind,
+    )
+
+    text = _develop_page("protocol.rst")
+
+    assert DEFAULT_SINGLE_TIMEOUT == 10.0
+    assert "10" in text
+    assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CHILD] == 86400.0
+    assert "86400" in text
+    assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CONTROL] == 60.0
+    assert ENV_RETRY_WINDOW == "TAKLER_TIMEOUT"
+    assert "TAKLER_TIMEOUT" in text
+    assert "min(2**(n-1), 60)" in text
+    for status in (
+        "UNAVAILABLE",
+        "DEADLINE_EXCEEDED",
+        "RESOURCE_EXHAUSTED",
+        "UNKNOWN",
+        "INVALID_ARGUMENT",
+        "NOT_FOUND",
+    ):
+        assert status in text, status
+
+
+def test_develop_contributing_matches_project_config():
+    """The contributing page stays in step with pyproject.toml: ruff rule
+    set, pytest import mode, the slow marker and the extras all match."""
+    import tomllib
+
+    text = _develop_page("contributing.rst")
+    pyproject = tomllib.loads(
+        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    for rule in pyproject["tool"]["ruff"]["lint"]["select"]:
+        assert f'"{rule}"' in text, rule
+
+    assert "--import-mode=importlib" in pyproject["tool"]["pytest"]["ini_options"]["addopts"]
+    assert "--import-mode=importlib" in text
+
+    markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
+    assert any(m.startswith("slow:") for m in markers)
+    assert "``slow``" in text
+
+    for extra in pyproject["project"]["optional-dependencies"]:
+        assert f"--extra {extra}" in text, extra
+
+    assert any(
+        req.startswith("setuptools_scm") for req in pyproject["build-system"]["requires"]
+    )
+    assert "setuptools_scm" in text
+
+
+class DocExampleMarkerTask(__import__("takler.core", fromlist=["Task"]).Task):
+    """A custom Task subclass defined at module level so that class_type
+    reflection can import it back by module path (the constraint the
+    extending page documents)."""
+
+    def __init__(self, name: str, marker_path=None):
+        from takler.core import Task
+
+        Task.__init__(self, name)
+        self.marker_path = marker_path
+
+    def to_dict(self):
+        from takler.core import Task
+
+        d = Task.to_dict(self)
+        d["marker_path"] = (
+            None if self.marker_path is None else str(self.marker_path)
+        )
+        return d
+
+    @classmethod
+    def fill_from_dict(cls, d, node, method=None):
+        from takler.core import SerializationType, Task
+
+        if method is None:
+            method = SerializationType.Status
+        Task.fill_from_dict(d=d, node=node, method=method)
+        node.marker_path = d.get("marker_path")
+        return node
+
+
+def test_develop_extending_run_template_order_and_do_run_gate():
+    """The documented run() template: before_run -> do_run -> after_run,
+    try_no increments and the job password rotates per run, and a do_run
+    returning False keeps the task out of submitted."""
+    from takler.core import NodeStatus, Task
+
+    calls = []
+
+    class RecordingTask(Task):
+        def before_run(self):
+            calls.append("before_run")
+            super().before_run()
+
+        def do_run(self):
+            calls.append("do_run")
+            return True
+
+        def after_run(self):
+            calls.append("after_run")
+            super().after_run()
+
+    task = RecordingTask("t")
+    task.run()
+    assert calls == ["before_run", "do_run", "after_run"]
+    assert task.state.node_status == NodeStatus.submitted
+    assert task.try_no == 1
+    first_password = task.job_password
+    assert first_password
+
+    task.requeue()
+    task.run()
+    assert task.try_no == 1  # requeue reset it, run incremented again
+    assert task.job_password != first_password
+
+    class FailingSubmissionTask(Task):
+        def do_run(self):
+            return False
+
+    failing = FailingSubmissionTask("t")
+    failing.run()
+    assert failing.state.node_status == NodeStatus.unknown
+    assert failing.try_no == 1  # before_run already ran
+
+
+def test_develop_extending_custom_task_class_type_roundtrip():
+    """The documented class_type reflection constraints: the custom class is
+    importable by module path, constructed with name only, and its extra
+    field is restored through fill_from_dict."""
+    import importlib
+    import json
+
+    from takler.core import Bunch, Flow
+
+    module = importlib.import_module(DocExampleMarkerTask.__module__)
+    assert module.DocExampleMarkerTask is DocExampleMarkerTask
+
+    bunch = Bunch()
+    flow = Flow("f")
+    flow.add_task(DocExampleMarkerTask("t1", marker_path="/tmp/marker.txt"))
+    bunch.add_flow(flow)
+
+    d = bunch.to_dict()
+    task_dict = d["flows"][0]["children"][0]
+    assert task_dict["class_type"] == {
+        "module": DocExampleMarkerTask.__module__,
+        "name": "DocExampleMarkerTask",
+    }
+
+    restored = Bunch.from_dict(json.loads(json.dumps(d)))
+    restored_task = restored.find_node("/f/t1")
+    assert isinstance(restored_task, DocExampleMarkerTask)
+    assert restored_task.marker_path == "/tmp/marker.txt"
+
+
+def test_develop_extending_task_decorator_inline_execution():
+    """The documented task decorator semantics: the function body runs
+    inline, between init() and complete()."""
+    from takler.core import NodeStatus, task
+
+    events = []
+
+    @task("t1")
+    def make(self=None):
+        events.append(("body", self.state.node_status))
+
+    inline_task = make()
+    inline_task.run()
+
+    assert events == [("body", NodeStatus.active)]
+    assert inline_task.state.node_status == NodeStatus.complete
+
+
+def test_develop_extending_logging_backend_contract():
+    """The documented backend ABC: LoggingBackend's three abstract methods
+    and NamedLogger's single log method; selection probes for loguru."""
+    from takler.logging.backends import LoggingBackend, NamedLogger, get_backend
+
+    assert set(LoggingBackend.__abstractmethods__) == {
+        "map_level",
+        "apply_config",
+        "get_named_logger",
+    }
+    assert set(NamedLogger.__abstractmethods__) == {"log"}
+
+    backend = get_backend()
+    assert type(backend).__name__ in ("LoguruBackend", "StdlibBackend")
+
+    text = _develop_page("extending.rst")
+    for needle in (
+        "``LoggingBackend``",
+        "``NamedLogger``",
+        "``map_level``",
+        "``apply_config``",
+        "``get_named_logger``",
+        "``select_backend()``",
+        "``reset_backend()``",
+        "``_BACKEND``",
+    ):
+        assert needle in text, needle
