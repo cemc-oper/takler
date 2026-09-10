@@ -2988,3 +2988,287 @@ def test_operation_troubleshooting_covers_documented_symptoms():
         "/guide/task-script",
     ]:
         assert f":doc:`{target}`" in text, target
+
+
+
+
+# ---------------------------------------------------------------------------
+# develop/architecture.rst and develop/core-design.rst
+# ---------------------------------------------------------------------------
+
+DEVELOP_DIR = PROJECT_ROOT / "doc" / "source" / "develop"
+
+
+def _develop_page(name: str) -> str:
+    return (DEVELOP_DIR / name).read_text(encoding="utf-8")
+
+
+def test_develop_index_lists_architecture_and_core_design():
+    """develop/index.rst links the two new pages and they exist."""
+    text = _develop_page("index.rst")
+
+    assert "architecture" in text
+    assert "core-design" in text
+    assert (DEVELOP_DIR / "architecture.rst").exists()
+    assert (DEVELOP_DIR / "core-design.rst").exists()
+
+
+def test_develop_architecture_documents_layers_and_components():
+    """The architecture page names every package layer and the server-side
+    components the assembling paragraph talks about."""
+    text = _develop_page("architecture.rst")
+
+    for needle in [
+        "``takler.core``",
+        "``takler.tasks``",
+        "``takler.server``",
+        "``takler.client``",
+        "``takler.tui``",
+        "``takler.logging``",
+        "``takler.exceptions``",
+        "``takler.visitor``",
+        "``TaklerService``",
+        "``Scheduler``",
+        "``CheckpointManager``",
+        "``ZombieDetector``",
+        "``AuthInterceptor``",
+        "``AuditLogger``",
+        "``TaklerService._handle_command``",
+        "``resolve_dependencies``",
+        "``ShellRunner``",
+        "``TaklerServer``",
+    ]:
+        assert needle in text, needle
+
+    for target in [
+        "/guide/cli",
+        "/guide/job-management",
+        "/guide/node-status",
+        "/guide/variables",
+        "/operation/security",
+        "/operation/checkpoint",
+        "/operation/resilience",
+        "/operation/audit",
+        "/operation/zombie",
+        "/operation/reference",
+        "/operation/troubleshooting",
+    ]:
+        assert f":doc:`{target}`" in text, target
+
+
+def test_develop_architecture_core_never_imports_upper_layers():
+    """The layering rule the page states: takler.core imports no server,
+    client, tui or tasks code; takler.tasks and the server stay independent
+    of each other (ShellScriptTask enters the server via class_type
+    reflection, not an import).
+    """
+    import re
+
+    src = PROJECT_ROOT / "src" / "takler"
+    import_re = re.compile(r"^\s*(?:from|import)\s+(takler\.[\w.]+)", re.M)
+
+    def imported_packages(directory: Path) -> set:
+        result = set()
+        for py_file in directory.rglob("*.py"):
+            if "__pycache__" in py_file.parts:
+                continue
+            for match in import_re.finditer(py_file.read_text(encoding="utf-8")):
+                result.add(match.group(1).split(".")[1])
+        return result
+
+    core_imports = imported_packages(src / "core")
+    assert core_imports <= {"exceptions", "logging", "constant"}
+
+    tasks_imports = imported_packages(src / "tasks")
+    assert "server" not in tasks_imports
+    assert "client" not in tasks_imports
+
+    server_imports = imported_packages(src / "server")
+    assert "tasks" not in server_imports
+    assert "client" not in server_imports
+    assert "tui" not in server_imports
+
+
+def test_develop_architecture_main_loop_processes_each_begun_flow():
+    """The documented main loop contract: an un-begun flow is skipped
+    entirely; a begun flow gets update_calendar + resolve_dependencies.
+    """
+    import datetime
+
+    from takler.core import Bunch, Flow, NodeStatus
+    from takler.server.scheduler import Scheduler
+
+    bunch = Bunch()
+    flow = Flow("f1")
+    task = flow.add_task("t1")
+    bunch.add_flow(flow)
+    scheduler = Scheduler(bunch)
+
+    # Un-begun: _process_flow is a no-op, the task stays unknown.
+    scheduler._process_flow("f1", flow, datetime.datetime.now())
+    assert task.state.node_status == NodeStatus.unknown
+    assert flow.calendar.flow_time is None
+
+    # Begun: calendar advances and dependency resolution runs the task.
+    flow.begin()
+    scheduler._process_flow("f1", flow, datetime.datetime.now())
+    assert flow.calendar.flow_time is not None
+    assert task.state.node_status == NodeStatus.submitted
+
+
+def test_develop_core_design_node_hierarchy():
+    """The documented class hierarchy of the node tree."""
+    from takler.core import Bunch, Flow, NodeContainer, Task
+    from takler.core.node import Node
+    from takler.tasks.shell import ShellScriptTask
+
+    assert issubclass(NodeContainer, Node)
+    assert issubclass(Task, Node)
+    assert issubclass(Flow, NodeContainer)
+    assert issubclass(Bunch, NodeContainer)
+    assert issubclass(ShellScriptTask, Task)
+
+
+def test_develop_core_design_most_significant_status_precedence():
+    """The documented precedence aborted > active > submitted > queued >
+    complete, and unknown for an empty list.
+    """
+    from takler.core import NodeStatus, Task
+    from takler.core.node import compute_most_significant_status
+
+    def task_with(status: NodeStatus) -> Task:
+        task = Task("t")
+        task.set_node_status_only(status)
+        return task
+
+    def significant(*statuses: NodeStatus) -> NodeStatus:
+        return compute_most_significant_status(
+            [task_with(s) for s in statuses], immediate=True
+        )
+
+    assert significant(NodeStatus.complete, NodeStatus.aborted) == NodeStatus.aborted
+    assert significant(NodeStatus.queued, NodeStatus.active) == NodeStatus.active
+    assert significant(NodeStatus.queued, NodeStatus.submitted) == NodeStatus.submitted
+    assert significant(NodeStatus.complete, NodeStatus.queued) == NodeStatus.queued
+    assert significant(NodeStatus.complete, NodeStatus.complete) == NodeStatus.complete
+    assert compute_most_significant_status([], immediate=True) == NodeStatus.unknown
+
+
+def test_develop_core_design_swim_recomputes_container_status():
+    """The documented swim direction: a leaf status change bubbles up and
+    the container recomputes from its children.
+    """
+    from takler.core import Flow, NodeStatus
+
+    flow = Flow("f")
+    t1 = flow.add_task("t1")
+    t2 = flow.add_task("t2")
+    flow.begin()
+
+    t1.set_node_status(NodeStatus.complete)
+    assert flow.state.node_status == NodeStatus.queued
+
+    t2.set_node_status(NodeStatus.complete)
+    assert flow.state.node_status == NodeStatus.complete
+
+
+def test_develop_core_design_task_status_gate_and_aborted_no_rerun():
+    """The documented Task.check_dependencies gates: complete / active /
+    submitted / unknown / aborted all refuse to run; queued passes.
+    """
+    from takler.core import NodeStatus, Task
+
+    for status in (
+        NodeStatus.complete,
+        NodeStatus.active,
+        NodeStatus.submitted,
+        NodeStatus.unknown,
+        NodeStatus.aborted,
+    ):
+        task = Task("t")
+        task.set_node_status_only(status)
+        assert task.check_dependencies() is False, status
+
+    queued_task = Task("t")
+    queued_task.set_node_status_only(NodeStatus.queued)
+    assert queued_task.check_dependencies() is True
+
+
+def test_develop_core_design_expression_lazy_parse_and_free_latch():
+    """The documented expression pipeline: add_trigger stores the string
+    without parsing; the first evaluation builds the AST; the free latch
+    short-circuits evaluation to True.
+    """
+    from takler.core import Flow
+    from takler.core.expression import Expression
+
+    flow = Flow("f")
+    task = flow.add_task("t1")
+    flow.add_task("t2")
+
+    task.add_trigger("/f/t2 == complete")
+    assert task.trigger_expression.ast is None
+
+    assert task.evaluate_trigger() is False
+    assert task.trigger_expression.ast is not None
+
+    # The free latch makes the expression always True without an AST.
+    expression = Expression("not a valid expression")
+    expression.set_free()
+    assert expression.evaluate() is True
+
+
+def test_develop_core_design_trigger_binds_at_first_evaluation():
+    """The documented binding behaviour: a trigger referencing a missing
+    node fails at first evaluation with NodeNotFoundError, not at
+    definition time.
+    """
+    import pytest
+
+    from takler.core import Flow
+    from takler.exceptions import NodeNotFoundError
+
+    flow = Flow("f")
+    task = flow.add_task("t1")
+    task.add_trigger("/f/missing == complete")  # definition time: no error
+
+    with pytest.raises(NodeNotFoundError):
+        task.evaluate_trigger()
+
+
+def test_develop_core_design_serialization_class_type_and_password():
+    """The documented serialization contract: class_type reflection
+    restores the concrete class (ShellScriptTask) without the server
+    importing takler.tasks, and job_password never enters the dict.
+    """
+    import json
+
+    from takler.core import Bunch, Flow, SerializationType
+    from takler.tasks.shell import ShellScriptTask
+
+    bunch = Bunch()
+    flow = Flow("f")
+    task = flow.add_task(ShellScriptTask("t1", script_path="t1.takler"))
+    # The task must be in a bunch before running: generated parameters such
+    # as TAKLER_JOB resolve TAKLER_HOME from the bunch's server state.
+    bunch.add_flow(flow)
+    task.increment_try_no()
+    assert task.job_password is not None
+
+    d = bunch.to_dict()
+    blob = json.dumps(d)
+
+    # class_type reflection metadata is present and round-trips.
+    task_dict = d["flows"][0]["children"][0]
+    assert task_dict["class_type"] == {
+        "module": "takler.tasks.shell.shell_script_task",
+        "name": "ShellScriptTask",
+    }
+    restored = Bunch.from_dict(json.loads(blob))
+    restored_task = restored.find_node("/f/t1")
+    assert isinstance(restored_task, ShellScriptTask)
+
+    # The one-time job password is deliberately not serialized.
+    assert "job_password" not in blob
+    assert "TAKLER_PASS" not in blob
+    assert restored_task.job_password is None
