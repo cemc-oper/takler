@@ -283,7 +283,8 @@ TLS 传输加密
 
 ``ping`` 不需要任何凭据，可以直接用于健康检查与监控。
 
-child 命令只校验 ``takler-pass`` 是否存在，取值是否与目标 task 当前的口令一致由 zombie 检测判定。
+child 命令只校验 ``takler-pass`` 是否存在，取值是否与目标 task 当前的口令一致由
+zombie 检测判定（见 :doc:`/operation/zombie` ）。
 
 被拒绝的请求不会进入命令处理逻辑，节点树状态保持不变；客户端以退出码 1 结束，
 并输出 ``PermissionDeniedError`` 与服务端返回的说明文本。日志、审计记录与 gRPC 状态说明中
@@ -320,46 +321,10 @@ zombie 检测与处置
 ---------------------
 
 一个 child 命令如果不属于服务当前记录的运行实例，就是 zombie，
-典型情形是 task 被 requeue 之后，旧作业才上报 ``complete``。
-
-三个判定条件按顺序检查，命中第一个即停止：
-
-.. list-table::
-    :header-rows: 1
-    :widths: 12 88
-
-    * - 条件
-      - 含义
-    * - ``Z1``
-      - 命令携带的口令与目标 task 当前口令不一致，或目标 task 没有口令。仅在 ``auth_mode`` 为 ``enabled`` 时判定
-    * - ``Z2``
-      - 目标 task 既不是 submitted 也不是 active 状态，两种鉴权模式下都判定
-    * - ``Z3``
-      - ``init`` 命令携带的 ``task_id`` 与 active 状态目标 task 已记录的取值不一致，两种鉴权模式下都判定
-
-``zombie_policy`` 是服务端全局设置，取三个值：
-
-.. list-table::
-    :header-rows: 1
-    :widths: 15 85
-
-    * - 取值
-      - 处置方式
-    * - ``fail``
-      - 默认值。不改变目标 task 的任何状态，返回 ``flag=31``，客户端以退出码 3 结束并输出分类名 ``zombie``
-    * - ``fob``
-      - 不改变目标 task 的任何状态，但返回成功，旧作业静默继续
-    * - ``adopt``
-      - 执行该命令，并把命令携带的口令与 ``task_id`` 收养为目标 task 的取值
-
-每次处置都记录一条含节点路径、命令名、命中的条件、生效的策略与目标 task 当前状态的 WARNING，
-并写出一条审计记录。日志与审计记录都不含口令取值。
-
-.. note::
-
-    ``Z2`` 与 ``Z3`` 在 ``auth_mode`` 为 ``disabled`` 时同样生效，
-    这是本版本对既有部署可见的行为改变：requeue 之后旧作业上报的 child 命令会被拒绝，
-    而不再静默污染新实例的状态。升级后如需临时保留旧行为，可以把 ``zombie_policy`` 设为 ``fob``。
+典型情形是 task 被 requeue 之后，旧作业才上报 ``complete`` 。
+判定条件 (``Z1`` / ``Z2`` / ``Z3``) 、三种处置策略
+(``fail`` / ``fob`` / ``adopt``) 与 ``zombie_policy`` 的配置方式见
+:doc:`/operation/zombie` 。
 
 
 审计日志
@@ -453,8 +418,5 @@ child 命令与运维命令都因缺少凭据被拒绝。
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 快照文件 (``takler.check``) 的顶层 ``job_passwords`` 键保存着全部在途作业的一次性口令，
-文件权限也因此收紧为 ``0600``。需要把快照发给他人分析时，先做脱敏：
-
-.. code-block:: bash
-
-    jq 'del(.job_passwords)' takler.check > takler.check.shared
+文件权限也因此收紧为 ``0600``。发给他人分析前的脱敏方法见
+:doc:`/operation/checkpoint` 的「发给他人分析前的脱敏」一节。

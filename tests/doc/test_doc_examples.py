@@ -2263,3 +2263,222 @@ def test_operation_deployment_server_address_precedence():
     assert resolve_address(None, None, config) == ("cfg-host", 40000)
     assert resolve_address("cli-host", 1234, config) == ("cli-host", 1234)
     assert resolve_address(None, None, None) == ("localhost", 33083)
+
+
+# ---------------------------------------------------------------------------
+# operation/checkpoint.rst and operation/zombie.rst
+# ---------------------------------------------------------------------------
+
+
+def _checkpoint_bunch():
+    """One submitted task and one complete task, each holding a password.
+
+    The passwords come from ``run`` / ``increment_try_no``, so both tasks hold
+    a non-empty one and only the status decides what a snapshot persists.
+    """
+    from takler.core import Bunch, Flow
+
+    bunch = Bunch("b")
+    flow1 = Flow("flow1")
+    with flow1:
+        flow1.add_task("submitted_task")
+        flow1.add_task("complete_task")
+    bunch.add_flow(flow1)
+    flow1.begin()
+
+    flow1.find_node("/flow1/submitted_task").run()
+    complete_task = flow1.find_node("/flow1/complete_task")
+    complete_task.increment_try_no()
+    complete_task.complete()
+    return bunch
+
+
+def test_operation_checkpoint_documents_snapshot_keys():
+    """The page names every top-level key a snapshot carries."""
+    import json
+
+    from takler.core import Bunch
+    from takler.server.checkpoint import CheckpointManager
+
+    payload = json.loads(CheckpointManager(bunch=Bunch("b")).build_payload())
+    text = _operation_page("checkpoint.rst")
+
+    assert sorted(k for k in payload if f"``{k}``" not in text) == []
+
+
+def test_operation_checkpoint_write_permissions_and_backup(tmp_path):
+    """Snapshot files are created 0600, and the backup appears with the
+    second write — the two facts the page states about the files on disk.
+    """
+    import stat
+
+    from takler.server.checkpoint import CheckpointManager
+
+    manager = CheckpointManager(
+        bunch=_checkpoint_bunch(), checkpoint_file=tmp_path / "takler.check"
+    )
+    assert manager.write_checkpoint()
+    assert stat.S_IMODE(manager.checkpoint_file.stat().st_mode) == 0o600
+    # The first write has no previous snapshot to copy aside.
+    assert not manager.backup_file.exists()
+
+    assert manager.write_checkpoint()
+    assert manager.backup_file.exists()
+    assert stat.S_IMODE(manager.backup_file.stat().st_mode) == 0o600
+
+
+def test_operation_checkpoint_persists_only_in_flight_passwords():
+    """Only submitted/active tasks have their password persisted — the
+    reason a restarted server keeps accepting in-flight job reports.
+    """
+    import json
+
+    from takler.server.checkpoint import JOB_PASSWORDS_KEY, CheckpointManager
+
+    payload = json.loads(
+        CheckpointManager(bunch=_checkpoint_bunch()).build_payload()
+    )
+    passwords = payload[JOB_PASSWORDS_KEY]
+
+    assert "/flow1/submitted_task" in passwords
+    assert "/flow1/complete_task" not in passwords
+
+
+def test_operation_checkpoint_restore_falls_back_to_backup(tmp_path):
+    """The documented chain: corrupt Checkpoint_File -> backup -> empty."""
+    from takler.core import Bunch
+    from takler.server.checkpoint import CheckpointManager
+
+    writer = CheckpointManager(
+        bunch=_checkpoint_bunch(), checkpoint_file=tmp_path / "takler.check"
+    )
+    assert writer.write_checkpoint() and writer.write_checkpoint()
+
+    (tmp_path / "takler.check").write_text("not json", encoding="utf-8")
+    target = CheckpointManager(
+        bunch=Bunch("b"), checkpoint_file=tmp_path / "takler.check"
+    )
+    assert target.restore()
+    assert target.bunch.find_node("/flow1/submitted_task") is not None
+
+    (tmp_path / "takler.check").unlink()
+    (tmp_path / "takler.check.b").unlink()
+    empty = CheckpointManager(bunch=Bunch("b"), checkpoint_file=tmp_path / "takler.check")
+    assert not empty.restore()
+
+
+def _zombie_task(status, job_password, task_id="job-1"):
+    """A ``/flow1/task1`` in the state a zombie assertion needs."""
+    from takler.core import Flow
+
+    flow1 = Flow("flow1")
+    with flow1:
+        flow1.add_task("task1")
+    flow1.begin()
+
+    task1 = flow1.find_node("/flow1/task1")
+    task1.set_node_status(node_status=status)
+    task1.task_id = task_id
+    task1.job_password = job_password
+    return task1
+
+
+def test_operation_zombie_detection_order_and_auth_mode():
+    """The old job reporting after a requeue hits Z1 with authentication
+    enabled and Z2 without — the order and the auth-mode relation the page
+    states.
+    """
+    from takler.core.state import NodeStatus
+    from takler.server.auth import CallCredentials
+    from takler.server.connect_config import AuthMode
+    from takler.server.zombie import ZombieCondition, detect_zombie_condition
+
+    task = _zombie_task(status=NodeStatus.queued, job_password=None)
+    credentials = CallCredentials(job_password="stale-password")
+
+    assert (
+        detect_zombie_condition(
+            task, "complete", auth_mode=AuthMode.ENABLED, credentials=credentials
+        )
+        is ZombieCondition.Z1
+    )
+    assert (
+        detect_zombie_condition(
+            task, "complete", auth_mode=AuthMode.DISABLED, credentials=credentials
+        )
+        is ZombieCondition.Z2
+    )
+
+
+def test_operation_zombie_policies():
+    """fail raises and changes nothing, fob answers success and changes
+    nothing, adopt runs the command and takes over the password.
+    """
+    import pytest
+
+    from takler.core.state import NodeStatus
+    from takler.exceptions import ZombieError
+    from takler.server.auth import CallCredentials
+    from takler.server.connect_config import ZombiePolicy
+    from takler.server.zombie import (
+        ChildAction,
+        ZombieCondition,
+        dispose_zombie,
+    )
+
+    def snapshot(task):
+        return (
+            task.state.node_status,
+            task.task_id,
+            task.try_no,
+            task.aborted_reason,
+            task.job_password,
+        )
+
+    task = _zombie_task(status=NodeStatus.queued, job_password=None)
+    credentials = CallCredentials(job_password="new-password")
+
+    with pytest.raises(ZombieError):
+        dispose_zombie(
+            task, "complete", ZombieCondition.Z2,
+            policy=ZombiePolicy.FAIL, credentials=credentials,
+        )
+    assert snapshot(task) == (NodeStatus.queued, "job-1", 0, None, None)
+
+    assert (
+        dispose_zombie(
+            task, "complete", ZombieCondition.Z2,
+            policy=ZombiePolicy.FOB, credentials=credentials,
+        )
+        is ChildAction.SKIP
+    )
+    assert snapshot(task) == (NodeStatus.queued, "job-1", 0, None, None)
+
+    assert (
+        dispose_zombie(
+            task, "complete", ZombieCondition.Z2,
+            policy=ZombiePolicy.ADOPT, credentials=credentials,
+        )
+        is ChildAction.PROCEED
+    )
+    assert task.job_password == "new-password"
+
+    # A blank takler-pass counts as "not carried" and is not adopted.
+    task.job_password = None
+    dispose_zombie(
+        task, "complete", ZombieCondition.Z2,
+        policy=ZombiePolicy.ADOPT, credentials=CallCredentials(job_password="  "),
+    )
+    assert task.job_password is None
+
+
+def test_operation_zombie_flag_and_exit_code():
+    """fail surfaces as flag=31, which both clients map to exit code 3 —
+    the contract the policy table documents.
+    """
+    from takler.client.exit_code import exit_code_for_error_code
+    from takler.exceptions import ZombieError
+    from takler.server.protocol.error_code import error_code_for_exception
+
+    assert error_code_for_exception(ZombieError("x")) == 31
+    assert exit_code_for_error_code(31) == 3
