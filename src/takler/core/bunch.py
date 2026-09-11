@@ -25,6 +25,7 @@ class Bunch(NodeContainer):
     # Serialization ---------------------------------------
 
     def to_dict(self) -> Dict:
+        """Serialize the bunch: the node tree, every flow, and the server state."""
         result = super().to_dict()
         result["flows"] = [flow.to_dict() for key, flow in self.flows.items()]
         result["server_state"] = self.server_state.to_dict()

@@ -1,6 +1,6 @@
 """Main Textual application for the takler TUI.
 
-The app is the orchestrator: it owns the gRPC :class:`TaklerTuiService`,
+The app is the orchestrator: it owns the gRPC :class:`~takler.tui.service.TaklerTuiService`,
 runs the background refresh worker, routes a fetched
 :class:`~takler.tui.show_parser.ShowSnapshot` into the tree / tabs /
 toolbar, wires the per-node menus, and dispatches server control

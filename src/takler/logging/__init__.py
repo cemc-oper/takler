@@ -136,7 +136,7 @@ def configure(
     (Requirement 4.2).
 
     An invalid explicit ``level`` is a programming error at the API boundary:
-    :func:`resolve_config` raises :class:`InvalidLogLevelError` *before* any
+    :func:`~takler.logging.config.resolve_config` raises :class:`~takler.logging.errors.InvalidLogLevelError` *before* any
     sink is torn down, so the previously active configuration is left unchanged
     (Requirement 2.3). When the ``TAKLER_LOG_LEVEL`` environment variable holds
     an invalid value and no explicit ``level`` overrides it, configuration
@@ -145,7 +145,7 @@ def configure(
 
     Args:
         level: Target log level name (case-insensitive). An unrecognized value
-            raises :class:`InvalidLogLevelError`.
+            raises :class:`~takler.logging.errors.InvalidLogLevelError`.
         log_file: Path for an optional rotating file sink.
         console: Whether to emit records to the console sink. ``None`` leaves
             the default (console enabled) in effect.
@@ -231,7 +231,7 @@ def _warn_on_invalid_env_level(resolved: ResolvedConfig) -> None:
     """Emit a console WARNING when the env log level was invalid.
 
     When ``TAKLER_LOG_LEVEL`` held a non-empty but unrecognized value (and no
-    explicit level overrode it), :func:`resolve_config` falls back to INFO and
+    explicit level overrode it), :func:`~takler.logging.config.resolve_config` falls back to INFO and
     records the offending value on :attr:`ResolvedConfig.invalid_env_level`.
     This emits a WARNING naming that value through the console sink, which by
     now exists because the configuration has already been applied

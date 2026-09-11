@@ -60,7 +60,7 @@ class ResolvedConfig:
     precedence resolution.
 
     Attributes:
-        level: The effective :class:`LogLevel`. Defaults to ``INFO``.
+        level: The effective :class:`~takler.logging.levels.LogLevel`. Defaults to ``INFO``.
         console: Whether the console sink is enabled. Defaults to ``True``.
         log_file: Path for an optional file sink, or ``None`` for no file
             sink.

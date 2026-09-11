@@ -796,8 +796,7 @@ def test_step10_zombie_conditions_z1_and_z3():
     # ...and fires once authentication is enabled.
     auth_detector = ZombieDetector(auth_mode=AuthMode.ENABLED)
     assert (
-        auth_detector.detect(task1, "complete", credentials=stale)
-        is ZombieCondition.Z1
+        auth_detector.detect(task1, "complete", credentials=stale) is ZombieCondition.Z1
     )
     current = CallCredentials(job_password=task1.job_password)
     assert auth_detector.detect(task1, "complete", credentials=current) is None
@@ -854,7 +853,9 @@ def test_step10_checkpoint_restore_keeps_in_flight_tasks(tmp_path):
     assert detector.detect(restored_task1, "complete") is None
     assert (
         detector.detect(
-            restored_task1, "complete", credentials=CallCredentials(job_password=password)
+            restored_task1,
+            "complete",
+            credentials=CallCredentials(job_password=password),
         )
         is None
     )
@@ -988,15 +989,11 @@ def test_guide_serialization_tree_restores_definition_status_restores_state():
 
     tree_copy = Flow.from_dict(d, method=SerializationType.Tree)
     assert tree_copy.begun is False
-    assert (
-        tree_copy.find_node("/test/t1").state.node_status == NodeStatus.unknown
-    )
+    assert tree_copy.find_node("/test/t1").state.node_status == NodeStatus.unknown
 
     status_copy = Flow.from_dict(d, method=SerializationType.Status)
     assert status_copy.begun is True
-    assert (
-        status_copy.find_node("/test/t1").state.node_status == NodeStatus.active
-    )
+    assert status_copy.find_node("/test/t1").state.node_status == NodeStatus.active
 
 
 def test_guide_bunch_holds_multiple_flows_and_server_parameters():
@@ -1739,9 +1736,7 @@ def test_guide_attributes_in_limit_reference_resolution():
     task1 = group1.add_task("t1")
     task1.add_in_limit("outer")
     assert task1.in_limit_manager.in_limit() is True
-    assert task1.in_limit_manager.in_limit_list[0].limit is group1.find_limit(
-        "outer"
-    )
+    assert task1.in_limit_manager.in_limit_list[0].limit is group1.find_limit("outer")
 
     # Explicit node_path searches only that node: /test/t2 has no limit.
     task2 = group1.add_task("t2")
@@ -1860,15 +1855,11 @@ def test_guide_attributes_time_latch_holds_until_requeue():
     flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
     assert task1.resolve_time_dependencies() is False
 
-    flow.update_calendar(
-        flow.calendar.last_real_time + datetime.timedelta(minutes=1)
-    )
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
     assert task1.resolve_time_dependencies() is True
 
     # The latch holds after the matching minute has passed.
-    flow.update_calendar(
-        flow.calendar.last_real_time + datetime.timedelta(minutes=1)
-    )
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
     assert task1.resolve_time_dependencies() is True
 
     task1.requeue()
@@ -1887,15 +1878,11 @@ def test_guide_attributes_time_missed_minute_waits_for_next_day():
     flow = Flow("test")
     flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
     # The calendar moves past 12:00 before the attribute exists.
-    flow.update_calendar(
-        flow.calendar.last_real_time + datetime.timedelta(minutes=2)
-    )
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=2))
 
     task1 = flow.add_task("t1")
     task1.add_time("12:00")
-    flow.update_calendar(
-        flow.calendar.last_real_time + datetime.timedelta(minutes=1)
-    )
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
     assert task1.resolve_time_dependencies() is False
 
     # Next day at 12:00 the minute matches and the latch is set
@@ -1937,9 +1924,7 @@ def test_guide_attributes_calendar_and_requeue():
     flow = Flow("test")
     task1 = flow.add_task("t1")
     flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
-    flow.update_calendar(
-        flow.calendar.last_real_time + datetime.timedelta(minutes=5)
-    )
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=5))
     assert flow.calendar.flow_time == datetime.datetime(2024, 1, 1, 12, 4)
 
     task1.set_node_status(NodeStatus.complete)
@@ -2134,7 +2119,9 @@ def test_guide_ecflow_differences_repeat_has_only_the_date_variant():
     """``RepeatDate`` is the only concrete repeat type takler implements."""
     from takler.core.repeat import RepeatBase, RepeatDate
 
-    concrete = [cls for cls in RepeatBase.__subclasses__() if not cls.__abstractmethods__]
+    concrete = [
+        cls for cls in RepeatBase.__subclasses__() if not cls.__abstractmethods__
+    ]
     assert concrete == [RepeatDate]
 
 
@@ -2210,18 +2197,31 @@ def test_operation_connect_config_precedence_env_beats_file():
     )
 
     config = ConnectConfig.model_validate(
-        {"server": {"address": {"hostname": "h", "ip": "i", "port": "1"}},
-         "security": {"auth_mode": "enabled"}}
+        {
+            "server": {"address": {"hostname": "h", "ip": "i", "port": "1"}},
+            "security": {"auth_mode": "enabled"},
+        }
     )
 
     # Environment beats the config file...
-    assert resolve_auth_mode(connect_config=config, env={"TAKLER_AUTH_MODE": "disabled"}) is AuthMode.DISABLED
+    assert (
+        resolve_auth_mode(connect_config=config, env={"TAKLER_AUTH_MODE": "disabled"})
+        is AuthMode.DISABLED
+    )
     # ...a blank environment value is "not provided", so the file applies...
-    assert resolve_auth_mode(connect_config=config, env={"TAKLER_AUTH_MODE": "  "}) is AuthMode.ENABLED
+    assert (
+        resolve_auth_mode(connect_config=config, env={"TAKLER_AUTH_MODE": "  "})
+        is AuthMode.ENABLED
+    )
     # ...and an explicit argument beats both.
-    assert resolve_auth_mode(
-        explicit="disabled", connect_config=config, env={"TAKLER_AUTH_MODE": "enabled"}
-    ) is AuthMode.DISABLED
+    assert (
+        resolve_auth_mode(
+            explicit="disabled",
+            connect_config=config,
+            env={"TAKLER_AUTH_MODE": "enabled"},
+        )
+        is AuthMode.DISABLED
+    )
 
 
 def test_operation_connect_config_invalid_enum_values_degrade_to_defaults():
@@ -2335,9 +2335,7 @@ def test_operation_checkpoint_persists_only_in_flight_passwords():
 
     from takler.server.checkpoint import JOB_PASSWORDS_KEY, CheckpointManager
 
-    payload = json.loads(
-        CheckpointManager(bunch=_checkpoint_bunch()).build_payload()
-    )
+    payload = json.loads(CheckpointManager(bunch=_checkpoint_bunch()).build_payload())
     passwords = payload[JOB_PASSWORDS_KEY]
 
     assert "/flow1/submitted_task" in passwords
@@ -2363,7 +2361,9 @@ def test_operation_checkpoint_restore_falls_back_to_backup(tmp_path):
 
     (tmp_path / "takler.check").unlink()
     (tmp_path / "takler.check.b").unlink()
-    empty = CheckpointManager(bunch=Bunch("b"), checkpoint_file=tmp_path / "takler.check")
+    empty = CheckpointManager(
+        bunch=Bunch("b"), checkpoint_file=tmp_path / "takler.check"
+    )
     assert not empty.restore()
 
 
@@ -2440,15 +2440,21 @@ def test_operation_zombie_policies():
 
     with pytest.raises(ZombieError):
         dispose_zombie(
-            task, "complete", ZombieCondition.Z2,
-            policy=ZombiePolicy.FAIL, credentials=credentials,
+            task,
+            "complete",
+            ZombieCondition.Z2,
+            policy=ZombiePolicy.FAIL,
+            credentials=credentials,
         )
     assert snapshot(task) == (NodeStatus.queued, "job-1", 0, None, None)
 
     assert (
         dispose_zombie(
-            task, "complete", ZombieCondition.Z2,
-            policy=ZombiePolicy.FOB, credentials=credentials,
+            task,
+            "complete",
+            ZombieCondition.Z2,
+            policy=ZombiePolicy.FOB,
+            credentials=credentials,
         )
         is ChildAction.SKIP
     )
@@ -2456,8 +2462,11 @@ def test_operation_zombie_policies():
 
     assert (
         dispose_zombie(
-            task, "complete", ZombieCondition.Z2,
-            policy=ZombiePolicy.ADOPT, credentials=credentials,
+            task,
+            "complete",
+            ZombieCondition.Z2,
+            policy=ZombiePolicy.ADOPT,
+            credentials=credentials,
         )
         is ChildAction.PROCEED
     )
@@ -2466,8 +2475,11 @@ def test_operation_zombie_policies():
     # A blank takler-pass counts as "not carried" and is not adopted.
     task.job_password = None
     dispose_zombie(
-        task, "complete", ZombieCondition.Z2,
-        policy=ZombiePolicy.ADOPT, credentials=CallCredentials(job_password="  "),
+        task,
+        "complete",
+        ZombieCondition.Z2,
+        policy=ZombiePolicy.ADOPT,
+        credentials=CallCredentials(job_password="  "),
     )
     assert task.job_password is None
 
@@ -2509,24 +2521,50 @@ def test_operation_audit_documents_record_shape():
     import json
 
     text = _operation_page("audit.rst")
-    for key in ("timestamp", "event", "command", "user", "peer", "target",
-                "outcome", "error_code"):
+    for key in (
+        "timestamp",
+        "event",
+        "command",
+        "user",
+        "peer",
+        "target",
+        "outcome",
+        "error_code",
+    ):
         assert f"``{key}``" in text
-    for value in (EVENT_CONTROL, EVENT_DENIED, EVENT_ZOMBIE,
-                  OUTCOME_SUCCESS, OUTCOME_ERROR, OUTCOME_DENIED, OUTCOME_ZOMBIE,
-                  "unknown"):
+    for value in (
+        EVENT_CONTROL,
+        EVENT_DENIED,
+        EVENT_ZOMBIE,
+        OUTCOME_SUCCESS,
+        OUTCOME_ERROR,
+        OUTCOME_DENIED,
+        OUTCOME_ZOMBIE,
+        "unknown",
+    ):
         assert f"``{value}``" in text
     assert f"``{DENIED_ERROR_CODE}``" in text
 
     # Field order in the file is the documented key order.
     line = AuditRecord(
-        timestamp=audit_timestamp(), event=EVENT_CONTROL, command="requeue",
-        user="oper", peer="ipv4:10.0.0.9:51234", target=["/flow1/task1"],
-        outcome=OUTCOME_SUCCESS, error_code=0,
+        timestamp=audit_timestamp(),
+        event=EVENT_CONTROL,
+        command="requeue",
+        user="oper",
+        peer="ipv4:10.0.0.9:51234",
+        target=["/flow1/task1"],
+        outcome=OUTCOME_SUCCESS,
+        error_code=0,
     ).to_json_line()
     assert list(json.loads(line)) == [
-        "timestamp", "event", "command", "user", "peer", "target",
-        "outcome", "error_code",
+        "timestamp",
+        "event",
+        "command",
+        "user",
+        "peer",
+        "target",
+        "outcome",
+        "error_code",
     ]
 
 
@@ -2540,9 +2578,14 @@ def test_operation_audit_one_record_one_line():
     from takler.server.audit import AuditRecord
 
     record = AuditRecord(
-        timestamp="2026-07-15T10:30:00.123456", event="control",
-        command="requeue", user="oper", peer="unknown",
-        target=["/流程1/任务 1"], outcome="success", error_code=0,
+        timestamp="2026-07-15T10:30:00.123456",
+        event="control",
+        command="requeue",
+        user="oper",
+        peer="unknown",
+        target=["/流程1/任务 1"],
+        outcome="success",
+        error_code=0,
     )
     line = record.to_json_line()
 
@@ -2560,9 +2603,10 @@ def test_operation_audit_command_name_derivation():
     from takler.server.audit import audit_command_name
 
     assert audit_command_name("RunCommandFreeDep") == "free_dep"
-    assert audit_command_name(
-        "/takler_protocol.TaklerServer/RunCommandRequeue"
-    ) == "requeue"
+    assert (
+        audit_command_name("/takler_protocol.TaklerServer/RunCommandRequeue")
+        == "requeue"
+    )
     assert audit_command_name("RunRequestShow") == "show"
 
 
@@ -2574,9 +2618,14 @@ def test_operation_audit_audited_command_set():
     from takler.server.network_service import CONTROL_METHOD_NAMES
 
     assert sorted(CONTROL_METHOD_NAMES) == [
-        "RunCommandBegin", "RunCommandForce", "RunCommandFreeDep",
-        "RunCommandLoad", "RunCommandRequeue", "RunCommandResume",
-        "RunCommandRun", "RunCommandSuspend",
+        "RunCommandBegin",
+        "RunCommandForce",
+        "RunCommandFreeDep",
+        "RunCommandLoad",
+        "RunCommandRequeue",
+        "RunCommandResume",
+        "RunCommandRun",
+        "RunCommandSuspend",
     ]
 
 
@@ -2589,11 +2638,18 @@ def test_operation_audit_file_created_owner_only(tmp_path):
     from takler.server.audit import AUDIT_FILE_MODE, AuditLogger, AuditRecord
 
     audit_file = tmp_path / "sub" / "audit.jsonl"
-    AuditLogger(audit_file).record(AuditRecord(
-        timestamp="2026-07-15T10:30:00.123456", event="control",
-        command="requeue", user="oper", peer="unknown", target=[],
-        outcome="success", error_code=0,
-    ))
+    AuditLogger(audit_file).record(
+        AuditRecord(
+            timestamp="2026-07-15T10:30:00.123456",
+            event="control",
+            command="requeue",
+            user="oper",
+            peer="unknown",
+            target=[],
+            outcome="success",
+            error_code=0,
+        )
+    )
 
     assert audit_file.exists()
     assert stat.S_IMODE(audit_file.stat().st_mode) == AUDIT_FILE_MODE == 0o600
@@ -2607,8 +2663,11 @@ def test_operation_logging_documents_env_vars_and_levels():
     from takler.logging.levels import LEVEL_ORDER
 
     text = _operation_page("logging.rst")
-    for env in (logging_config.ENV_LOG_LEVEL, logging_config.ENV_LOG_FILE,
-                logging_config.ENV_AUDIT_FILE):
+    for env in (
+        logging_config.ENV_LOG_LEVEL,
+        logging_config.ENV_LOG_FILE,
+        logging_config.ENV_AUDIT_FILE,
+    ):
         assert f"``{env}``" in text
     for level in LEVEL_ORDER:
         assert f"``{level.name}``" in text and f"{level.rank}" in text
@@ -2644,7 +2703,9 @@ def test_operation_logging_format_layout():
 
     line = format_record(
         datetime(2026, 6, 30, 11, 38, 10, 123000),
-        LogLevel.INFO, "server.scheduler", "scheduler shutting down...",
+        LogLevel.INFO,
+        "server.scheduler",
+        "scheduler shutting down...",
     )
     assert re.fullmatch(
         r"2026-06-30T11:38:10\.123[+-]\d{2}:\d{2} "
@@ -2692,16 +2753,19 @@ def test_operation_resilience_documents_policy_configuration():
     # CLI option > env > built-in default; unrecognized degrades with a
     # warning rather than raising (already pinned for connect-config, here
     # for the full chain this page states).
-    assert resolve_exception_policy(
-        "fail_fast", {"TAKLER_EXCEPTION_POLICY": "resilient"}
-    ) is ExceptionPolicy.FAIL_FAST
-    assert resolve_exception_policy(
-        None, {"TAKLER_EXCEPTION_POLICY": "fail-fast"}
-    ) is ExceptionPolicy.FAIL_FAST
+    assert (
+        resolve_exception_policy("fail_fast", {"TAKLER_EXCEPTION_POLICY": "resilient"})
+        is ExceptionPolicy.FAIL_FAST
+    )
+    assert (
+        resolve_exception_policy(None, {"TAKLER_EXCEPTION_POLICY": "fail-fast"})
+        is ExceptionPolicy.FAIL_FAST
+    )
     assert resolve_exception_policy(None, {}) is ExceptionPolicy.RESILIENT
-    assert resolve_exception_policy(
-        None, {"TAKLER_EXCEPTION_POLICY": "boom"}
-    ) is ExceptionPolicy.RESILIENT
+    assert (
+        resolve_exception_policy(None, {"TAKLER_EXCEPTION_POLICY": "boom"})
+        is ExceptionPolicy.RESILIENT
+    )
 
 
 def _isolation_bunch():
@@ -2739,7 +2803,8 @@ def test_operation_resilience_per_flow_isolation():
     bunch = _isolation_bunch()
     fatal_calls = []
     scheduler = Scheduler(
-        bunch, interval_main_loop=0.01,
+        bunch,
+        interval_main_loop=0.01,
         fatal_shutdown=lambda: fatal_calls.append(1),
     )
 
@@ -2780,7 +2845,8 @@ def test_operation_resilience_fail_fast_triggers_clean_shutdown():
     bunch = _isolation_bunch()
     fatal_calls = []
     scheduler = Scheduler(
-        bunch, interval_main_loop=0.01,
+        bunch,
+        interval_main_loop=0.01,
         exception_policy=ExceptionPolicy.FAIL_FAST,
         fatal_shutdown=lambda: fatal_calls.append(1),
     )
@@ -2789,8 +2855,6 @@ def test_operation_resilience_fail_fast_triggers_clean_shutdown():
     asyncio.run(scheduler.main_loop())
 
     assert fatal_calls == [1]
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2988,8 +3052,6 @@ def test_operation_troubleshooting_covers_documented_symptoms():
         "/guide/task-script",
     ]:
         assert f":doc:`{target}`" in text, target
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -3274,8 +3336,6 @@ def test_develop_core_design_serialization_class_type_and_password():
     assert restored_task.job_password is None
 
 
-
-
 # ---------------------------------------------------------------------------
 # develop/protocol.rst, develop/contributing.rst and develop/extending.rst
 # ---------------------------------------------------------------------------
@@ -3421,7 +3481,10 @@ def test_develop_contributing_matches_project_config():
     for rule in pyproject["tool"]["ruff"]["lint"]["select"]:
         assert f'"{rule}"' in text, rule
 
-    assert "--import-mode=importlib" in pyproject["tool"]["pytest"]["ini_options"]["addopts"]
+    assert (
+        "--import-mode=importlib"
+        in pyproject["tool"]["pytest"]["ini_options"]["addopts"]
+    )
     assert "--import-mode=importlib" in text
 
     markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
@@ -3432,7 +3495,8 @@ def test_develop_contributing_matches_project_config():
         assert f"--extra {extra}" in text, extra
 
     assert any(
-        req.startswith("setuptools_scm") for req in pyproject["build-system"]["requires"]
+        req.startswith("setuptools_scm")
+        for req in pyproject["build-system"]["requires"]
     )
     assert "setuptools_scm" in text
 
@@ -3452,9 +3516,7 @@ class DocExampleMarkerTask(__import__("takler.core", fromlist=["Task"]).Task):
         from takler.core import Task
 
         d = Task.to_dict(self)
-        d["marker_path"] = (
-            None if self.marker_path is None else str(self.marker_path)
-        )
+        d["marker_path"] = None if self.marker_path is None else str(self.marker_path)
         return d
 
     @classmethod
@@ -3587,3 +3649,255 @@ def test_develop_extending_logging_backend_contract():
         "``_BACKEND``",
     ):
         assert needle in text, needle
+
+
+# ---------------------------------------------------------------------------
+# develop/api/*.rst (batch R)
+#
+# The API pages are built from explicit autosummary lists (core / tasks /
+# client / exceptions) and per-module automodule directives (server / logging
+# / tui). The tests below pin the listing convention, verify every listed
+# object is importable (autosummary entries that name a non-existent object
+# would only surface as Sphinx build warnings otherwise), and assert that the
+# public surface of ``takler.core`` / ``takler.exceptions`` is fully covered.
+# ---------------------------------------------------------------------------
+
+API_DIR = DEVELOP_DIR / "api"
+
+
+def _api_page(name: str) -> str:
+    return (API_DIR / name).read_text(encoding="utf-8")
+
+
+def _autosummary_entries(text: str) -> list:
+    """Return the object names listed in ``.. autosummary::`` blocks."""
+    entries = []
+    lines = text.splitlines()
+    in_block = False
+    for line in lines:
+        if line.startswith(".. autosummary::"):
+            in_block = True
+            continue
+        if in_block:
+            stripped = line.strip()
+            if stripped.startswith(":"):
+                continue  # directive option
+            if not stripped:
+                continue  # blank line between options and entries
+            if line.startswith("   "):
+                entries.append(stripped)
+            else:
+                in_block = False  # dedent ends the directive
+    return entries
+
+
+def _import_dotted(name: str):
+    """Import ``a.b.c`` as a module, falling back to module + attributes."""
+    parts = name.split(".")
+    last_error = None
+    for split in range(len(parts), 0, -1):
+        module_name = ".".join(parts[:split])
+        try:
+            obj = importlib.import_module(module_name)
+        except ImportError as exc:
+            last_error = exc
+            continue
+        for attr in parts[split:]:
+            obj = getattr(obj, attr)
+        return obj
+    raise last_error
+
+
+def test_develop_api_index_lists_all_pages():
+    """api/index.rst toctree lists every API page and each file exists."""
+    text = _api_page("index.rst")
+    for name in (
+        "tree",
+        "attribute",
+        "tasks",
+        "client",
+        "exceptions",
+        "server",
+        "logging",
+        "tui",
+    ):
+        assert re.search(rf"^\s+{name}$", text, re.M), name
+        assert (API_DIR / f"{name}.rst").exists(), name
+
+
+def test_develop_api_core_pages_cover_public_exports():
+    """Every name in ``takler.core.__all__`` is listed on tree.rst or
+    attribute.rst, so the whole public core surface is reachable from the
+    API pages."""
+    import takler.core
+
+    pages = _api_page("tree.rst") + _api_page("attribute.rst")
+    for name in takler.core.__all__:
+        assert f"takler.core.{name}" in pages, name
+
+
+def test_develop_api_autosummary_entries_importable():
+    """Every autosummary entry on the four explicit-list pages resolves to a
+    real importable object."""
+    for page in (
+        "tree.rst",
+        "attribute.rst",
+        "tasks.rst",
+        "client.rst",
+        "exceptions.rst",
+    ):
+        entries = _autosummary_entries(_api_page(page))
+        assert entries, page
+        for entry in entries:
+            _import_dotted(entry)  # raises AttributeError/ImportError if stale
+
+
+def test_develop_api_tasks_page_covers_shell_objects():
+    """tasks.rst lists the shell task class, its generated-parameters model,
+    the render/runner pair and the job-creation checker."""
+    text = _api_page("tasks.rst")
+    for entry in (
+        "takler.tasks.shell.ShellScriptTask",
+        "takler.tasks.shell.ShellScriptTaskGeneratedParameters",
+        "takler.tasks.shell.shell_render.ShellRender",
+        "takler.tasks.shell.shell_runner.ShellRunner",
+        "takler.tasks.shell.check_job_creation",
+    ):
+        assert entry in text, entry
+    # The three names the package re-exports must be the ones the page leads
+    # with; ShellRender/ShellRunner stay module-level.
+    import takler.tasks.shell
+
+    assert set(takler.tasks.shell.__all__) == {
+        "ShellScriptTask",
+        "ShellScriptTaskGeneratedParameters",
+        "check_job_creation",
+    }
+
+
+def test_develop_api_client_page_covers_client_surface():
+    """client.rst lists the service client plus the documented members of the
+    credentials, retry and exit_code modules (their public functions/classes,
+    not the module constants)."""
+    import inspect
+
+    import takler.client.credentials as credentials
+    import takler.client.exit_code as exit_code
+    import takler.client.retry as retry
+
+    text = _api_page("client.rst")
+    assert "takler.client.TaklerServiceClient" in text
+
+    for module in (credentials, retry, exit_code):
+        for name in module.__all__:
+            obj = getattr(module, name)
+            if inspect.isfunction(obj) or inspect.isclass(obj):
+                entry = f"{module.__name__}.{name}"
+                assert entry in text, entry
+
+
+def test_develop_api_exceptions_page_covers_hierarchy():
+    """exceptions.rst lists every name in ``takler.exceptions.__all__`` and
+    its hierarchy prose matches the real base classes."""
+    import takler.exceptions as exc_mod
+
+    text = _api_page("exceptions.rst")
+    for name in exc_mod.__all__:
+        assert f"takler.exceptions.{name}" in text, name
+
+    # Every takler-internal direct base is named on the page as well, so the
+    # hierarchy tree cannot silently drift from the code.
+    for name in exc_mod.__all__:
+        cls = getattr(exc_mod, name)
+        for base in cls.__bases__:
+            if issubclass(base, exc_mod.TaklerError):
+                assert f"takler.exceptions.{base.__name__}" in text, (
+                    f"{name} -> {base.__name__}"
+                )
+
+    # The two documented ValueError mix-ins.
+    assert issubclass(exc_mod.InvalidRequestError, ValueError)
+    assert issubclass(exc_mod.ExpressionSyntaxError, ValueError)
+    assert text.count("``ValueError``") >= 2
+
+
+def test_develop_api_internal_pages_cover_modules():
+    """server.rst / logging.rst / tui.rst use per-module automodule, list the
+    expected modules, and exclude the generated ``*_pb2*`` stubs."""
+    import importlib
+
+    server_modules = (
+        "takler.server.scheduler",
+        "takler.server.network_service",
+        "takler.server.auth",
+        "takler.server.zombie",
+        "takler.server.audit",
+        "takler.server.checkpoint",
+        "takler.server.tls",
+        "takler.server.connect_config",
+        "takler.server.protocol.error_code",
+    )
+    logging_modules = (
+        "takler.logging",
+        "takler.logging.config",
+        "takler.logging.levels",
+        "takler.logging.errors",
+        "takler.logging.formatter",
+        "takler.logging.backends",
+        "takler.logging.backends.stdlib_backend",
+        "takler.logging.backends.loguru_backend",
+    )
+    tui_modules = (
+        "takler.tui.app",
+        "takler.tui.service",
+        "takler.tui.show_parser",
+        "takler.tui.state_style",
+        "takler.tui.menu",
+        "takler.tui.tabs",
+        "takler.tui.widgets",
+    )
+    for page, modules in (
+        ("server.rst", server_modules),
+        ("logging.rst", logging_modules),
+        ("tui.rst", tui_modules),
+    ):
+        text = _api_page(page)
+        directive_lines = [
+            line for line in text.splitlines() if ".. automodule::" in line
+        ]
+        assert directive_lines, page
+        assert all("_pb2" not in line for line in directive_lines), page
+        for module in modules:
+            assert f".. automodule:: {module}" in text, f"{page}: {module}"
+            if module == "takler.logging.backends.loguru_backend":
+                # Importable only with the optional ``takler[log]`` extra,
+                # exactly as the page says.
+                pytest.importorskip("loguru")
+            importlib.import_module(module)
+
+        # The stability disclaimer is part of the contract of these pages
+        # (whitespace-normalized: the phrase may wrap across source lines).
+        assert "内部实现" in re.sub(r"\s+", "", text), page
+
+
+def test_develop_api_conf_nitpick_allowlist_matches_reality():
+    """conf.py no longer ignores the cross-reference targets that batch R
+    made resolvable, and the regex allow-list stays limited to the two
+    documented patterns (all-caps names and private members)."""
+    conf_text = (PROJECT_ROOT / "doc" / "source" / "conf.py").read_text(
+        encoding="utf-8"
+    )
+    for removed in (
+        "takler.core.util.SerializationType",
+        "takler.core.SerializationType.Status",
+        "takler.core.SerializationType.Tree",
+        "takler.core.calendar.Calendar",
+        '"ExpressionSyntaxError"',
+        '"FlowStateError"',
+        '"JobSubmissionError"',
+    ):
+        assert removed not in conf_text, removed
+
+    assert "nitpick_ignore_regex" in conf_text
+    # autodoc mock list keeps the optional extras buildable on RTD.
+    assert 'autodoc_mock_imports = ["textual", "rich", "loguru"]' in conf_text

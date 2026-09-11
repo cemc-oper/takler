@@ -287,7 +287,7 @@ class InLimitManager:
 
     def in_limit(self) -> bool:
         """
-        Check if there are enough tokens in all ``Limit``s.
+        Check if there are enough tokens in every ``Limit``.
 
         Returns
         -------

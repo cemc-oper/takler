@@ -4,7 +4,7 @@
 semantics is the super concept of the classification codes defined here, so
 clients that only test ``flag != 0`` stay compatible.
 
-This module imports only :mod:`takler.exceptions`. It deliberately does **not**
+This module imports only ``takler.exceptions``. It deliberately does **not**
 import ``takler_pb2``, so the client side can map codes without pulling in the
 generated gRPC code, and so the whole module can be relocated to a protocol
 package later without touching its dependencies.

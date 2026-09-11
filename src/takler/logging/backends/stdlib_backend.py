@@ -69,7 +69,7 @@ retention are derived from the resolved ``rotation``/``retention`` settings:
 Graceful errors (Requirements 5.5, 5.6, 9.4): if the parent directory cannot be
 created or the file cannot be opened for writing, the file sink is **not**
 established, a record naming the path and the failure is emitted to the console
-sink, the console sink continues, a :class:`SettingFailure` is recorded, and the
+sink, the console sink continues, a :class:`~takler.logging.errors.SettingFailure` is recorded, and the
 method never raises to the caller.
 
 Audit sink
@@ -291,7 +291,7 @@ class _TaklerStdlibFormatter(logging.Formatter):
 
 
 class _StdlibNamedLogger(NamedLogger):
-    """A :class:`NamedLogger` adapter over a standard-library logger.
+    """A :class:`~takler.logging.backends.NamedLogger` adapter over a standard-library logger.
 
     Emits records through ``logging.getLogger("takler")`` while attaching the
     exact component name so the shared formatter attributes the record to that
@@ -354,7 +354,7 @@ class StdlibBackend(LoggingBackend):
             component: The component name to attribute records to.
 
         Returns:
-            A :class:`NamedLogger` bound to ``component`` over the ``takler``
+            A :class:`~takler.logging.backends.NamedLogger` bound to ``component`` over the ``takler``
             logger.
         """
         logger = logging.getLogger(ROOT_LOGGER_NAME)
@@ -380,7 +380,7 @@ class StdlibBackend(LoggingBackend):
             config: The fully resolved configuration to apply.
 
         Returns:
-            An :class:`ApplyResult` capturing the applied configuration and any
+            An :class:`~takler.logging.errors.ApplyResult` capturing the applied configuration and any
             per-setting failures.
         """
         failures: List[SettingFailure] = []

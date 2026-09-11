@@ -1,66 +1,86 @@
 属性
 ==================================
 
-.. py:currentmodule:: takler
+本页收录 ``takler.core`` 的节点属性对象：状态、参数、时间、触发器、
+限制、重复、事件、标尺，以及序列化模式枚举。
 
 State
 ----------
 
-.. autoclass:: takler.core.State
-    :members:
+.. autosummary::
+   :toctree: generated
 
-.. autoclass:: takler.core.NodeStatus
-    :members:
+   takler.core.State
+   takler.core.NodeStatus
 
 Parameter
 ----------
 
-.. autoclass:: takler.core.Parameter
-    :members:
+.. autosummary::
+   :toctree: generated
+
+   takler.core.Parameter
 
 Time
 ------
 
-.. autoclass:: takler.core.TimeAttribute
-    :members:
+.. autosummary::
+   :toctree: generated
+
+   takler.core.TimeAttribute
 
 Trigger
 --------
 
-.. autoclass:: takler.core.expression.Expression
-    :members:
+.. autosummary::
+   :toctree: generated
+
+   takler.core.expression.Expression
 
 Limit
 ------
 
-.. autoclass:: takler.core.Limit
-    :members:
+.. autosummary::
+   :toctree: generated
 
-.. autoclass:: takler.core.limit.InLimit
-    :members:
-
-.. autoclass:: takler.core.limit.InLimitManager
+   takler.core.Limit
+   takler.core.InLimit
+   takler.core.limit.InLimitManager
 
 Repeat
 -------
 
-.. autoclass:: takler.core.Repeat
-    :members:
+.. autosummary::
+   :toctree: generated
 
-.. autoclass:: takler.core.repeat.RepeatBase
-
-.. autoclass:: takler.core.RepeatDate
-    :members:
+   takler.core.Repeat
+   takler.core.repeat.RepeatBase
+   takler.core.RepeatDate
 
 Event
 -------
 
-.. autoclass:: takler.core.Event
-    :members:
+.. autosummary::
+   :toctree: generated
+
+   takler.core.Event
 
 Meter
 ------
 
-.. autoclass:: takler.core.Meter
-    :members:
+.. autosummary::
+   :toctree: generated
 
+   takler.core.Meter
+
+序列化
+------
+
+``SerializationType`` 区分 ``to_dict`` / ``from_dict`` 的两种模式
+（ ``Tree`` 与 ``Status`` ），机制见 :doc:`/develop/core-design` 的序
+列化一节。
+
+.. autosummary::
+   :toctree: generated
+
+   takler.core.SerializationType

@@ -137,14 +137,14 @@ def resolve_exception_policy(
 class AuthMode(enum.Enum):
     """Whether the server authenticates the callers of its RPCs.
 
-    * :attr:`DISABLED` (default): the Auth_Interceptor lets every RPC through
+    * ``DISABLED`` (default): the Auth_Interceptor lets every RPC through
       without looking at the Credential_Metadata, which keeps an M1 deployment
       working unchanged after an upgrade.
     * :attr:`ENABLED`: a Child_Command needs a job password and an
       Operator_Command needs the shared operator secret plus a whitelisted OS
       user name.
 
-    :attr:`DISABLED` is the built-in default (Requirement 3.6); enabling
+    ``DISABLED`` is the built-in default (Requirement 3.6); enabling
     authentication is always an explicit opt-in.
     """
 
@@ -161,10 +161,10 @@ class AuthMode(enum.Enum):
         unchanged for convenience.
 
         An unrecognized (or blank/non-string) value does not raise: it degrades
-        to the default :attr:`DISABLED` and emits a WARNING naming the
+        to the default ``DISABLED`` and emits a WARNING naming the
         offending value (Requirement 3.8). Degrading is safe here -- unlike a
         half-configured TLS setup -- because a server running with
-        :attr:`DISABLED` immediately logs the Requirement 3.12 WARNING stating
+        ``DISABLED`` immediately logs the Requirement 3.12 WARNING stating
         that any caller able to reach the port may run a Control_Command, so
         the effective posture is never silently misread.
 
@@ -174,7 +174,7 @@ class AuthMode(enum.Enum):
                 Connect_Config file, or an existing :class:`AuthMode`.
 
         Returns:
-            The matching :class:`AuthMode` member, or :attr:`DISABLED` when
+            The matching :class:`AuthMode` member, or ``DISABLED`` when
             ``value`` is not recognized.
         """
         if isinstance(value, AuthMode):
@@ -204,14 +204,14 @@ class ZombiePolicy(enum.Enum):
     The policy is server-global and applies to every zombie, whichever
     condition it hit:
 
-    * :attr:`FAIL` (default): leave the target task untouched and answer with
+    * ``FAIL`` (default): leave the target task untouched and answer with
       ``ZombieError``, so the stale job sees a failure.
     * :attr:`FOB`: leave the target task untouched but answer success, so the
       stale job goes on quietly.
     * :attr:`ADOPT`: run the command anyway, adopting the credentials it
       carries.
 
-    :attr:`FAIL` is the built-in default (Requirement 3.6): it is the only one
+    ``FAIL`` is the built-in default (Requirement 3.6): it is the only one
     of the three that neither hides the zombie nor lets it write to the current
     run of the task.
     """
@@ -230,8 +230,8 @@ class ZombiePolicy(enum.Enum):
         unchanged for convenience.
 
         An unrecognized (or blank/non-string) value does not raise: it degrades
-        to the default :attr:`FAIL` and emits a WARNING naming the offending
-        value (Requirement 3.9). Degrading to :attr:`FAIL` cannot weaken the
+        to the default ``FAIL`` and emits a WARNING naming the offending
+        value (Requirement 3.9). Degrading to ``FAIL`` cannot weaken the
         server, since it is the strictest of the three policies.
 
         Args:
@@ -241,7 +241,7 @@ class ZombiePolicy(enum.Enum):
                 :class:`ZombiePolicy`.
 
         Returns:
-            The matching :class:`ZombiePolicy` member, or :attr:`FAIL` when
+            The matching :class:`ZombiePolicy` member, or ``FAIL`` when
             ``value`` is not recognized.
         """
         if isinstance(value, ZombiePolicy):

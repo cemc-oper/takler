@@ -1,4 +1,4 @@
-"""Thin wrapper around :class:`TaklerServiceClient`.
+"""Thin wrapper around :class:`~takler.client.TaklerServiceClient`.
 
 The CLI service client prints to stdout and creates / closes a gRPC
 channel on every call. The TUI wants the raw payload (for the show
@@ -22,7 +22,7 @@ class TaklerTuiService:
     """A reusable gRPC client that returns structured payloads.
 
     The connection is opened once on first use and reused until
-    :meth:`close` is called or the object is garbage collected.
+    ``close()`` is called or the object is garbage collected.
     """
 
     def __init__(self, host: str, port: Union[int, str]):

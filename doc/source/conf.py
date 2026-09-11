@@ -62,23 +62,50 @@ exclude_patterns = []
 # 用于在文档构建阶段捕获断链的 `:py:class:` / `:py:func:` 等引用。
 nitpicky = True
 
-# 允许缺失的交叉引用目标：本项目 API 页面尚未覆盖的对象（覆盖计划见
-# doc/documentation-plan.md 批次 R），在此显式列出并注明原因，而不是关闭 nitpicky。
+# 允许缺失的交叉引用目标。批次 R（T40~T42）补齐 API 页后，早前列在这里的
+# SerializationType / Calendar / NodeStatus 成员与三个异常条目已全部可从
+# API 页解析，不再出现。新增条目时注明原因，而不是关闭 nitpicky。
 nitpick_ignore = [
     # typing 中的容器/别名类型不在本项目文档范围内。
     ("py:class", "typing.Any"),
-    # 以下对象在源码中已用 :py:class: / :py:exc: / :py:attr: / :py:obj: 交叉引用，
-    # 但对应的 API 页面（tree.rst / attribute.rst / exceptions.rst 等）尚未补齐
-    # 这些条目，计划在批次 R（T40~T42）随对应页面一并从本列表移除。
-    ("py:class", "takler.core.util.SerializationType"),
-    ("py:obj", "takler.core.SerializationType.Status"),
-    ("py:obj", "takler.core.SerializationType.Tree"),
-    ("py:class", "takler.core.calendar.Calendar"),
+    # 可选第三方库（gRPC、textual、loguru 等）的类型不进 intersphinx，
+    # client / tui 模块 docstring 里的引用保持为本地说明性文字。
+    ("py:class", "grpc.ChannelCredentials"),
+    ("py:class", "grpc.ServerCredentials"),
+    ("py:class", "grpc.StatusCode"),
+    ("py:class", "grpc.aio.ServerInterceptor"),
+    ("py:func", "grpc.ssl_server_credentials"),
+    ("py:class", "pydantic.config.ConfigDict"),
+    ("py:class", "rich.text.Text"),
+    ("py:class", "textual.geometry.Offset"),
+    ("py:class", "textual.widgets.OptionList"),
+    # sphinx-autodoc-typehints 渲染 ``Literal[NodeStatus.queued, ...]`` 注解时
+    # 使用对象的真实模块路径（takler.core.state.*），而 NodeStatus 在 API 页
+    # 按公开路径 takler.core.NodeStatus 收录，两条引用无法对上。
     ("py:attr", "takler.core.state.NodeStatus.queued"),
     ("py:attr", "takler.core.state.NodeStatus.complete"),
-    ("py:exc", "ExpressionSyntaxError"),
-    ("py:exc", "FlowStateError"),
-    ("py:exc", "JobSubmissionError"),
+    # ``RepeatBase`` 是 ``Generic[T]``，类型注解里的 TypeVar ``T`` 没有文档目标。
+    ("py:class", "takler.core.repeat.T"),
+    # sphinx-autodoc-typehints 渲染 ``Optional[TreeNode[str]]`` （非
+    # ``from __future__ import annotations`` 模块）时，下标里的 ``str``
+    # 被 repr 成 ``class 'str'`` 再包成引用，目标天然不存在。
+    ("py:class", "class 'str'"),
+]
+
+# 系统性的允许缺失模式（re.fullmatch 匹配）。本项目 docstring 的约定是：
+# 枚举成员与模块级常量在所属类 / 模块的 docstring 里以散文说明，不注册为独立
+# 文档目标；下划线开头的私有成员不进 API 页。对它们的交叉引用因此没有目标，
+# 用正则说明原因，而不是逐个列出或关闭 nitpicky。
+nitpick_ignore_regex = [
+    # 全大写名字：枚举成员（ ``AuthMode.DISABLED`` 、 ``LogLevel.INFO`` 等）与
+    # 模块级常量（ ``EXIT_OK`` 、 ``MAX_BACKOFF_SECONDS`` 、 ``_CALL_CREDENTIALS``
+    # 等）。
+    ("py:attr", r"(?:[a-zA-Z0-9_.]*\.)?_?[A-Z][A-Z0-9_]*"),
+    ("py:data", r"(?:[a-zA-Z0-9_.]*\.)?_?[A-Z][A-Z0-9_]*"),
+    # 私有成员： ``_guard_child_command`` 、 ``_CredentialFile`` 等。
+    ("py:meth", r"(?:[a-zA-Z0-9_.]*\.)?_[a-zA-Z0-9_]+"),
+    ("py:func", r"(?:[a-zA-Z0-9_.]*\.)?_[a-zA-Z0-9_]+"),
+    ("py:class", r"(?:[a-zA-Z0-9_.]*\.)?_[a-zA-Z0-9_]+"),
 ]
 
 # linkcheck 构建（`-b linkcheck`）中允许跳过的链接模式，例如尚未发布的锚点或
@@ -113,3 +140,9 @@ html_title = "Takler文档"
 html_static_path = ["_static"]
 
 autosummary_generate = True
+
+# 可选依赖（tui / log extras）在只装 docs 依赖组的环境（如 Read the Docs，
+# 见 .readthedocs.yml）里不存在。autodoc 遇到这些导入失败时用 mock 顶替，
+# 使 develop/api 的 tui.rst 与 logging.rst 在任何环境都能通过严格构建；
+# 本地已安装对应库时仍使用真实导入（mock 只是后备）。
+autodoc_mock_imports = ["textual", "rich", "loguru"]

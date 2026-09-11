@@ -14,10 +14,10 @@ them from the interceptor to the Zombie_Detector and to the Audit_Logger), and
 passes through.
 
 Everything but the interceptor deliberately depends on nothing outside the
-standard library and :mod:`takler.logging` -- not even on :mod:`grpc` -- so the
+standard library and :mod:`takler.logging` -- not even on ``grpc`` -- so the
 parsing, the hot-reload behaviour, the privilege lookup and the metadata
 parsing can all be tested without standing up a gRPC server. Only
-:class:`AuthInterceptor` needs :mod:`grpc`, for the base class, the status codes
+:class:`AuthInterceptor` needs ``grpc``, for the base class, the status codes
 and the abort handler it returns.
 
 Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11, 6.12,
@@ -395,7 +395,7 @@ class RejectionReason(enum.Enum):
 
     ``UNAUTHENTICATED`` for the first and ``PERMISSION_DENIED`` for the other
     two is the mapping the Auth_Interceptor applies; the status codes are not
-    named here so that this module keeps needing nothing from :mod:`grpc`.
+    named here so that this module keeps needing nothing from ``grpc``.
 
     The values are the exact classification strings of the Cross-Language
     Contract, so a log line, an audit record and a Go client all spell a
@@ -612,7 +612,7 @@ class CredentialStore:
         This is the run-time counterpart of :meth:`validate_at_startup` and the
         single entry point the Auth_Interceptor uses for an ``OPERATOR`` level
         method: it answers with a classification instead of a status code, so
-        this module stays free of :mod:`grpc`, and the interceptor maps
+        this module stays free of ``grpc``, and the interceptor maps
         :attr:`RejectionReason.MISSING_CREDENTIAL` to ``UNAUTHENTICATED`` and
         the other two to ``PERMISSION_DENIED``.
 
@@ -1138,7 +1138,7 @@ class CallCredentials:
 
         The metadata is a sequence of ``(key, value)`` pairs rather than a
         mapping, which is why this walks it once instead of doing three
-        lookups. Typing it structurally keeps this module free of a :mod:`grpc`
+        lookups. Typing it structurally keeps this module free of a ``grpc``
         import, so the parsing can be tested with plain tuples.
 
         Nothing here raises. An interceptor cannot afford an exception: it would

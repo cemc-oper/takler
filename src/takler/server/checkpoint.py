@@ -94,7 +94,7 @@ CHECKPOINT_FILE_MODE: int = 0o600
 
 #: Top level key of the snapshot's "node path -> Job_Password" mapping, a
 #: sibling of ``bunch`` rather than a node field (requirement 5.1). ``show``
-#: and the snapshot share one :meth:`Bunch.to_dict`, so anything put inside the
+#: and the snapshot share one :meth:`~takler.core.Bunch.to_dict`, so anything put inside the
 #: node tree would also be handed to every caller of ``show``.
 JOB_PASSWORDS_KEY: str = "job_passwords"
 
@@ -306,7 +306,7 @@ class CheckpointManager:
 
     @property
     def backup_file(self) -> Path:
-        """The Checkpoint_Backup_File path: Checkpoint_File plus ``.b``.
+        """Return the Checkpoint_Backup_File path (Checkpoint_File plus ``.b``).
 
         Derived rather than configured, so the pair can never drift apart
         (requirement 7.4).
@@ -327,7 +327,7 @@ class CheckpointManager:
 
         Layout (requirements 5.11, 6.14): ``format_version`` /
         ``takler_version`` / ``written_at`` at the top level plus a ``bunch``
-        subtree that is exactly :meth:`Bunch.to_dict`, so no second snapshot
+        subtree that is exactly :meth:`~takler.core.Bunch.to_dict`, so no second snapshot
         format is introduced. ``takler_version`` and ``written_at`` are
         diagnostic only and take no part in restoring.
 

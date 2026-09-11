@@ -26,7 +26,7 @@ from takler.core.node import Node
 
 @dataclass
 class NodeInfo:
-    """Read-only view over a :class:`Node` for the TUI tabs."""
+    """Read-only view over a :class:`~takler.core.node.Node` for the TUI tabs."""
 
     node: Node
     level: int
@@ -98,7 +98,7 @@ class ShowSnapshot:
         return self.nodes.get(path)
 
     def find_node(self, path: str) -> Optional[Node]:
-        """Return the underlying domain :class:`Node` for ``path``."""
+        """Return the underlying domain :class:`~takler.core.node.Node` for ``path``."""
         return self.bunch.find_node(path)
 
     def parents_of(self, path: str) -> List[NodeInfo]:
@@ -121,7 +121,7 @@ class ShowSnapshot:
 
         Walks the node up to the root, then falls back to the bunch's
         server parameters; this matches the semantics of
-        :meth:`Node.find_parent_parameter`.
+        :meth:`~takler.core.node.Node.find_parent_parameter`.
         """
         node = self.bunch.find_node(path)
         if node is None:
@@ -224,7 +224,7 @@ def _walk(
 
 
 def parse_show(payload: str) -> ShowSnapshot:
-    """Reconstruct a :class:`Bunch` from the JSON payload.
+    """Reconstruct a :class:`~takler.core.Bunch` from the JSON payload.
 
     Parameters
     ----------

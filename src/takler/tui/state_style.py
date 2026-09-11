@@ -72,7 +72,7 @@ def state_block(state: str, *, suspended: bool = False, trailing: str = " ") -> 
         Node state name (e.g. ``"active"``).
     suspended
         When ``True``, paint the first half of the swatch in
-        :data:`SUSPENDED_BLOCK_STYLE` while the second half keeps the
+        ``SUSPENDED_BLOCK_STYLE`` while the second half keeps the
         underlying state's colour, producing a two-tone badge that
         encodes "suspended on top of <state>".
     trailing

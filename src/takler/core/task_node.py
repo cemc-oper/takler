@@ -304,16 +304,12 @@ class TaskNodeGeneratedParameters(BaseModel):
 
 
 def task(name: str):
-    """
-    Decorator to create inline task.
+    """Decorator that turns a function into an inline task named ``name``.
 
-    Parameters
-    ----------
-    name
-        task name
-    Returns
-    -------
-
+    The decorated function runs inside the server process: its body is called
+    after the task goes active, and the task is marked complete when the body
+    returns. See :doc:`/develop/extending` for the execution semantics and
+    limitations.
     """
 
     def decorator(func):

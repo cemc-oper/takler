@@ -250,7 +250,7 @@ class ShellScriptTaskGeneratedParameters(BaseModel):
 
 class CheckJobCreationVisitor(NodeVisitor):
     """
-    A node visitor to check all ``ShellScriptTask``s' job creation.
+    A node visitor to check job creation of every ``ShellScriptTask``.
     """
 
     def __init__(self):
@@ -271,7 +271,7 @@ class CheckJobCreationVisitor(NodeVisitor):
 
 def check_job_creation(flow: Flow):
     """
-    Check job creation for ``ShellScriptTask``s
+    Check job creation for every ``ShellScriptTask`` in a flow
 
     Parameters
     ----------

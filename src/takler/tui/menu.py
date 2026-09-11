@@ -3,7 +3,7 @@
 The menu is keyboard- and mouse-friendly: it opens via the ``m`` binding
 on the focused tree node, and via right-click on the tree pane. Both
 paths push :class:`NodeActionMenu`, a small ``ModalScreen`` whose only
-content is an :class:`OptionList`.
+content is an :class:`~textual.widgets.OptionList`.
 
 A single :data:`NODE_ACTIONS` table feeds both the menu and the global
 bindings, so adding a new action is one entry.
@@ -78,7 +78,7 @@ class NodeAction:
         call. Control operations want this; queries (``refresh``
         itself, ``ping``) do not.
     applies_to
-        Predicate over the selected :class:`Node` deciding whether the
+        Predicate over the selected :class:`~takler.core.node.Node` deciding whether the
         action is offered for that node. Defaults to "applies to every
         node". Use this to hide e.g. ``Run`` on containers, since the
         scheduler only runs ``Task`` nodes.
