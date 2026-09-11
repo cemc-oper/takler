@@ -23,7 +23,7 @@
 
 .. code-block:: json
 
-    {"timestamp": "2026-07-15T10:30:00.123456", "event": "control", "command": "requeue", "user": "oper", "peer": "ipv4:10.0.0.9:51234", "target": ["/flow1/family1/task1"], "outcome": "success", "error_code": 0}
+    {"timestamp": "2026-07-15T10:30:00.123456", "event": "control", "command": "requeue", "user": "oper", "peer": "ipv4:10.0.0.9:51234", "target": ["/flow1/group1/task1"], "outcome": "success", "error_code": 0}
 
 .. list-table::
     :header-rows: 1
@@ -103,7 +103,7 @@
     jq -r 'select(.event == "zombie") | [.timestamp, .command, .target[0], .error_code] | @tsv' audit.jsonl
 
     # 一个节点的全部被操作历史
-    jq -r 'select(.target | index("/flow1/family1/task1")) | [.timestamp, .user, .command, .outcome] | @tsv' audit.jsonl
+    jq -r 'select(.target | index("/flow1/group1/task1")) | [.timestamp, .user, .command, .outcome] | @tsv' audit.jsonl
 
 写失败的降级
 ------------

@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-欢迎来到 Takler 文档
+欢迎来到 takler 文档
 ==================================
 
 **takler** 是面向数值天气预报模式的工作流调度软件，仿照 ECMWF 的开源项目 ecFlow 开发相关功能。

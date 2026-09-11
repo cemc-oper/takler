@@ -1,11 +1,11 @@
 启动工作流
 ==========
 
-启动 Takler 服务后，工作流处于 ``unknown`` 状态，调度器不会自动运行 ``unknown`` 状态的工作流。
+启动 takler 服务后，工作流处于 ``unknown`` 状态，调度器不会自动运行 ``unknown`` 状态的工作流。
 如果想要启动工作流，需要 ``requeue`` 工作流。
 
-在之前章节中，我们已经启动了工作流 *test* 的 Takler 服务。
-如果 Takler 服务尚未启动，请运行 **test.py** 脚本。
+在之前章节中，我们已经启动了工作流 *test* 的 takler 服务。
+如果 takler 服务尚未启动，请运行 **test.py** 脚本。
 
 .. code-block:: bash
 
@@ -14,7 +14,7 @@
 查询状态
 ---------
 
-使用下面的命令查询 Takler 服务中工作流的运行状态：
+使用下面的命令查询 takler 服务中工作流的运行状态：
 
 .. tab-set::
 
@@ -43,7 +43,7 @@
 启动工作流
 ----------
 
-Takler 目前没有专门用于启动工作流的 API，可以使用 ``requeue`` 命令将工作流设为 ``queued`` 状态，让调度器开始调度工作流。
+takler 目前没有专门用于启动工作流的 API，可以使用 ``requeue`` 命令将工作流设为 ``queued`` 状态，让调度器开始调度工作流。
 
 使用客户端执行 ``requeue`` 操作：
 
@@ -83,7 +83,7 @@ Takler 目前没有专门用于启动工作流的 API，可以使用 ``requeue``
 
 可以看到：
 
-* Takler 服务接收到了客户端发送的 ``requeue`` 命令。
+* takler 服务接收到了客户端发送的 ``requeue`` 命令。
 * 调度器在下一次 main loop 时，发现 */test/t1* 任务满足运行条件，随即生成作业脚本 **t1.job**，并在本机运行该脚本。
 * 脚本运行时会调用 child 命令 ``init`` 通知服务任务已启动，随后调用 ``complete`` 通知服务任务已完成。
 * 在下一次 main loop 时，工作流 *test* 下所有任务已完成，处于 ``complete`` 状态，所以调度器不再提交任务。
@@ -91,6 +91,6 @@ Takler 目前没有专门用于启动工作流的 API，可以使用 ``requeue``
 练习
 ------
 
-1. 运行 **test.py**，启动 Takler 服务
+1. 运行 **test.py**，启动 takler 服务
 2. 运行 ``requeue /test``（``takler_client requeue /test`` 或 ``takler-client-py requeue /test``），启动工作流 *test*
 3. 检查 **test.py** 运行输出信息

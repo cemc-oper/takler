@@ -13,7 +13,7 @@
 渲染模型
 --------
 
-takler 脚本使用 `Jinja2 <https://jinja.palletsprojects.com/>`_ 模板
+takler 脚本使用 `Jinja2 <https://jinja.palletsprojects.com/en/stable/>`_ 模板
 语法（不是 ecFlow 的 ``%VAR%`` ）。渲染由 ``ShellRender`` 完成：
 以脚本文件为模板，用任务的变量合并视图作为上下文渲染一次，结果
 写入作业文件。

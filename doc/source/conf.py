@@ -108,9 +108,13 @@ nitpick_ignore_regex = [
     ("py:class", r"(?:[a-zA-Z0-9_.]*\.)?_[a-zA-Z0-9_]+"),
 ]
 
-# linkcheck 构建（`-b linkcheck`）中允许跳过的链接模式，例如尚未发布的锚点或
-# 本地开发环境专用地址。目前为空，后续任务如遇到需要跳过的外部链接再补充。
-linkcheck_ignore = []
+# linkcheck 构建（`-b linkcheck`）中允许跳过的链接模式：
+# - stackoverflow.com 对非浏览器客户端一律返回 403，链接本身有效；
+# - github.com/cemc-oper/* 在项目构建环境（内网）不可达，链接本身有效。
+linkcheck_ignore = [
+    r"https://stackoverflow\.com/",
+    r"https://github\.com/cemc-oper/",
+]
 
 
 # -- Options for HTML output -------------------------------------------------
@@ -125,8 +129,8 @@ html_theme = "pydata_sphinx_theme"
 
 html_theme_options = {
     "github_url": "https://github.com/cemc-oper/takler",
-    # 顶层 toctree 中的每一项（教程/运维/开发者）会分别展示为顶部横条上的一个菜单，
-    # 有子页面的项会带下拉列表。这里设为较大值以避免被折叠进「More」下拉菜单。
+    # 顶层 toctree 中的每一项（教程/用户指南/运维/开发者）会分别展示为顶部横条上的一个
+    # 菜单，有子页面的项会带下拉列表。四个分类落在该阈值内，不会被折叠进「More」下拉菜单。
     "header_links_before_dropdown": 5,
     "navigation_with_keys": False,
     "show_toc_level": 2,

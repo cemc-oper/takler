@@ -1,12 +1,12 @@
 理解客户端
 ============
 
-与 Takler 服务的所有通讯都通过客户端（``takler_client`` 或 ``takler-client-py``）实现。
+与 takler 服务的所有通讯都通过客户端（``takler_client`` 或 ``takler-client-py``）实现。
 对于任意与服务器的通讯，客户端需要知道服务运行的主机和服务的端口号。
 同一台主机上可能运行多个服务，每个服务有唯一的端口号。
 
 下面展示通过 shell 命令行和 Python 脚本使用客户端的示例。本节示例中的
-``remote-host`` 是示意用的主机名，请替换为你实际运行 Takler 服务的主机名或 IP 地址；
+``remote-host`` 是示意用的主机名，请替换为你实际运行 takler 服务的主机名或 IP 地址；
 在本机运行时可以省略 ``--host`` / ``--port``，使用默认值即可。
 
 客户端 Shell 接口
@@ -93,7 +93,7 @@
 * 默认值可以被环境变量 ``TAKLER_HOST`` 和 ``TAKLER_PORT`` 覆盖
 * 还可以使用 ``--host`` 和 ``--port`` 选项进一步覆盖
 
-使用命令行 ping Takler 服务：
+使用命令行 ping takler 服务：
 
 .. tab-set::
 
@@ -137,14 +137,14 @@ Python 接口的 ``TaklerServiceClient`` 类提供默认的主机地址和端口
 
 逐行解释代码：
 
-- 1：导入 Takler 客户端类 ``TaklerServiceClient``
-- 5：创建 Takler 客户端对象 ``TaklerServiceClient``，使用默认的主机和端口号 (``localhost:33083``)
+- 1：导入 takler 客户端类 ``TaklerServiceClient``
+- 5：创建 takler 客户端对象 ``TaklerServiceClient``，使用默认的主机和端口号 (``localhost:33083``)
 - 6：执行 ``ping`` 操作
 - 8：设置主机和端口号（本例中为 ``remote-host:33083``，根据实际情况修改为你的服务地址）
 
   .. warning::
 
-      Takler 使用 gRPC Python 接口实现 RPC 功能。
+      takler 使用 gRPC Python 接口实现 RPC 功能。
       如果运行出错，提示如下信息：
 
       .. code-block::

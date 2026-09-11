@@ -1,22 +1,22 @@
 开始使用
 ==========
 
-开始教程前需要配置 Takler 使用环境。本节以一台普通 Linux 服务器为例，
+开始教程前需要配置 takler 使用环境。本节以一台普通 Linux 服务器为例，
 不依赖任何特定 HPC 系统或账户。如果你需要在 HPC 环境（如通过 ``module`` 加载预安装环境、
-离线安装）中使用 Takler，请参考 :doc:`/tutorial/hpc-appendix`。
+离线安装）中使用 takler，请参考 :doc:`/tutorial/hpc-appendix`。
 
-安装 Takler 环境
+安装 takler 环境
 -----------------
 
-本教程使用 Takler 项目的两个软件包：
+本教程使用 takler 项目的两个软件包：
 
-* `takler <https://github.com/cemc-oper/takler>`_：takler 核心项目 (Python)，用于创建工作流并运行 Takler 服务
-* `takler-client <https://github.com/cemc-oper/takler-client>`_：takler 命令行客户端 (Golang)，用于与 Takler 服务进行交互
+* `takler <https://github.com/cemc-oper/takler>`_：takler 核心项目 (Python)，用于创建工作流并运行 takler 服务
+* `takler-client <https://github.com/cemc-oper/takler-client>`_：takler 命令行客户端 (Golang)，用于与 takler 服务进行交互
 
 本教程的客户端命令同时给出两种写法：Go 客户端 ``takler_client`` 与 Python 客户端
 ``takler-client-py`` （随 takler 包一起安装，见下文），两者二选一即可。
 
-安装 Takler 软件包
+安装 takler 软件包
 ^^^^^^^^^^^^^^^^^^^^^^
 
 安装 `Python 环境 <https://www.python.org/downloads/>`_ (要求 3.11 及以上版本)，
@@ -30,7 +30,7 @@
 
 安装完成后即可使用 Python 客户端 ``takler-client-py``。
 
-安装 Takler 客户端（可选，Go 版本）
+安装 takler 客户端（可选，Go 版本）
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 如果希望使用 Go 版本的客户端 ``takler_client``，需要安装

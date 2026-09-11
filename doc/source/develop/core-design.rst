@@ -159,7 +159,7 @@ Node 继承体系
    节点不被改坏）。反序列化也以 ``parse=False`` 恢复 —— 定义期
    只做字符串搬运。
 #. **解析** 。 ``parse_trigger`` 用 `Lark <https://lark-parser.
-   readthedocs.io/>`_ 文法把字符串解析成语法树，再由
+   readthedocs.io/en/stable/>`_ 文法把字符串解析成语法树，再由
    ``ExpressionTransformer`` 折叠成 takler 自己的 AST （ ``AstRoot``
    为根的二叉树：内部节点是 ``AstOpAnd`` / ``AstOpOr`` / 比较与
    加法运算符，叶子是 ``AstNodePath`` / ``AstVariablePath`` /

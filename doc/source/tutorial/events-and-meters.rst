@@ -124,7 +124,8 @@
 
     ecFlow 中用于展示文本信息的 ``label`` 属性在 takler 中**不存在**，
     也没有对应的 child 命令。简单的进度信息可以用事件与标尺表达；
-    更复杂的信息可以写进作业输出文件再查看。
+    更复杂的信息可以写进作业输出文件再查看。takler 与 ecFlow 的完整
+    差异清单见 :doc:`/guide/ecflow-differences` 。
 
 练习
 -----

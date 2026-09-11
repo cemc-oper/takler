@@ -5,7 +5,7 @@
 
 每个 :py:class:`~takler.tasks.shell.ShellScriptTask` 都有对应的 takler 脚本 (takler script)，定义需要执行哪些操作，脚本类似于 UNIX shell 脚本。
 
-但 takler 脚本使用 `Jinja2 <https://jinja.palletsprojects.com/>`_ 提供的模板指令和预定义变量。
+但 takler 脚本使用 `Jinja2 <https://jinja.palletsprojects.com/en/stable/>`_ 提供的模板指令和预定义变量。
 
 工作流定义中的变量 (:py:class:`~takler.core.Parameter`) 可以在 takler 脚本中使用，提供一种配置机制。
 
@@ -26,7 +26,7 @@ head.takler
 
 head.takler 头文件放在 takler 脚本的开头，用于：
 
-* 提供与 Takler 服务通讯的环境
+* 提供与 takler 服务通讯的环境
 * 定义脚本错误处理，当脚本出错捕获 trap 信号时，通知服务该任务 abort
 * 使用 child 命令 (child command) ``init`` 通知服务该任务已经开始
 

@@ -29,13 +29,13 @@
 作业生成
 ---------
 
-在提交任务前，Takler 服务会将 takler 脚本 (takler script) 转化为作业文件 (job file)，这个过程叫做作业生成 (job creation)。
+在提交任务前，takler 服务会将 takler 脚本 (takler script) 转化为作业文件 (job file)，这个过程叫做作业生成 (job creation)。
 作业生成过程中会调用 Jinja2 引擎对 takler 脚本进行渲染，通常包括：
 
 - 处理头文件指令
 - 执行变量替换
 
-作业生成步骤会创建一个以 `.job` 结尾的文件，Takler 服务将该文件提交给你的系统。
+作业生成步骤会创建一个以 `.job` 结尾的文件，takler 服务将该文件提交给你的系统。
 
 在当前示例中：
 
@@ -46,8 +46,8 @@
   .. warning::
 
     Jinja2 默认仅支持加载模板目录内或子目录内的模板文件。
-    Takler 在解析任务脚本时默认将该脚本所在目录放到模板搜索列表中。
-    所以如果没有额外设置头文件路径，Takler 无法加载脚本所在目录之外的头文件，比如 ``../head.takler``。
+    takler 在解析任务脚本时默认将该脚本所在目录放到模板搜索列表中。
+    所以如果没有额外设置头文件路径，takler 无法加载脚本所在目录之外的头文件，比如 ``../head.takler``。
 
 - ``{{ TAKLER_HOME }}`` 被 ``TAKLER_HOME`` 变量的值替换
 - ``{% include "tail.takler" %}`` 会被替换为 **tail.takler** 文件的内容

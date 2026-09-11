@@ -48,7 +48,7 @@
 
 21：创建工作流 ``flow``
 
-22：创建工作流集合对象 ``bunch``。:py:class:`~takler.core.Bunch` 对象用于保存 Takler 服务中的工作流。
+22：创建工作流集合对象 ``bunch``。:py:class:`~takler.core.Bunch` 对象用于保存 takler 服务中的工作流。
 
 23：将工作流 ``flow`` 添加到 ``bunch`` 中
 

@@ -3,7 +3,7 @@
 
 在前一节，我们已经实现第一个任务 ( task1.takler 文件 )。
 task1.takler 脚本需要经过预处理生成作业文件 (job file)。
-这个过程由 Takler 服务在任务运行前自动完成。
+这个过程由 takler 服务在任务运行前自动完成。
 
 可以在工作流运行前手动检查作业生成。
 
@@ -20,7 +20,7 @@ task1.takler 脚本需要经过预处理生成作业文件 (job file)。
 
 检查作业生成时需要注意以下几点：
 
-1. 作业检查 **独立** 于 Takler 服务，因此作业文件中的 ``TAKLER_HOST`` 和 ``TAKLER_PORT`` 被替换为默认值 (``localhost`` 和 ``33083``)。
+1. 作业检查 **独立** 于 takler 服务，因此作业文件中的 ``TAKLER_HOST`` 和 ``TAKLER_PORT`` 被替换为默认值 (``localhost`` 和 ``33083``)。
 2. 作业文件扩展名是 **.job**。
 3. 默认情况下，作业文件在 ``TAKLER_HOME`` 目录下生成。
 

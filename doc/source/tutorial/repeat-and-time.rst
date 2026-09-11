@@ -87,6 +87,7 @@ Repeat：按日期循环
     takler 的时间属性只有本节介绍的 ``RepeatDate`` 与 ``time`` 两种：
     没有 ecFlow 的 ``cron``、``date``、``day`` 属性，也没有整数、枚举等
     其他 repeat 变体。复杂的定时需求可以用多个 ``time`` 依赖组合表达。
+    完整的差异清单见 :doc:`/guide/ecflow-differences` 。
 
 repeat 与 time 的完整参考（取值校验、闩锁语义、与日历的交互）见用户
 指南的 :doc:`/guide/attributes/repeat` 与 :doc:`/guide/attributes/time` 。

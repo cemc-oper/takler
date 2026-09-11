@@ -17,7 +17,7 @@
 
             takler-client-py show --show-all
 
-命令会从 Takler 服务检索工作流运行状态，打印每个节点的运行状态。输出如下所示（``${TAKLER_HOME}`` 替换为你实际设置的目录）：
+命令会从 takler 服务检索工作流运行状态，打印每个节点的运行状态。输出如下所示（``${TAKLER_HOME}`` 替换为你实际设置的目录）：
 
 .. code-block::
 
