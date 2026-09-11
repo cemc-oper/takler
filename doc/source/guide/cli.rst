@@ -141,7 +141,7 @@ child 命令
 
 把任务上的指定 event 置为 set （触发依赖该 event 的下游节点）。
 在 ``complete`` 的选项之外另有 ``--event-name`` （必填）。事件与
-meter 的入门示例见 :doc:`/tutorial/events-and-meters` 。
+meter 的入门示例见 :doc:`/tutorial/going-further/events-and-meters` 。
 
 ``meter``
 ~~~~~~~~~

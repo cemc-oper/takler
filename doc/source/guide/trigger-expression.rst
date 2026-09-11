@@ -2,7 +2,7 @@ trigger 表达式参考
 ==================
 
 本页是触发器表达式的完整语法参考，供写表达式时查阅；入门介绍见
-:doc:`/tutorial/triggers` 。表达式通过
+:doc:`/tutorial/going-further/triggers` 。表达式通过
 :py:meth:`Node.add_trigger <takler.core.node.Node.add_trigger>`
 （满足才允许运行）与
 :py:meth:`Node.add_complete_trigger <takler.core.node.Node.add_complete_trigger>`
@@ -141,7 +141,7 @@ trigger 表达式参考
   ``add_trigger(..., parse=True)`` 会在挂接时立即解析，把语法错误
   与路径错误提前暴露出来
 * complete 触发器先于普通触发器检查：两者都定义时， complete 触发器
-  满足则节点直接完成，不再检查普通触发器（见 :doc:`/tutorial/triggers` ）
+  满足则节点直接完成，不再检查普通触发器（见 :doc:`/tutorial/going-further/triggers` ）
 * 被 ``free-dep`` 命令释放的表达式（
   :py:class:`~takler.core.expression.Expression` 的 ``free`` 标记）
   恒为满足，不再真正求值

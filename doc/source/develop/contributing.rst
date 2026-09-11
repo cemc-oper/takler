@@ -135,7 +135,7 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 
     :memo: Add events and meters tutorial page with step7 example
 
-    - new tutorial page doc/source/tutorial/events-and-meters.rst
+    - new tutorial page doc/source/tutorial/going-further/events-and-meters.rst
     - runnable example step7_events_and_meters.py and task1_with_events.takler
     - tests assert event/meter gating, requeue reset, and out-of-range rejection
 

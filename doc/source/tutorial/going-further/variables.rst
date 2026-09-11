@@ -100,7 +100,7 @@ takler 会在不同层级自动生成一批「保留变量」，可以直接在�
 
 Shell 脚本任务还会额外生成 ``TAKLER_SCRIPT``、``TAKLER_JOB``、``TAKLER_JOBOUT``
 三个变量，用于定位脚本文件、生成的作业文件与输出文件，详见
-:doc:`getting-started/checking-job-creation`。
+:doc:`../getting-started/checking-job-creation`。
 
 在脚本中使用变量
 ------------------

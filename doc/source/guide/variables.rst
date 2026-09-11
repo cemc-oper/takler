@@ -2,7 +2,7 @@
 ========
 
 变量是挂在节点上的键值对，类型为 :py:class:`~takler.core.Parameter` ，
-用于参数化作业脚本与触发器表达式。入门介绍见 :doc:`/tutorial/variables` ；
+用于参数化作业脚本与触发器表达式。入门介绍见 :doc:`/tutorial/going-further/variables` ；
 本页是完整参考：定义方式、作用域与解析顺序、 user 与 generated 两类
 参数的区别，以及全部保留变量。
 
@@ -81,7 +81,7 @@ takler 在各层级自动生成的变量如下。
       - 服务端口，来自 ``Bunch(port=...)``
     * - ``TAKLER_HOME``
       - 作业文件根目录，默认 ``"."`` 。实际使用中几乎总在 flow 上
-        用同名 user 参数覆盖（见 :doc:`/tutorial/variables` ）
+        用同名 user 参数覆盖（见 :doc:`/tutorial/going-further/variables` ）
 
 **flow 级** （来自 flow 的日历）：
 
@@ -135,7 +135,7 @@ takler 在各层级自动生成的变量如下。
 
 **repeat 生成**：节点带 repeat 时，以 repeat 的名字为变量名生成一个
 参数，取值为 repeat 的当前值，随 repeat 推进自动更新（见
-:doc:`/tutorial/repeat-and-time` ）。
+:doc:`/tutorial/going-further/repeat-and-time` ）。
 
 shell 任务识别的 user 变量
 --------------------------

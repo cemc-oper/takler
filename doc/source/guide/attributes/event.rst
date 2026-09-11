@@ -53,7 +53,7 @@
 
 事件的值只能由外部改变：任务脚本中的 ``event`` child 命令把事件置为
 set ，控制命令 ``force`` 可以置位或清回 unset （见
-:doc:`/tutorial/controlling-the-flow` ）。调度器自己从不修改事件的值。
+:doc:`/tutorial/going-further/controlling-the-flow` ）。调度器自己从不修改事件的值。
 API 层面可用 ``node.set_event(name, value)`` 直接赋值；事件不存在时
 该方法返回 ``False`` ，不报错。
 

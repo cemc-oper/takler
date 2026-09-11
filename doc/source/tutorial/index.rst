@@ -18,13 +18,6 @@ takler 教程
 
    overview
    getting-started/index
-   add-tasks-and-containers
-   variables
-   triggers
-   events-and-meters
-   limits
-   repeat-and-time
-   controlling-the-flow
-   zombies-and-restart
+   going-further/index
    hpc-appendix
 

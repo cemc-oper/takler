@@ -19,11 +19,11 @@ takler 把工作流组织成一棵节点树，共四层：
 * :py:class:`~takler.core.Bunch` ：一个服务进程持有一个 ``Bunch`` ，
   它是所有工作流的容器，同时持有服务级参数（ ``TAKLER_HOST`` 、
   ``TAKLER_PORT`` 、 ``TAKLER_HOME`` ），这些参数沿继承链对所有节点
-  可见（见 :doc:`/tutorial/variables` ）。
+  可见（见 :doc:`/tutorial/going-further/variables` ）。
 * :py:class:`~takler.core.Flow` ：一份完整的工作流定义，是调度的基本
   单位： ``begin`` 、 ``suspend`` 等控制命令以节点路径为边界，每个
   flow 有自己独立的逻辑日历，驱动时间依赖与 repeat（见
-  :doc:`/tutorial/repeat-and-time` ）。
+  :doc:`/tutorial/going-further/repeat-and-time` ）。
 * :py:class:`~takler.core.NodeContainer` ：容器节点，可以挂在 flow 或
   另一个容器下，层数不限，用来把相关任务组织在一起。
 * :py:class:`~takler.core.Task` ：叶子节点。实际运行中使用其子类
@@ -78,27 +78,27 @@ takler 把工作流组织成一棵节点树，共四层：
 
     触发器 (trigger)
         节点运行的前置条件表达式，如 ``./t1 == complete`` ，见
-        :doc:`/tutorial/triggers` 。
+        :doc:`/tutorial/going-further/triggers` 。
 
     事件 (event)
         任务运行中置位的布尔信号，下游任务可以据此提前启动，见
-        :doc:`/tutorial/events-and-meters` 。
+        :doc:`/tutorial/going-further/events-and-meters` 。
 
     标尺 (meter)
         任务运行中更新的整数值，可在触发器中参与比较，见
-        :doc:`/tutorial/events-and-meters` 。
+        :doc:`/tutorial/going-further/events-and-meters` 。
 
     限额 (limit / inlimit)
         限制同时运行的任务数： ``limit`` 定义令牌总数，
-        ``inlimit`` 声明占用，见 :doc:`/tutorial/limits` 。
+        ``inlimit`` 声明占用，见 :doc:`/tutorial/going-further/limits` 。
 
     重复 (repeat)
         让节点按日期序列重复运行的属性，见
-        :doc:`/tutorial/repeat-and-time` 。
+        :doc:`/tutorial/going-further/repeat-and-time` 。
 
     时间依赖 (time)
         让节点等到 flow 日历到达某个时刻才可运行的依赖，见
-        :doc:`/tutorial/repeat-and-time` 。
+        :doc:`/tutorial/going-further/repeat-and-time` 。
 
     日历 (calendar)
         每个 flow 的逻辑时钟， ``begin`` 时以当前时间启动，驱动时间
@@ -106,23 +106,23 @@ takler 把工作流组织成一棵节点树，共四层：
 
     参数 (parameter)
         挂在节点上的键值对（也称变量），渲染作业脚本时沿节点树继承，
-        见 :doc:`/tutorial/variables` 。
+        见 :doc:`/tutorial/going-further/variables` 。
 
     begun
         flow 的「已启动」标记：只有 begun 的 flow 才会被调度器处理，
-        见 :doc:`/tutorial/controlling-the-flow` 。
+        见 :doc:`/tutorial/going-further/controlling-the-flow` 。
 
     try_no
         任务的运行次序号，每次提交加 1， ``requeue`` 清零；作业脚本与
-        输出文件以它编号，见 :doc:`/tutorial/zombies-and-restart` 。
+        输出文件以它编号，见 :doc:`/tutorial/going-further/zombies-and-restart` 。
 
     僵尸 (zombie)
         不属于任务当前运行实例的上报，服务端按配置的策略拒绝或接管，
-        见 :doc:`/tutorial/zombies-and-restart` 。
+        见 :doc:`/tutorial/going-further/zombies-and-restart` 。
 
     检查点 (checkpoint)
         服务端周期性保存的快照文件，用于进程重启后恢复工作流状态，
-        见 :doc:`/tutorial/zombies-and-restart` 。
+        见 :doc:`/tutorial/going-further/zombies-and-restart` 。
 
 与 ecFlow 术语的对应
 ----------------------

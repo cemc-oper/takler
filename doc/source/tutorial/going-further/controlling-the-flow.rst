@@ -41,7 +41,7 @@
       |- t3 [unknown]
           time 12:00
 
-参照 :doc:`getting-started/starting-a-server` 一节把该工作流挂到服务上
+参照 :doc:`../getting-started/starting-a-server` 一节把该工作流挂到服务上
 （修改 **test.py** 的 ``create_flow`` 函数即可），下面的命令都对这个
 运行中的服务执行。
 

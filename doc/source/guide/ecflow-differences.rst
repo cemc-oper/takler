@@ -50,7 +50,7 @@ takler 的节点模型与调度语义沿袭 ecFlow ，但只实现了其中的�
 
 per-node ``zombie`` 属性
     僵尸判定与处置是服务端的全局设置（ ``zombie_policy`` ），不能
-    按节点配置，见 :doc:`/tutorial/zombies-and-restart` 与
+    按节点配置，见 :doc:`/tutorial/going-further/zombies-and-restart` 与
     :doc:`/operation/security` 。
 
 ``defstatus`` 的全部状态

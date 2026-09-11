@@ -97,7 +97,7 @@
 ``job_password`` 刻意不进 ``to_dict`` （它会同时喂给 ``show`` 响应与
 快照文件）；自定义类型只要不给它开新的序列化通道，快照里独立的
 ``job_passwords`` 映射会让在途作业在重启后仍能上报（见
-:doc:`/tutorial/zombies-and-restart` ）。
+:doc:`/tutorial/going-further/zombies-and-restart` ）。
 
 生成变量
 ~~~~~~~~
@@ -157,4 +157,4 @@ API —— 要装自己的实现，只能在首次 ``get_logger`` 之前替换
 #. ``class_type`` 往返： ``to_dict`` → JSON → ``from_dict`` 还原出原
    类型与自定义字段；
 #. 重启恢复： 把 flow 载入服务、快照、重启，确认恢复成功且在途状态
-   正确（步骤参考 :doc:`/tutorial/zombies-and-restart` ）。
+   正确（步骤参考 :doc:`/tutorial/going-further/zombies-and-restart` ）。
