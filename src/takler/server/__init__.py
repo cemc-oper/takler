@@ -213,7 +213,7 @@ class TaklerServer:
             audit_logger=self.audit_logger,
         )
 
-        port_str = str(port)
+        port_str = None if port is None else str(port)
         self.bunch: Bunch = Bunch(host=host, port=port_str)
         self.scheduler: Scheduler = Scheduler(
             bunch=self.bunch,
