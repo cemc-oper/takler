@@ -35,15 +35,6 @@ uv run --project .. --group docs make html
 The generated HTML is written to `doc/build/html/index.html`. This is the same
 `uv sync --group docs` toolchain that Read the Docs uses (see `.readthedocs.yml`).
 
-## History
-
-Takler was initially developed in 2014 during perillaroc's second year at NWPC/CMA as a work project 
-aimed at implementing a lightweight task scheduling tool inspired by the basic features of [ecFlow](https://github.com/ecmwf/ecflow).
-
-Since 2022, the project has undergone a complete redesign, 
-now built on [asyncio](https://docs.python.org/3/library/asyncio.html) and [gRPC](https://grpc.io/). 
-The current objective is to provide a workflow management system that supports both operational and experimental use cases.
-
 ## LICENSE
 
 Copyright &copy; 2022-2025, developers at cemc-oper.
