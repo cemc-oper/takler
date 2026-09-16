@@ -57,11 +57,12 @@ jobs:
         enable-cache: true
     - name: Install the project
       run: |
-        uv sync --locked --extra tui --extra log --extra test
+        uv sync --locked --extra tui --extra log --extra test --group docs
       # `--locked`：锁文件与 `pyproject.toml` 不一致时直接失败，而不是就地重新解析。
       # 忘记提交 `uv lock` 的改动会在这一步暴露，而不是变成一次隐式的依赖升级。
       # 三个 extra 是用户可见的可选依赖；`dev` 依赖组（ruff 在其中）由 `uv sync`
-      # 默认包含，无需显式声明。
+      # 默认包含，无需显式声明。`docs` 组必须显式装：`tests/doc/test_doc_build.py`
+      # 会在测试环境内跑 `sphinx-build -W`，缺了 sphinx 该测试直接失败。
     - name: Lint with ruff
       run: |
         uv run ruff check .
