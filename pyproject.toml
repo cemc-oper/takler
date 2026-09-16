@@ -39,11 +39,13 @@ dependencies = [
     'protobuf>=7.35',
 ]
 
-# `pip install takler[tui]` / `[log]` / `[test]`. These are user-facing extras,
-# not dev tooling, so they live here rather than in `[dependency-groups]`,
-# which keeps only the `dev` group. The bounds here are the floors the design
-# prescribes (the oldest release providing the API used); every one of them is
-# satisfied by the versions pinned in `uv.lock`.
+# `pip install takler[tui]` / `[log]`. These are the only user-facing extras:
+# runtime options a downstream user may genuinely want. Everything needed to
+# develop or test takler itself (pytest, ruff, sphinx, ...) lives in
+# `[dependency-groups]` below, which is never published in the wheel metadata.
+# The bounds here are the floors the design prescribes (the oldest release
+# providing the API used); every one of them is satisfied by the versions
+# pinned in `uv.lock`.
 [project.optional-dependencies]
 tui = [
     "textual>=0.60",
@@ -51,22 +53,6 @@ tui = [
 ]
 log = [
     "loguru>=0.7",
-]
-test = [
-    "pytest>=8.0",
-    "pytest-cov>=5.0",
-    # Property-based testing.
-    "hypothesis>=6.100",
-    # Self-signed certificates and keys for the TLS tests, generated in the
-    # test process rather than committed: a checked-in certificate expires and
-    # then fails the suite on a date nobody changed anything on. The `>=42`
-    # floor is the first release whose `not_valid_before`/`not_valid_after`
-    # accept timezone-aware datetimes, which is what the generators pass.
-    "cryptography>=42",
-    # `ruff` is deliberately *not* here: a linter is not something a user of
-    # `pip install takler[test]` needs in order to run the suite. It lives in
-    # `[dependency-groups] dev`, which is locked by `uv.lock` and therefore
-    # gives CI and a developer machine the exact same ruff.
 ]
 
 [project.scripts]
@@ -84,12 +70,36 @@ Repository = "https://github.com/cemc-oper/takler.git"
 Documentation = "https://takler.readthedocs.io/"
 
 [dependency-groups]
+# The minimal set needed to run the test suite. Kept as its own group (rather
+# than folded into `dev`) so a CI job or a contributor who only wants to run
+# tests can install exactly this with `uv sync --group test --no-default-groups`.
+test = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    # Property-based testing.
+    "hypothesis>=6.100",
+    # Self-signed certificates and keys for the TLS tests, generated in the
+    # test process rather than committed: a checked-in certificate expires and
+    # then fails the suite on a date nobody changed anything on. The `>=42`
+    # floor is the first release whose `not_valid_before`/`not_valid_after`
+    # accept timezone-aware datetimes, which is what the generators pass.
+    "cryptography>=42",
+]
+# The default group: a bare `uv sync` yields the complete development
+# environment, so `uv run pytest` / `uv run ruff` work without extra flags.
 dev = [
+    # Everything the test suite needs.
+    {include-group = "test"},
+    # The project's own extras, so the test suite can exercise the tui and
+    # logging code paths (textual/rich/loguru must be importable). Dependency
+    # groups never appear in wheel metadata, so this self-reference has no
+    # effect on what `pip install takler` resolves.
+    "takler[tui,log]",
     "build",
     "twine",
     "ipython",
-    # Linter and formatter. Kept in a dependency group rather than in the
-    # user-facing `test` extra: `[dependency-groups]` is not published in the
+    # Linter and formatter. Kept in a dependency group rather than in a
+    # user-facing extra: `[dependency-groups]` is not published in the
     # wheel metadata, so nobody installing `takler` drags a linter along, and
     # `uv.lock` pins one exact version for every consumer of the lockfile
     # (`uv run ruff` locally, `uv sync --locked` in CI). The `>=0.15` floor

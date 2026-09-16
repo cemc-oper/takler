@@ -46,7 +46,6 @@ WORKFLOW_PATH = (
 )
 
 EXPECTED_PYTHON_VERSIONS = {"3.11", "3.12"}
-EXPECTED_EXTRAS = {"tui", "log", "test"}
 
 #: Actions that may be responsible for providing the interpreter.
 PYTHON_SETUP_ACTIONS = ("setup-uv", "setup-python")
@@ -230,22 +229,17 @@ def test_the_interpreter_comes_from_the_matrix_version(test_job: dict[str, Any])
 # ---------------------------------------------------------------------------
 
 
-def test_install_step_pulls_the_tui_log_and_test_extras(test_job: dict[str, Any]):
-    """The three optional dependency groups are installed before the tests."""
+def test_install_step_pulls_all_dependency_groups(test_job: dict[str, Any]):
+    """The sync installs every group, so the suite sees test and docs deps.
+
+    ``--all-groups`` covers ``dev`` (which itself includes ``test`` and, via
+    the project's self-reference, the ``tui``/``log`` extras) plus ``docs``,
+    which ``tests/doc/test_doc_build.py`` needs for its ``sphinx-build -W``.
+    """
     syncs = _steps_running(test_job, "uv", "sync")
-    extras: set[str] = set()
-    for line in syncs:
-        tokens = line.split()
-        if "--all-extras" in tokens:
-            extras |= EXPECTED_EXTRAS
-        for index, token in enumerate(tokens):
-            if token == "--extra" and index + 1 < len(tokens):
-                extras.add(tokens[index + 1])
-            elif token.startswith("--extra="):
-                extras.add(token.split("=", 1)[1])
 
     assert syncs, _command_lines(test_job)
-    assert EXPECTED_EXTRAS <= extras, syncs
+    assert any("--all-groups" in line.split() for line in syncs), syncs
 
 
 def test_install_step_restores_the_locked_environment(test_job: dict[str, Any]):

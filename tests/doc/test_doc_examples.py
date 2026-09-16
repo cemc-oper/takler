@@ -3566,8 +3566,11 @@ def test_develop_contributing_matches_project_config():
     assert any(m.startswith("slow:") for m in markers)
     assert "``slow``" in text
 
+    # Each user-facing extra is mentioned on the contributing page (the dev
+    # group pulls them in by self-reference, so the page no longer names
+    # explicit ``--extra`` flags).
     for extra in pyproject["project"]["optional-dependencies"]:
-        assert f"--extra {extra}" in text, extra
+        assert extra in text, extra
 
     assert any(
         req.startswith("setuptools_scm")

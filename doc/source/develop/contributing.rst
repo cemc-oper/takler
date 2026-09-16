@@ -12,16 +12,18 @@
 
 .. code-block:: console
 
-    $ uv sync --locked --extra tui --extra log --extra test
+    $ uv sync --locked
 
-三个 ``--extra`` 是用户可见的可选依赖（ TUI 、 loguru 后端、测试依
-赖）； ``dev`` 依赖组（ ruff 、 grpcio-tools 等）由 ``uv sync`` 默认
-带上，无需显式声明。 ``--locked`` 让锁文件与 ``pyproject.toml`` 不一
-致时直接失败，而不是就地重新解析 —— 改了依赖后记得 ``uv lock`` 并把
-``uv.lock`` 一起提交。
+``dev`` 依赖组由 ``uv sync`` 默认带上，且它已经包含一切：通过
+``include-group`` 含 ``test`` 组（ pytest 、 hypothesis 、
+cryptography ），通过自引用带上本项目的 ``tui`` / ``log`` 两个 extra
+（测试套件会用到 textual 、 loguru ），另有 ruff 、 grpcio-tools 等开
+发工具。 ``--locked`` 让锁文件与 ``pyproject.toml`` 不一致时直接失
+败，而不是就地重新解析 —— 改了依赖后记得 ``uv lock`` 并把 ``uv.lock``
+一起提交。
 
-不用 uv 时的等价物是 ``pip install -e ".[tui,log,test]"`` ，但请注意本
-仓库的「本地通过 == CI 通过」依赖锁文件（见下节），裸 pip 现场解析的
+不用 uv 时的等价物是 ``pip install -e ".[tui,log]"`` ，但请注意本仓
+库的「本地通过 == CI 通过」依赖锁文件（见下节），裸 pip 现场解析的
 环境可能与 CI 不一致。
 
 代码风格
@@ -146,7 +148,7 @@ CI
 --
 
 ``.github/workflows/test.yml`` 在 Python 3.11 与 3.12 矩阵上执行：
-``uv sync --locked`` 还原环境 → ``ruff check`` → ``ruff format
---check`` → ``pytest --cov`` → 两道覆盖率门。所有命令都走 ``uv
-run`` ，与本地完全一致 —— 本地按本页命令跑过， CI 就不会给出不同的
-结论。
+``uv sync --locked --all-groups`` 还原环境 → ``ruff check`` → ``ruff
+format --check`` → ``pytest --cov`` → 两道覆盖率门。所有命令都走
+``uv run`` ，与本地完全一致 —— 本地按本页命令跑过， CI 就不会给出不
+同的结论。

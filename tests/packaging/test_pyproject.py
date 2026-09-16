@@ -5,8 +5,8 @@ install step itself. What these tests pin down is the *shape* of the metadata,
 which is what makes a deployment reproducible and keeps the console entry
 points from drifting back to names that clash with the Go client:
 
-* the three user-facing extras (``tui`` / ``log`` / ``test``) exist and carry
-  the members the design prescribes,
+* the two user-facing extras (``tui`` / ``log``) exist and carry the members
+  the design prescribes; test tooling is *not* a published extra,
 * every requirement, runtime or optional, declares a minimum version lower
   bound so a resolver cannot pick an arbitrarily old release,
 * no requirement is guarded by a ``python_version`` marker (``requires-python``
@@ -14,6 +14,9 @@ points from drifting back to names that clash with the Go client:
 * ``[project.scripts]`` declares exactly ``takler-server``,
   ``takler-client-py`` and ``takler-tui`` -- notably neither ``takler`` nor
   ``takler_client``, the latter being the artifact name of the Go client,
+* ``[dependency-groups]`` holds the dev/test/docs tooling, and ``dev`` is
+  self-sufficient: it includes the ``test`` group and the project's own
+  extras, so a bare ``uv sync`` can run the full suite,
 * dev tooling (ruff) stays in ``[dependency-groups] dev`` rather than in an
   extra, and ``[tool.ruff.lint] select`` names the rule set instead of inheriting
   whatever the installed ruff happens to default to.
@@ -36,7 +39,8 @@ import pytest
 # ``tests/packaging/test_pyproject.py`` -> project root.
 PYPROJECT_PATH = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
-EXPECTED_EXTRAS = {"tui", "log", "test"}
+EXPECTED_EXTRAS = {"tui", "log"}
+EXPECTED_GROUPS = {"dev", "test", "docs"}
 EXPECTED_SCRIPTS = {"takler-server", "takler-client-py", "takler-tui"}
 FORBIDDEN_SCRIPTS = {"takler", "takler_client"}
 
@@ -76,13 +80,36 @@ def _specifier_part(requirement: str) -> str:
     return requirement.split(";", 1)[0]
 
 
-def _has_lower_bound(requirement: str) -> bool:
+def _version_specifier(requirement: str) -> str:
+    """Return the pure version specifier, with name and extras removed.
+
+    ``takler[tui,log]>=1.0`` -> ``>=1.0``; ``takler[tui,log]`` -> ``""``
+    (an extras-only self-reference declares no constraint and counts as bare).
+    """
     specifier = _specifier_part(requirement)
     # Strip the name (and any extras) so a name such as ``zope.interface``
     # cannot be mistaken for an operator.
     name = _distribution_name(requirement)
     specifier = specifier[len(name) :]
-    return any(operator in specifier for operator in LOWER_BOUND_OPERATORS)
+    if specifier.startswith("["):
+        specifier = specifier[specifier.index("]") + 1 :]
+    return specifier
+
+
+def _has_lower_bound(requirement: str) -> bool:
+    return any(
+        operator in _version_specifier(requirement)
+        for operator in LOWER_BOUND_OPERATORS
+    )
+
+
+def _group_requirements(group: list) -> list[str]:
+    """Return the string requirements of a dependency group.
+
+    A group may also contain ``{"include-group": ...}`` tables (PEP 735),
+    which are not requirements and are skipped here.
+    """
+    return [entry for entry in group if isinstance(entry, str)]
 
 
 def _all_requirements(
@@ -102,10 +129,15 @@ def _all_requirements(
 # ---------------------------------------------------------------------------
 
 
-def test_optional_dependency_groups_are_exactly_tui_log_test(
+def test_optional_dependency_groups_are_exactly_tui_log(
     optional_dependencies: dict[str, list[str]],
 ):
-    """The three user-facing extras exist, and no other extra is declared."""
+    """The two user-facing extras exist, and no other extra is declared.
+
+    Test tooling is deliberately not an extra: ``pip install takler[test]``
+    was never something a downstream user needed, and publishing it would
+    advertise pytest as part of the runtime contract.
+    """
     assert set(optional_dependencies) == EXPECTED_EXTRAS
 
 
@@ -125,26 +157,52 @@ def test_log_extra_installs_loguru(optional_dependencies: dict[str, list[str]]):
     assert "loguru" in names
 
 
-def test_dependency_groups_keeps_only_dev_tooling(pyproject: dict):
-    """The extras moved out of ``[dependency-groups]``, which keeps ``dev``."""
+def test_dependency_groups_are_dev_test_and_docs(pyproject: dict):
+    """Groups hold non-published tooling; their names never shadow an extra."""
     groups = pyproject["dependency-groups"]
 
-    assert "dev" in groups
+    assert set(groups) == EXPECTED_GROUPS
     assert EXPECTED_EXTRAS.isdisjoint(groups)
+
+
+def test_test_group_carries_the_test_dependencies(pyproject: dict):
+    """pytest and friends live in the ``test`` group, not in an extra."""
+    names = set(_group_requirements(pyproject["dependency-groups"]["test"]))
+    names = {_distribution_name(req) for req in names}
+
+    assert {"pytest", "pytest-cov", "hypothesis", "cryptography"} <= names
+
+
+def test_dev_group_includes_test_group_and_project_extras(pyproject: dict):
+    """A bare ``uv sync`` must yield an environment that runs the full suite.
+
+    ``dev`` is the default group, so it pulls in the ``test`` group via
+    ``include-group`` and the project's own ``tui``/``log`` extras via a
+    self-reference (the suite exercises the TUI and loguru code paths).
+    """
+    dev = pyproject["dependency-groups"]["dev"]
+
+    assert {"include-group": "test"} in dev
+    requirements = _group_requirements(dev)
+    assert any(
+        _distribution_name(req) == "takler" and "tui" in req and "log" in req
+        for req in requirements
+    )
 
 
 def test_ruff_is_dev_tooling_not_a_user_facing_extra(pyproject: dict):
     """The linter belongs to ``[dependency-groups] dev``, not to any extra.
 
-    Two reasons, and the second one is the one that bit us: a user installing
-    ``takler[test]`` has no use for a linter, and dependency groups are locked by
+    Two reasons, and the second one is the one that bit us: a linter is not
+    something a downstream user needs, and dependency groups are locked by
     ``uv.lock``, so CI (``uv sync --locked``) and a developer machine
     (``uv run ruff``) get the byte-identical ruff. While ruff sat in the ``test``
     extra with a ``>=0.5`` floor, CI resolved it freely and 0.16 changed the
     default rule set under us.
     """
     dev_names = {
-        _distribution_name(req) for req in pyproject["dependency-groups"]["dev"]
+        _distribution_name(req)
+        for req in _group_requirements(pyproject["dependency-groups"]["dev"])
     }
     extra_names = {
         _distribution_name(req)
@@ -162,13 +220,14 @@ def test_every_dev_group_requirement_declares_a_lower_bound_or_is_bare(
     """Dev tooling may be unpinned, but a declared bound must be a lower one.
 
     ``uv.lock`` is what actually pins these, so a bare name (``build``,
-    ``ipython``) is fine here; what must not appear is an upper bound only,
-    which would let a resolver walk backwards.
+    ``ipython``) or an extras-only self-reference (``takler[tui,log]``) is
+    fine here; what must not appear is an upper bound only, which would let
+    a resolver walk backwards.
     """
     upper_only = [
         req
-        for req in pyproject["dependency-groups"]["dev"]
-        if _specifier_part(req) != _distribution_name(req) and not _has_lower_bound(req)
+        for req in _group_requirements(pyproject["dependency-groups"]["dev"])
+        if _version_specifier(req) and not _has_lower_bound(req)
     ]
 
     assert upper_only == []
