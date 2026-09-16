@@ -185,12 +185,30 @@ def test_write_slower_than_the_period_logs_a_warning_with_both_values(tmp_path):
 
     manager.write_checkpoint_async = slow_write
 
+    # Wait for the first overrun WARNING to actually be logged instead of
+    # sleeping a fixed number of periods: on a loaded machine the fixed wait
+    # can expire while the first slow write is still in flight, and ``stop``
+    # then cancels the loop at the shielded await before the WARNING is
+    # emitted. The console sink writes to this buffer synchronously, so
+    # polling it observes the record as soon as the loop logs it.
+    buffer = io.StringIO()
+    takler.logging._reset_configured_state()
+
     async def main():
         await manager.start()
-        await asyncio.sleep(manager.interval * 5)
+        for _ in range(200):
+            if "WARNING" in buffer.getvalue():
+                break
+            await asyncio.sleep(manager.interval)
         await manager.stop()
 
-    _, captured = _capturing_stderr(lambda: asyncio.run(main()))
+    try:
+        with contextlib.redirect_stderr(buffer):
+            takler.logging.configure(level="DEBUG", console=True)
+            asyncio.run(main())
+    finally:
+        takler.logging.configure(console=True)
+    captured = buffer.getvalue()
 
     warnings = [line for line in captured.splitlines() if "WARNING" in line]
     assert warnings
