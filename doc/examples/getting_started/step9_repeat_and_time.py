@@ -18,7 +18,9 @@ def create_flow():
     daily.add_repeat(RepeatDate("TAKLER_DATE", 20240101, 20240103))
 
     task1 = daily.add_task(ShellScriptTask("t1"))
-    task1.add_parameter("TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1_with_repeat.takler")))
+    task1.add_parameter(
+        "TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1_with_repeat.takler"))
+    )
 
     task2 = flow.add_task(ShellScriptTask("t2"))
     task2.add_parameter("TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task2.takler")))

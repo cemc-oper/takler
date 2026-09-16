@@ -14,7 +14,9 @@ def create_flow():
     flow.add_parameter("TAKLER_HOME", str(TAKLER_HOME))
 
     task1 = flow.add_task(ShellScriptTask("t1"))
-    task1.add_parameter("TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1_with_events.takler")))
+    task1.add_parameter(
+        "TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1_with_events.takler"))
+    )
     # t1 reports its progress while running: an event "a" and a meter "step".
     task1.add_event("a")
     task1.add_meter("step", 0, 100)
