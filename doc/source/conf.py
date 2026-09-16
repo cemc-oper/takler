@@ -90,6 +90,11 @@ nitpick_ignore = [
     # ``from __future__ import annotations`` 模块）时，下标里的 ``str``
     # 被 repr 成 ``class 'str'`` 再包成引用，目标天然不存在。
     ("py:class", "class 'str'"),
+    # Python < 3.14 上 ``contextvars.Token.__module__`` 是私有模块
+    # ``_contextvars``，autodoc 按真实模块为 auth.py 里
+    # ``set_call_credentials`` / ``reset_call_credentials`` 的注解建引用，
+    # 而私有模块不进 Python 官方文档，intersphinx 解析不到。
+    ("py:class", "_contextvars.Token"),
 ]
 
 # 系统性的允许缺失模式（re.fullmatch 匹配）。本项目 docstring 的约定是：
@@ -144,6 +149,13 @@ html_title = "Takler文档"
 html_static_path = ["_static"]
 
 autosummary_generate = True
+
+# sphinx-autodoc-typehints 默认按构建所用解释器的 repr 渲染 ``Union``：Python
+# < 3.14 得到 ``typing.Union[int, str]``，并给 ``typing.Union`` 建交叉引用——
+# 该别名已从最新版 Python 文档移除，intersphinx 解析不到，nitpicky + ``-W``
+# 下直接失败；3.14 起 repr 才是 ``int | str``。强制竖线写法让 API 页在所有
+# 受支持的 Python 版本（CI 矩阵 3.11/3.12，Read the Docs 3.12）下渲染一致。
+always_use_bars_union = True
 
 # 可选依赖（tui / log extras）在只装 docs 依赖组的环境（如 Read the Docs，
 # 见 .readthedocs.yml）里不存在。autodoc 遇到这些导入失败时用 mock 顶替，
