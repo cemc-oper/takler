@@ -1270,7 +1270,7 @@ def test_guide_trigger_missing_node_and_variable_fail_at_first_evaluation():
     from takler.exceptions import ExpressionSyntaxError, NodeNotFoundError
 
     flow = Flow("test")
-    task1 = flow.add_task("t1")
+    flow.add_task("t1")
 
     bad_path = flow.add_task("bad_path")
     bad_path.add_trigger("./nope == complete")
@@ -1418,7 +1418,7 @@ def test_guide_undefined_variable_renders_as_empty_string(tmp_path):
     flow = Flow("test")
     flow.add_parameter("TAKLER_HOME", str(tmp_path))
     flow.add_parameter("DEFINED", "yes")
-    task1 = flow.add_task(ShellScriptTask("t1", script_path=str(script)))
+    flow.add_task(ShellScriptTask("t1", script_path=str(script)))
 
     check_job_creation(flow)
 
@@ -3305,7 +3305,7 @@ def test_develop_core_design_serialization_class_type_and_password():
     """
     import json
 
-    from takler.core import Bunch, Flow, SerializationType
+    from takler.core import Bunch, Flow
     from takler.tasks.shell import ShellScriptTask
 
     bunch = Bunch()
