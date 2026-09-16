@@ -19,5 +19,6 @@ takler 教程
    overview
    getting-started/index
    going-further/index
+   advanced-topics/index
    hpc-appendix
 

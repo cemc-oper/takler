@@ -209,64 +209,139 @@ def test_step6_triggers_block_until_upstream_task_completes():
     assert task2.resolve_dependencies() is True
 
 
-def test_step7_event_and_meter_triggers_gate_downstream_tasks():
-    """``step7_events_and_meters.py`` gates ``t2``/``t3`` on t1's self-report.
+def test_step7_complete_trigger_completes_task_without_running_it():
+    """``step7_complete_trigger.py``'s ``t2`` completes once ``t1`` sets event ``a``.
 
-    Mirrors the exact scenario walked through in events-and-meters.rst:
-    ``t2`` waits for event ``a`` to be set and ``t3`` waits for meter
-    ``step`` to reach 50; neither resolves while ``t1`` has not reported,
-    and both resolve once the corresponding attribute value arrives.
+    Mirrors the exact scenario walked through in complete-triggers.rst: the
+    complete trigger is evaluated during dependency resolution and, once
+    satisfied, the node is marked ``complete`` directly without a job ever
+    being submitted.
     """
-    module = _load_module(EXAMPLES_DIR / "step7_events_and_meters.py")
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step7_complete_trigger.py")
     flow = module.create_flow()
 
     task1 = flow.find_node("/test/t1")
     task2 = flow.find_node("/test/t2")
-    task3 = flow.find_node("/test/t3")
+
+    assert task2.complete_trigger_expression is not None
+    assert task2.complete_trigger_expression.expression_str == "./t1:a == set"
+
+    flow.requeue()
+    assert task2.evaluate_complete_trigger() is False
+
+    # Once t1 sets the event, the complete trigger is satisfied...
+    task1.set_event("a", True)
+    assert task2.evaluate_complete_trigger() is True
+
+    # ...and dependency resolution completes t2 without running its script.
+    flow.resolve_dependencies()
+    assert task2.is_complete_triggered is True
+    assert task2.state.node_status == NodeStatus.complete
+    assert task2.try_no == 0
+
+
+def test_step8_event_trigger_gates_downstream_task():
+    """``step8_events.py`` gates ``t2`` on t1's self-reported event ``a``.
+
+    Mirrors the exact scenario walked through in events.rst: ``t2`` waits for
+    event ``a`` to be set; the trigger does not resolve while ``t1`` has not
+    reported, and resolves as soon as the event arrives — without waiting for
+    ``t1`` to complete.
+    """
+    module = _load_module(EXAMPLES_DIR / "step8_events.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task2 = flow.find_node("/test/t2")
 
     flow.requeue()
     assert task2.resolve_dependencies() is False
-    assert task3.resolve_dependencies() is False
-
-    # Meter below the threshold still blocks t3; reaching it releases t3.
-    task1.set_meter("step", 25)
-    assert task3.resolve_dependencies() is False
-    task1.set_meter("step", 50)
-    assert task3.resolve_dependencies() is True
 
     # Setting the event releases t2 while t1 is still running.
     task1.set_event("a", True)
     assert task2.resolve_dependencies() is True
 
 
-def test_step7_requeue_resets_events_and_meters():
-    """``requeue`` returns t1's event and meter to their initial values.
+def test_step8_requeue_resets_events():
+    """``requeue`` returns t1's event to its initial value.
 
-    events-and-meters.rst promises that a requeued node reports from a clean
-    slate: the event falls back to ``initial_value`` (``unset``) and the meter
-    falls back to its range minimum, so downstream triggers wait for fresh
-    reports on the next run.
+    events.rst promises that a requeued node reports from a clean slate: the
+    event falls back to ``initial_value`` (``unset``), so downstream triggers
+    wait for a fresh report on the next run.
     """
-    module = _load_module(EXAMPLES_DIR / "step7_events_and_meters.py")
+    module = _load_module(EXAMPLES_DIR / "step8_events.py")
     flow = module.create_flow()
 
     task1 = flow.find_node("/test/t1")
     task1.set_event("a", True)
-    task1.set_meter("step", 50)
 
     task1.requeue()
 
     assert task1.find_event("a").value is False
+
+
+def test_step8_task1_with_event_renders_cleanly(cleanup_generated_files):
+    """The ``task1_with_event.takler`` script renders without Jinja2 errors."""
+    from takler.tasks.shell import ShellScriptTask
+
+    test_dir = EXAMPLES_DIR / "test"
+    task1 = ShellScriptTask("t1", str(test_dir / "task1_with_event.takler"))
+    task1.add_parameter("TAKLER_HOME", str(test_dir))
+    task1.update_generated_parameters()
+
+    assert task1.check_job_creation()
+
+
+def test_step9_meter_trigger_gates_downstream_task():
+    """``step9_meters.py`` gates ``t2`` on t1's meter ``step`` reaching 50.
+
+    Mirrors the exact scenario walked through in meters.rst: ``t2`` waits for
+    meter ``step`` to reach 50; values below the threshold still block it, and
+    reaching the threshold releases it while ``t1`` is still running.
+    """
+    module = _load_module(EXAMPLES_DIR / "step9_meters.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task2 = flow.find_node("/test/t2")
+
+    flow.requeue()
+    assert task2.resolve_dependencies() is False
+
+    # Meter below the threshold still blocks t2; reaching it releases t2.
+    task1.set_meter("step", 25)
+    assert task2.resolve_dependencies() is False
+    task1.set_meter("step", 50)
+    assert task2.resolve_dependencies() is True
+
+
+def test_step9_requeue_resets_meters():
+    """``requeue`` returns t1's meter to the bottom of its range.
+
+    meters.rst promises that a requeued node reports from a clean slate: the
+    meter falls back to its range minimum, so downstream triggers wait for
+    fresh reports on the next run.
+    """
+    module = _load_module(EXAMPLES_DIR / "step9_meters.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/t1")
+    task1.set_meter("step", 50)
+
+    task1.requeue()
+
     assert task1.find_meter("step").value == 0
 
 
-def test_step7_meter_rejects_values_outside_its_range():
+def test_step9_meter_rejects_values_outside_its_range():
     """Meter updates outside ``[min_value, max_value]`` raise ``ValueError``.
 
-    events-and-meters.rst states that out-of-range reports are refused; the
-    example's meter ``step`` spans 0~100, so 101 must be rejected.
+    meters.rst states that out-of-range reports are refused; the example's
+    meter ``step`` spans 0~100, so 101 must be rejected.
     """
-    module = _load_module(EXAMPLES_DIR / "step7_events_and_meters.py")
+    module = _load_module(EXAMPLES_DIR / "step9_meters.py")
     flow = module.create_flow()
 
     task1 = flow.find_node("/test/t1")
@@ -275,20 +350,137 @@ def test_step7_meter_rejects_values_outside_its_range():
         task1.set_meter("step", 101)
 
 
-def test_step7_task1_with_events_renders_cleanly(cleanup_generated_files):
-    """The ``task1_with_events.takler`` script renders without Jinja2 errors."""
+def test_step9_task1_with_meter_renders_cleanly(cleanup_generated_files):
+    """The ``task1_with_meter.takler`` script renders without Jinja2 errors."""
     from takler.tasks.shell import ShellScriptTask
 
     test_dir = EXAMPLES_DIR / "test"
-    task1 = ShellScriptTask("t1", str(test_dir / "task1_with_events.takler"))
+    task1 = ShellScriptTask("t1", str(test_dir / "task1_with_meter.takler"))
     task1.add_parameter("TAKLER_HOME", str(test_dir))
     task1.update_generated_parameters()
 
     assert task1.check_job_creation()
 
 
-def test_step8_limit_tokens_track_task_status_changes():
-    """``step8_limits.py``'s limit counts running tasks and gates the rest.
+def test_step10_repeat_generates_date_variable_for_children():
+    """``step10_repeat.py``'s repeat exposes ``TAKLER_DATE`` to children.
+
+    repeat.rst promises that a repeat generates a same-named variable holding
+    the current loop value (an integer ``YYYYMMDD``) which the whole subtree —
+    including task scripts — can reference.
+    """
+    module = _load_module(EXAMPLES_DIR / "step10_repeat.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/daily/t1")
+
+    assert task1.parameters()["TAKLER_DATE"].value == 20240101
+
+
+def test_step10_repeat_advances_and_requeues_when_node_completes():
+    """Completing a repeat node advances the date and requeues the subtree.
+
+    Mirrors the exact scenario walked through in repeat.rst: each time
+    ``daily`` completes, the repeat moves to the next day and the container
+    (with its task) is requeued; past the end date the container stays
+    ``complete``.
+    """
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step10_repeat.py")
+    flow = module.create_flow()
+
+    daily = flow.find_node("/test/daily")
+    task1 = flow.find_node("/test/daily/t1")
+
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240102
+    assert daily.state.node_status == NodeStatus.queued
+    assert task1.state.node_status == NodeStatus.queued
+
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240103
+    assert daily.state.node_status == NodeStatus.queued
+
+    # 20240103 is the end date: no next value, so the container stays complete.
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240103
+    assert daily.state.node_status == NodeStatus.complete
+
+
+def test_step10_requeue_resets_repeat_to_start():
+    """A manual ``requeue`` returns the repeat to its start date.
+
+    repeat.rst warns about this asymmetry: the scheduler's internal requeue
+    during loop advancement keeps the current value, but an explicit
+    ``requeue`` resets it.
+    """
+    from takler.core import NodeStatus
+
+    module = _load_module(EXAMPLES_DIR / "step10_repeat.py")
+    flow = module.create_flow()
+
+    daily = flow.find_node("/test/daily")
+    task1 = flow.find_node("/test/daily/t1")
+
+    task1.set_node_status(NodeStatus.complete)
+    assert daily.repeat.value() == 20240102
+
+    flow.requeue()
+    assert daily.repeat.value() == 20240101
+
+
+def test_step10_task1_with_repeat_renders_cleanly(cleanup_generated_files):
+    """The ``task1_with_repeat.takler`` script renders the repeat date variable."""
+    module = _load_module(EXAMPLES_DIR / "step10_repeat.py")
+    flow = module.create_flow()
+
+    task1 = flow.find_node("/test/daily/t1")
+    assert task1.check_job_creation()
+
+    jobs = list((EXAMPLES_DIR / "test" / "daily").glob("t1.job*"))
+    assert len(jobs) == 1
+    assert "processing date 20240101" in jobs[0].read_text()
+
+
+def test_step11_time_dependency_waits_for_flow_calendar():
+    """``t2``'s ``12:00`` time attribute follows the flow's logical calendar.
+
+    Mirrors the exact scenario walked through in time.rst: the dependency
+    blocks while the flow time is before 12:00; once the calendar reaches
+    12:00 a free latch keeps it satisfied (so later times still pass);
+    requeuing the node re-arms the dependency.
+    """
+    import datetime
+
+    module = _load_module(EXAMPLES_DIR / "step11_time.py")
+    flow = module.create_flow()
+
+    task2 = flow.find_node("/test/t2")
+
+    # Start the flow's logical calendar at 11:59: the 12:00 time dependency
+    # is not yet satisfied.
+    flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
+    assert task2.resolve_time_dependencies() is False
+
+    # One (real) minute later the flow time reaches 12:00 and the dependency
+    # is satisfied.
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
+    assert flow.calendar.flow_time.hour == 12
+    assert flow.calendar.flow_time.minute == 0
+    assert task2.resolve_time_dependencies() is True
+
+    # The free latch keeps it satisfied after the exact minute has passed...
+    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
+    assert task2.resolve_time_dependencies() is True
+
+    # ...until the node is requeued, which re-arms the time dependency.
+    task2.requeue()
+    assert task2.resolve_time_dependencies() is False
+
+
+def test_step12_limit_tokens_track_task_status_changes():
+    """``step12_limits.py``'s limit counts running tasks and gates the rest.
 
     Mirrors the exact scenario walked through in limits.rst: a task holds one
     token of ``work`` while it is ``submitted``; once both tokens are taken
@@ -297,7 +489,7 @@ def test_step8_limit_tokens_track_task_status_changes():
     """
     from takler.core import NodeStatus
 
-    module = _load_module(EXAMPLES_DIR / "step8_limits.py")
+    module = _load_module(EXAMPLES_DIR / "step12_limits.py")
     flow = module.create_flow()
 
     group1 = flow.find_node("/test/group1")
@@ -328,14 +520,14 @@ def test_step8_limit_tokens_track_task_status_changes():
     assert limit.value == 0
 
 
-def test_step8_in_limit_resolves_limit_up_the_node_tree():
+def test_step12_in_limit_resolves_limit_up_the_node_tree():
     """An in-limit without ``node_path`` finds the nearest limit up the tree.
 
     limits.rst states the lookup rule mirrors variable lookup: ``t1`` sits
     under ``group1`` which holds ``work``, so the bare ``add_in_limit("work")``
     binds to that limit.
     """
-    module = _load_module(EXAMPLES_DIR / "step8_limits.py")
+    module = _load_module(EXAMPLES_DIR / "step12_limits.py")
     flow = module.create_flow()
 
     group1 = flow.find_node("/test/group1")
@@ -344,126 +536,9 @@ def test_step8_in_limit_resolves_limit_up_the_node_tree():
     assert task1.find_limit_up("work") is group1.find_limit("work")
 
 
-def test_step9_repeat_generates_date_variable_for_children():
-    """``step9_repeat_and_time.py``'s repeat exposes ``TAKLER_DATE`` to children.
-
-    repeat-and-time.rst promises that a repeat generates a same-named variable
-    holding the current loop value (an integer ``YYYYMMDD``) which the whole
-    subtree — including task scripts — can reference.
-    """
-    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
-    flow = module.create_flow()
-
-    task1 = flow.find_node("/test/daily/t1")
-
-    assert task1.parameters()["TAKLER_DATE"].value == 20240101
-
-
-def test_step9_repeat_advances_and_requeues_when_node_completes():
-    """Completing a repeat node advances the date and requeues the subtree.
-
-    Mirrors the exact scenario walked through in repeat-and-time.rst: each
-    time ``daily`` completes, the repeat moves to the next day and the
-    container (with its task) is requeued; past the end date the container
-    stays ``complete``.
-    """
-    from takler.core import NodeStatus
-
-    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
-    flow = module.create_flow()
-
-    daily = flow.find_node("/test/daily")
-    task1 = flow.find_node("/test/daily/t1")
-
-    task1.set_node_status(NodeStatus.complete)
-    assert daily.repeat.value() == 20240102
-    assert daily.state.node_status == NodeStatus.queued
-    assert task1.state.node_status == NodeStatus.queued
-
-    task1.set_node_status(NodeStatus.complete)
-    assert daily.repeat.value() == 20240103
-    assert daily.state.node_status == NodeStatus.queued
-
-    # 20240103 is the end date: no next value, so the container stays complete.
-    task1.set_node_status(NodeStatus.complete)
-    assert daily.repeat.value() == 20240103
-    assert daily.state.node_status == NodeStatus.complete
-
-
-def test_step9_requeue_resets_repeat_to_start():
-    """A manual ``requeue`` returns the repeat to its start date.
-
-    repeat-and-time.rst warns about this asymmetry: the scheduler's internal
-    requeue during loop advancement keeps the current value, but an explicit
-    ``requeue`` resets it.
-    """
-    from takler.core import NodeStatus
-
-    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
-    flow = module.create_flow()
-
-    daily = flow.find_node("/test/daily")
-    task1 = flow.find_node("/test/daily/t1")
-
-    task1.set_node_status(NodeStatus.complete)
-    assert daily.repeat.value() == 20240102
-
-    flow.requeue()
-    assert daily.repeat.value() == 20240101
-
-
-def test_step9_time_dependency_waits_for_flow_calendar():
-    """``t2``'s ``12:00`` time attribute follows the flow's logical calendar.
-
-    Mirrors the exact scenario walked through in repeat-and-time.rst: the
-    dependency blocks while the flow time is before 12:00; once the calendar
-    reaches 12:00 a free latch keeps it satisfied (so later times still pass);
-    requeuing the node re-arms the dependency.
-    """
-    import datetime
-
-    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
-    flow = module.create_flow()
-
-    task2 = flow.find_node("/test/t2")
-
-    # Start the flow's logical calendar at 11:59: the 12:00 time dependency
-    # is not yet satisfied.
-    flow.calendar.begin(datetime.datetime(2024, 1, 1, 11, 59))
-    assert task2.resolve_time_dependencies() is False
-
-    # One (real) minute later the flow time reaches 12:00 and the dependency
-    # is satisfied.
-    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
-    assert flow.calendar.flow_time.hour == 12
-    assert flow.calendar.flow_time.minute == 0
-    assert task2.resolve_time_dependencies() is True
-
-    # The free latch keeps it satisfied after the exact minute has passed...
-    flow.update_calendar(flow.calendar.last_real_time + datetime.timedelta(minutes=1))
-    assert task2.resolve_time_dependencies() is True
-
-    # ...until the node is requeued, which re-arms the time dependency.
-    task2.requeue()
-    assert task2.resolve_time_dependencies() is False
-
-
-def test_step9_task1_with_repeat_renders_cleanly(cleanup_generated_files):
-    """The ``task1_with_repeat.takler`` script renders the repeat date variable."""
-    module = _load_module(EXAMPLES_DIR / "step9_repeat_and_time.py")
-    flow = module.create_flow()
-
-    task1 = flow.find_node("/test/daily/t1")
-    assert task1.check_job_creation()
-
-    jobs = list((EXAMPLES_DIR / "test" / "daily").glob("t1.job*"))
-    assert len(jobs) == 1
-    assert "processing date 20240101" in jobs[0].read_text()
-
-
-def test_step10_builds_expected_tree():
-    """``step10_control.py`` defines ``test`` with t1 (event), t2 (trigger), t3 (time)."""
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+def test_step13_builds_expected_tree():
+    """``step13_control.py`` defines ``test`` with t1 (event), t2 (trigger), t3 (time)."""
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     flow = module.create_flow()
 
     task1 = flow.find_node("/test/t1")
@@ -474,7 +549,7 @@ def test_step10_builds_expected_tree():
     assert len(task3.times) == 1
 
 
-def test_step10_begin_starts_calendar_and_rejects_second_begin():
+def test_step13_begin_starts_calendar_and_rejects_second_begin():
     """``begin`` marks the flow begun and requeues the tree; only begun flows run.
 
     controlling-the-flow.rst walks through this: the first ``begin`` starts the
@@ -485,7 +560,7 @@ def test_step10_begin_starts_calendar_and_rejects_second_begin():
     from takler.exceptions import FlowStateError
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
 
@@ -503,7 +578,7 @@ def test_step10_begin_starts_calendar_and_rejects_second_begin():
     scheduler.run_command_begin("test", force=True)
 
 
-def test_step10_control_commands_require_a_begun_flow():
+def test_step13_control_commands_require_a_begun_flow():
     """``requeue``/``run``/``force``/``free-dep`` on an un-begun flow are refused.
 
     controlling-the-flow.rst notes that a freshly ``load``-ed flow (or any flow
@@ -513,7 +588,7 @@ def test_step10_control_commands_require_a_begun_flow():
     from takler.exceptions import FlowStateError
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     scheduler.bunch.add_flow(module.create_flow())
 
@@ -527,7 +602,7 @@ def test_step10_control_commands_require_a_begun_flow():
         scheduler.run_command_free_dep("/test/t3", "time")
 
 
-def test_step10_suspending_a_flow_blocks_its_whole_subtree():
+def test_step13_suspending_a_flow_blocks_its_whole_subtree():
     """A suspended container is never descended into, so its children never run.
 
     controlling-the-flow.rst states the suspended marker is orthogonal to node
@@ -537,7 +612,7 @@ def test_step10_suspending_a_flow_blocks_its_whole_subtree():
     from takler.core import Bunch
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
     scheduler.run_command_begin("")
@@ -556,7 +631,7 @@ def test_step10_suspending_a_flow_blocks_its_whole_subtree():
     assert flow.is_suspended() is False
 
 
-def test_step10_force_sets_node_status_recursively():
+def test_step13_force_sets_node_status_recursively():
     """``force`` rewrites node status regardless of its current value.
 
     Mirrors controlling-the-flow.rst: with recursion on (the CLI default) the
@@ -566,7 +641,7 @@ def test_step10_force_sets_node_status_recursively():
     from takler.core import Bunch, NodeStatus
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
     scheduler.run_command_begin("")
@@ -584,7 +659,7 @@ def test_step10_force_sets_node_status_recursively():
     assert flow.state.node_status == NodeStatus.queued
 
 
-def test_step10_force_sets_and_clears_events():
+def test_step13_force_sets_and_clears_events():
     """``force set|clear`` on a ``node:event`` path toggles the event.
 
     controlling-the-flow.rst uses ``force set /test/t1:a`` as the example; an
@@ -594,7 +669,7 @@ def test_step10_force_sets_and_clears_events():
     from takler.exceptions import UnsupportedValueError
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
     scheduler.run_command_begin("")
@@ -613,7 +688,7 @@ def test_step10_force_sets_and_clears_events():
     assert event_a.value is False
 
 
-def test_step10_free_dep_releases_time_and_trigger():
+def test_step13_free_dep_releases_time_and_trigger():
     """``free-dep`` marks a dependency as satisfied for the current run.
 
     Mirrors controlling-the-flow.rst: freeing ``t2``'s trigger makes the
@@ -624,7 +699,7 @@ def test_step10_free_dep_releases_time_and_trigger():
     from takler.core import Bunch
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
     scheduler.run_command_begin("")
@@ -646,16 +721,16 @@ def test_step10_free_dep_releases_time_and_trigger():
     assert task3.times[0].free is False
 
 
-def test_step10_run_skips_a_submitted_task():
+def test_step13_run_skips_a_submitted_task():
     """``run`` on a submitted/active task is a no-op unless forced.
 
     controlling-the-flow.rst states the guard exists so one task never runs two
-    jobs at once; the forced form is exercised in zombies-and-restart.rst.
+    jobs at once; the forced form is exercised in zombies.rst.
     """
     from takler.core import Bunch, NodeStatus
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
     scheduler.run_command_begin("")
@@ -670,7 +745,7 @@ def test_step10_run_skips_a_submitted_task():
     assert scheduler.run_command_run("/test") is False
 
 
-def test_step10_load_registers_a_flow_without_beginning_it():
+def test_step13_load_registers_a_flow_without_beginning_it():
     """``load`` registers a JSON flow definition; the flow starts un-begun.
 
     controlling-the-flow.rst loads ``Flow.to_dict`` output and stresses that an
@@ -682,7 +757,7 @@ def test_step10_load_registers_a_flow_without_beginning_it():
     from takler.exceptions import InvalidRequestError
     from takler.server.scheduler import Scheduler
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     flow = module.create_flow()
 
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
@@ -697,15 +772,15 @@ def test_step10_load_registers_a_flow_without_beginning_it():
         scheduler.run_command_load("json", b"not a json")
 
 
-def test_step10_try_no_and_job_password_lifecycle():
+def test_step13_try_no_and_job_password_lifecycle():
     """Each run attempt gets a fresh ``try_no`` and job password; requeue clears both.
 
-    zombies-and-restart.rst builds its zombie story on this invariant: the job
-    file of attempt *n* is ``<node>.job<n>`` and its script carries the
-    ``TAKLER_PASS`` generated for that attempt, so a report from attempt *n-1*
-    can be told apart from the current run.
+    zombies.rst builds its zombie story on this invariant: the job file of
+    attempt *n* is ``<node>.job<n>`` and its script carries the ``TAKLER_PASS``
+    generated for that attempt, so a report from attempt *n-1* can be told
+    apart from the current run.
     """
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     flow = module.create_flow()
 
     task1 = flow.find_node("/test/t1")
@@ -729,19 +804,19 @@ def test_step10_try_no_and_job_password_lifecycle():
     assert task1.job_password is None
 
 
-def test_step10_zombie_rejected_after_requeue():
+def test_step13_zombie_rejected_after_requeue():
     """A report arriving after its task was requeued hits zombie condition Z2.
 
-    Mirrors the exact scenario walked through in zombies-and-restart.rst: the
-    task is requeued while its job is still running, so when the old job's
-    ``complete`` arrives the task is ``queued`` -- a status in which no job
-    should be reporting. The default ``fail`` policy raises ``ZombieError``.
+    Mirrors the exact scenario walked through in zombies.rst: the task is
+    requeued while its job is still running, so when the old job's ``complete``
+    arrives the task is ``queued`` -- a status in which no job should be
+    reporting. The default ``fail`` policy raises ``ZombieError``.
     """
     from takler.core import NodeStatus
     from takler.exceptions import ZombieError
     from takler.server.zombie import ChildAction, ZombieCondition, ZombieDetector
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     flow = module.create_flow()
     task1 = flow.find_node("/test/t1")
     detector = ZombieDetector()
@@ -764,19 +839,19 @@ def test_step10_zombie_rejected_after_requeue():
     assert fob_detector.guard(task1, "complete") is ChildAction.SKIP
 
 
-def test_step10_zombie_conditions_z1_and_z3():
+def test_step13_zombie_conditions_z1_and_z3():
     """Z1 checks the job password (auth enabled only); Z3 catches a second init.
 
-    zombies-and-restart.rst explains both: Z1 only applies when the server
-    authenticates callers, and Z3 fires when an ``init`` names a different job
-    id than the one recorded for the active task.
+    zombies.rst explains both: Z1 only applies when the server authenticates
+    callers, and Z3 fires when an ``init`` names a different job id than the
+    one recorded for the active task.
     """
     from takler.core import NodeStatus
     from takler.server.auth import CallCredentials
     from takler.server.connect_config import AuthMode
     from takler.server.zombie import ZombieCondition, ZombieDetector
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     flow = module.create_flow()
     task1 = flow.find_node("/test/t1")
 
@@ -802,13 +877,13 @@ def test_step10_zombie_conditions_z1_and_z3():
     assert auth_detector.detect(task1, "complete", credentials=current) is None
 
 
-def test_step10_checkpoint_restore_keeps_in_flight_tasks(tmp_path):
+def test_step13_checkpoint_restore_keeps_in_flight_tasks(tmp_path):
     """A restarted server restores in-flight tasks so their jobs can still report.
 
-    Mirrors the exact scenario walked through in zombies-and-restart.rst: the
-    server is killed while ``t1`` is active, the checkpoint holds its status
-    and job password, and after a restore the old job's ``complete`` passes
-    the zombie guard instead of being rejected.
+    Mirrors the exact scenario walked through in restart.rst: the server is
+    killed while ``t1`` is active, the checkpoint holds its status and job
+    password, and after a restore the old job's ``complete`` passes the zombie
+    guard instead of being rejected.
     """
     import json
 
@@ -817,7 +892,7 @@ def test_step10_checkpoint_restore_keeps_in_flight_tasks(tmp_path):
     from takler.server.checkpoint import CheckpointManager
     from takler.server.zombie import ZombieDetector
 
-    module = _load_module(EXAMPLES_DIR / "step10_control.py")
+    module = _load_module(EXAMPLES_DIR / "step13_control.py")
     bunch = Bunch(name="bunch")
     flow = bunch.add_flow(module.create_flow())
     flow.begin()

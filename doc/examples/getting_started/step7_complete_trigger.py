@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from takler.core import Bunch, Flow, RepeatDate
+from takler.core import Bunch, Flow
 from takler.tasks.shell import ShellScriptTask
 from takler.visitor import pre_order_travel, PrintVisitor
 
@@ -13,19 +13,18 @@ def create_flow():
     flow = Flow("test")
     flow.add_parameter("TAKLER_HOME", str(TAKLER_HOME))
 
-    daily = flow.add_container("daily")
-    # Run the tasks under "daily" once per day, from 2024-01-01 to 2024-01-03.
-    daily.add_repeat(RepeatDate("TAKLER_DATE", 20240101, 20240103))
-
-    task1 = daily.add_task(ShellScriptTask("t1"))
+    task1 = flow.add_task(ShellScriptTask("t1"))
     task1.add_parameter(
-        "TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1_with_repeat.takler"))
+        "TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1_with_event.takler"))
     )
+    # t1 sets event "a" while running, once its result is ready.
+    task1.add_event("a")
 
     task2 = flow.add_task(ShellScriptTask("t2"))
     task2.add_parameter("TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task2.takler")))
-    # t2 waits until 12:00 (flow time) before it can run.
-    task2.add_time("12:00")
+    # If t1 has already set event "a", t2 is marked complete directly
+    # without ever running its script.
+    task2.add_complete_trigger("./t1:a == set")
 
     return flow
 

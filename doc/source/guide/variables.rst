@@ -135,7 +135,7 @@ takler 在各层级自动生成的变量如下。
 
 **repeat 生成**：节点带 repeat 时，以 repeat 的名字为变量名生成一个
 参数，取值为 repeat 的当前值，随 repeat 推进自动更新（见
-:doc:`/tutorial/going-further/repeat-and-time` ）。
+:doc:`/tutorial/advanced-topics/repeat` ）。
 
 shell 任务识别的 user 变量
 --------------------------

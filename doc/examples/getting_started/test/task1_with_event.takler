@@ -1,0 +1,9 @@
+{% include "head.takler" %}
+echo "step 1: preparing"
+
+echo "step 2: half of the work is done, release downstream tasks"
+takler_client event --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
+      --node-path ${TAKLER_NAME} --event-name a
+
+echo "step 3: finishing"
+{% include "tail.takler" %}

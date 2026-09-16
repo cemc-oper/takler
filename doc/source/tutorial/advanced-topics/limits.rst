@@ -1,7 +1,7 @@
 限额
 ======
 
-前面几节介绍的触发器、事件与标尺控制的是任务之间的**先后依赖**。本节介绍
+进阶一章介绍的触发器、事件与标尺控制的是任务之间的**先后依赖**。本节介绍
 限额 (limit)，它控制的是**并发数量**：最多允许多少个任务同时运行。
 典型场景是底层资源有限——比如只有两台计算节点可用，或者某个服务最多
 承受两个并发连接。
@@ -20,7 +20,7 @@
 下面的例子在容器 ``group1`` 上定义了最多 2 个令牌的限额 ``work``，
 组内 4 个任务都声明占用它：
 
-.. literalinclude:: /../examples/getting_started/step8_limits.py
+.. literalinclude:: /../examples/getting_started/step12_limits.py
     :language: python
     :linenos:
 

@@ -94,10 +94,10 @@ Bunch 与多 flow
 * ``Tree`` ：只恢复定义（结构、参数、依赖、属性），所有节点回到初始
   状态 ``unknown`` ， flow 未 begun、日历为空。客户端的 ``load`` 命令
   用这种模式——加载得到的是一份全新定义，需要显式 ``begin`` 才会开始
-  运行（见 :doc:`/tutorial/going-further/controlling-the-flow` ）
+  运行（见 :doc:`/tutorial/advanced-topics/controlling-the-flow` ）
 * ``Status`` ：连同运行时状态一起恢复（节点状态、 ``suspended`` 、
   事件与标尺取值、 ``try_no`` 、日历、 begun 标记等）。服务端的
-  checkpoint 用这种模式（见 :doc:`/tutorial/going-further/zombies-and-restart` ）
+  checkpoint 用这种模式（见 :doc:`/tutorial/advanced-topics/restart` ）
 
 ``Bunch.to_dict()`` 把整个 :py:class:`~takler.core.Bunch`
 （所有 flow 加上服务参数）序列化为一个 dict ，是 checkpoint 文件的

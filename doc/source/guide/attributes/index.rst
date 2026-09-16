@@ -4,9 +4,9 @@
 属性 (attribute) 是挂在节点上的结构化条目，控制节点何时运行、运行几次、
 并发占用多少资源，以及运行期间向外界暴露什么进度。本章按属性分节，
 每节给出构造参数、代码示例、在触发器中的用法，以及与 requeue 和
-序列化的交互。入门介绍见教程：事件与标尺
-:doc:`/tutorial/going-further/events-and-meters` 、限额 :doc:`/tutorial/going-further/limits` 、
-repeat 与时间 :doc:`/tutorial/going-further/repeat-and-time` 。
+序列化的交互。入门介绍见教程：事件 :doc:`/tutorial/going-further/events` 、
+标尺 :doc:`/tutorial/going-further/meters` 、限额 :doc:`/tutorial/advanced-topics/limits` 、
+repeat :doc:`/tutorial/advanced-topics/repeat` 与时间 :doc:`/tutorial/advanced-topics/time` 。
 
 .. list-table::
     :header-rows: 1

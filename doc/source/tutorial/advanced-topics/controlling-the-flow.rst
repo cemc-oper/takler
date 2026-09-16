@@ -25,7 +25,7 @@
 本节使用下面的工作流：``t1`` 带有一个事件 ``a`` ；``t2`` 等待 ``t1``
 完成；``t3`` 带有一个时间依赖：
 
-.. literalinclude:: /../examples/getting_started/step10_control.py
+.. literalinclude:: /../examples/getting_started/step13_control.py
     :language: python
     :linenos:
 
@@ -89,7 +89,7 @@
 
     对未 begun 的 flow 执行 ``requeue`` 会被拒绝，首次启动请用 ``begin`` 。
     另外，手动 ``requeue`` 会把 repeat 重置回起始值，详见
-    :doc:`repeat-and-time` 一节。
+    :doc:`repeat` 一节。
 
 挂起与恢复：suspend 与 resume
 ---------------------------------

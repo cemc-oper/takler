@@ -39,7 +39,7 @@ repeat 。
 下面的例子让容器 ``daily`` 从 2024-01-01 到 2024-01-03 每天运行一轮
 （第 18 行）：
 
-.. literalinclude:: /../examples/getting_started/step9_repeat_and_time.py
+.. literalinclude:: /../examples/getting_started/step10_repeat.py
     :language: python
     :linenos:
     :emphasize-lines: 18

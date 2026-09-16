@@ -6,8 +6,6 @@ takler_client meter --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
 echo "step 2: half of the work is done, release downstream tasks"
 takler_client meter --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
       --node-path ${TAKLER_NAME} --meter-name step --meter-value 50
-takler_client event --host ${TAKLER_HOST} --port ${TAKLER_PORT} \
-      --node-path ${TAKLER_NAME} --event-name a
 
 echo "step 3: finishing"
 takler_client meter --host ${TAKLER_HOST} --port ${TAKLER_PORT} \

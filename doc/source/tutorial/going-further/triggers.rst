@@ -71,29 +71,13 @@
     ./task1:meter1 >= 4
     ./task1:event1 == set
 
-事件与标尺的写法会在下一节详细介绍。
-
-完成触发器 (complete trigger)
---------------------------------
-
-除了 ``add_trigger``，还有 :py:meth:`~takler.core.node.Node.add_complete_trigger`。
-两者的区别是：
-
-* ``add_trigger`` 的表达式满足时，节点才被允许运行
-* ``add_complete_trigger`` 的表达式满足时，节点直接被判定为 ``complete``，
-  不会真正运行（常用于「这个任务的前提条件已经不成立，直接跳过」的场景）
-
-.. code-block:: python
-
-    task2.add_complete_trigger("./task1:event1 == set")
-
-如果 ``task1`` 的 ``event1`` 已经被设置，``task2`` 会被直接标记为完成，
-而不会生成作业、提交运行。
+事件与标尺的写法会在 :doc:`events` 与 :doc:`meters` 两节详细介绍。
 
 .. note::
 
-    ``complete`` 触发器的检查在普通触发器之前：如果两者都定义了，
-    ``complete`` 触发器满足时节点直接完成，不会再去检查普通触发器。
+    除普通触发器外还有**完成触发器** (complete trigger)：表达式满足时
+    节点直接判定为 ``complete`` 而不真正运行，详见下一节
+    :doc:`complete-triggers` 。
 
 练习
 -----

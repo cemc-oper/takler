@@ -49,7 +49,7 @@
   :doc:`/tutorial/getting-started/understanding-includes` ）
 * **控制命令** ： ``requeue`` 把节点重置回默认状态； ``force`` 直接改写
   状态； ``run`` 触发一次作业提交（见
-  :doc:`/tutorial/going-further/controlling-the-flow` ）
+  :doc:`/tutorial/advanced-topics/controlling-the-flow` ）
 
 容器状态聚合
 ------------
@@ -85,7 +85,7 @@
 * **swim（上浮）** ：任务状态变化后，其父容器按上面的规则重新聚合，
   变化一路向上直到 flow 。聚合结果为 ``complete`` 且节点带 repeat 时，
   还会顺带推进 repeat 并自动 requeue 该节点（见
-  :doc:`/tutorial/going-further/repeat-and-time` ）
+  :doc:`/tutorial/advanced-topics/repeat` ）
 * **sink（下沉）** ： ``requeue`` 一个容器时，重置操作向下作用到整棵
   子树； ``force --recursive`` 置状态同理
 
@@ -96,7 +96,7 @@
 与 ``suspended`` 两部分，二者正交：挂起一个节点**不改变它的状态**，只是
 让调度器跳过它——挂起的节点不会被自动调度， ``show`` 输出中显示为
 ``suspend (状态)`` 。挂起容器时调度器不再向下遍历，因此整棵子树都停止
-调度。详见 :doc:`/tutorial/going-further/controlling-the-flow` 。
+调度。详见 :doc:`/tutorial/advanced-topics/controlling-the-flow` 。
 
 默认状态：default_node_status
 ------------------------------------

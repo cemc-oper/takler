@@ -124,7 +124,7 @@ child 命令约定
 
 脚本通过五个 **child 命令** 向服务上报自身状态： ``init`` 、
 ``complete`` 、 ``abort`` 、 ``event`` 、 ``meter`` （没有
-``label`` ，见 :doc:`/tutorial/going-further/events-and-meters` ）。命令参数
+``label`` ，见 :doc:`/tutorial/going-further/meters` ）。命令参数
 与环境变量的约定：
 
 * 节点路径： ``takler-client-py`` 的 child 命令在未给
@@ -134,7 +134,7 @@ child 命令约定
 * 作业口令：两个客户端都从环境变量 ``TAKLER_PASS`` 读取
 * 作业标识： ``init`` 用 ``--task-id`` 上报 ``TAKLER_RID`` ，
   服务用它识别僵尸上报（见
-  :doc:`/tutorial/going-further/zombies-and-restart` ）
+  :doc:`/tutorial/advanced-topics/zombies` ）
 
 脱离服务单独运行
 ----------------

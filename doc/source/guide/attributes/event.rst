@@ -32,28 +32,28 @@
 示例
 ----
 
-下面的例子中 ``t1`` 带有事件 ``a`` （第 19 行）， ``t2`` 的触发器在
-事件置位时满足（第 25 行），不必等 ``t1`` 完成：
+下面的例子中 ``t1`` 带有事件 ``a`` （第 21 行）， ``t2`` 的触发器在
+事件置位时满足（第 26 行），不必等 ``t1`` 完成：
 
-.. literalinclude:: /../examples/getting_started/step7_events_and_meters.py
+.. literalinclude:: /../examples/getting_started/step8_events.py
     :language: python
     :linenos:
-    :emphasize-lines: 19,25
+    :emphasize-lines: 21,26
 
 ``t1`` 的脚本在跑到一半时用 ``event`` child 命令置位事件
-（第 9~10 行）：
+（第 5~6 行）：
 
-.. literalinclude:: /../examples/getting_started/test/task1_with_events.takler
+.. literalinclude:: /../examples/getting_started/test/task1_with_event.takler
     :language: bash
     :linenos:
-    :emphasize-lines: 9,10
+    :emphasize-lines: 5,6
 
 取值与上报
 ----------
 
 事件的值只能由外部改变：任务脚本中的 ``event`` child 命令把事件置为
 set ，控制命令 ``force`` 可以置位或清回 unset （见
-:doc:`/tutorial/going-further/controlling-the-flow` ）。调度器自己从不修改事件的值。
+:doc:`/tutorial/advanced-topics/controlling-the-flow` ）。调度器自己从不修改事件的值。
 API 层面可用 ``node.set_event(name, value)`` 直接赋值；事件不存在时
 该方法返回 ``False`` ，不报错。
 

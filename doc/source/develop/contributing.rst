@@ -133,13 +133,13 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 提交消息全部使用英文，结构为：文本形式的 gitmoji + 一行标题 + 空行
 + 短横线列表逐条列出具体改动 + 可选的一段背景说明。示例::
 
-    :memo: Add events and meters tutorial page with step7 example
+    :memo: Add events tutorial page with step8 example
 
-    - new tutorial page doc/source/tutorial/going-further/events-and-meters.rst
-    - runnable example step7_events_and_meters.py and task1_with_events.takler
-    - tests assert event/meter gating, requeue reset, and out-of-range rejection
+    - new tutorial page doc/source/tutorial/going-further/events.rst
+    - runnable example step8_events.py and task1_with_event.takler
+    - tests assert event gating and requeue reset
 
-    Event and meter reports let downstream tasks start before the upstream
+    Event reports let downstream tasks start before the upstream
     task completes, e.g. t1 releasing t2 halfway through its run.
 
 CI

@@ -123,7 +123,7 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
   常规操作）；不一致且仍有 submitted / active 任务记 ERROR ，列出两组
   地址与全部受影响任务的路径——这些在途作业的作业脚本里写死了旧地址，
   上报会一直重试到失败。该前提的完整说明见 :doc:`/operation/deployment`
-  的选项表注记，恢复后的表现见 :doc:`/tutorial/going-further/zombies-and-restart`
+  的选项表注记，恢复后的表现见 :doc:`/tutorial/advanced-topics/restart`
 
 自定义 Task 的恢复要求
 ----------------------

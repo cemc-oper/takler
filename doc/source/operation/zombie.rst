@@ -100,7 +100,7 @@ requeue （任务回到 queued ，口令被清掉）→ 旧作业继续运行并
   命中 ``Z2``
 
 两种模式下这条 ``complete`` 都不会写进新运行实例。该场景的端到端演示见
-:doc:`/tutorial/going-further/zombies-and-restart` 。
+:doc:`/tutorial/advanced-topics/zombies` 。
 
 .. note::
 

@@ -20,12 +20,12 @@ time 依赖让节点等到 flow 的逻辑时钟到达一天中的某个时刻才
 示例
 ----
 
-下面的例子给 ``t2`` 加了一个 12:00 的时间依赖（第 26 行）：
+下面的例子给 ``t2`` 加了一个 12:00 的时间依赖（第 22 行）：
 
-.. literalinclude:: /../examples/getting_started/step9_repeat_and_time.py
+.. literalinclude:: /../examples/getting_started/step11_time.py
     :language: python
     :linenos:
-    :emphasize-lines: 26
+    :emphasize-lines: 22
 
 判定规则
 --------

@@ -76,7 +76,7 @@ takler-server 选项
     active 作业的快照恢复时，本次地址必须与快照记录的一致——那些在途
     作业的作业脚本里写死了旧地址，会继续向旧地址上报。该前提对命令行
     与配置文件来源的地址同样生效；恢复流程与地址不一致时的表现见
-    :doc:`/tutorial/going-further/zombies-and-restart` 。
+    :doc:`/tutorial/advanced-topics/restart` 。
 
 启动前检查清单
 --------------

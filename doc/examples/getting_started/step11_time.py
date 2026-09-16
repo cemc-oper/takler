@@ -14,22 +14,12 @@ def create_flow():
     flow.add_parameter("TAKLER_HOME", str(TAKLER_HOME))
 
     task1 = flow.add_task(ShellScriptTask("t1"))
-    task1.add_parameter(
-        "TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1_with_events.takler"))
-    )
-    # t1 reports its progress while running: an event "a" and a meter "step".
-    task1.add_event("a")
-    task1.add_meter("step", 0, 100)
+    task1.add_parameter("TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task1.takler")))
 
     task2 = flow.add_task(ShellScriptTask("t2"))
     task2.add_parameter("TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task2.takler")))
-    # t2 runs as soon as t1 sets event "a", without waiting for t1 to complete.
-    task2.add_trigger("./t1:a == set")
-
-    task3 = flow.add_task(ShellScriptTask("t3"))
-    task3.add_parameter("TAKLER_SCRIPT", str(Path(TAKLER_HOME, "test/task3.takler")))
-    # t3 runs once t1's meter "step" reaches 50.
-    task3.add_trigger("./t1:step >= 50")
+    # t2 waits until 12:00 (flow time) before it can run.
+    task2.add_time("12:00")
 
     return flow
 

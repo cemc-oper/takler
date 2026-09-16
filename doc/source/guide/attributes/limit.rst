@@ -48,7 +48,7 @@
 （第 18 行），组内 4 个任务都声明占用它（第 23、27、31、35 行），
 因此同一时刻最多只有 2 个任务在运行：
 
-.. literalinclude:: /../examples/getting_started/step8_limits.py
+.. literalinclude:: /../examples/getting_started/step12_limits.py
     :language: python
     :linenos:
     :emphasize-lines: 18,23,27,31,35

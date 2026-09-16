@@ -95,7 +95,7 @@ try_no 与作业口令
 上报，过期口令（如 requeue 之前启动的旧作业）会被识别为僵尸。
 口令不入 ``show`` 输出，也不入 checkpoint 正文（checkpoint 另有
 独立的 ``job_passwords`` 映射）。完整叙述见
-:doc:`/tutorial/going-further/zombies-and-restart` 。
+:doc:`/tutorial/advanced-topics/zombies` 。
 
 定制作业提交命令
 ----------------

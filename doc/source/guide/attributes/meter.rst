@@ -23,21 +23,21 @@
 示例
 ----
 
-下面的例子中 ``t1`` 带有标尺 ``step`` （第 20 行）， ``t3`` 的触发器
-在标尺达到 50 时满足（第 30 行）：
+下面的例子中 ``t1`` 带有标尺 ``step`` （第 21 行）， ``t2`` 的触发器
+在标尺达到 50 时满足（第 26 行）：
 
-.. literalinclude:: /../examples/getting_started/step7_events_and_meters.py
+.. literalinclude:: /../examples/getting_started/step9_meters.py
     :language: python
     :linenos:
-    :emphasize-lines: 20,30
+    :emphasize-lines: 21,26
 
 ``t1`` 的脚本在运行过程中用 ``meter`` child 命令多次上报进度
-（第 3~4、7~8、13~14 行）：
+（第 3~4、7~8、11~12 行）：
 
-.. literalinclude:: /../examples/getting_started/test/task1_with_events.takler
+.. literalinclude:: /../examples/getting_started/test/task1_with_meter.takler
     :language: bash
     :linenos:
-    :emphasize-lines: 3,4,7,8,13,14
+    :emphasize-lines: 3,4,7,8,11,12
 
 在触发器中引用
 --------------

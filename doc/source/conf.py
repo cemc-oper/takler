@@ -18,7 +18,7 @@
 # -- Project information -----------------------------------------------------
 
 project = "takler"
-copyright = "2022, cemc-oper"
+copyright = "2022-2026, cemc-oper"
 author = "perillaroc"
 
 
