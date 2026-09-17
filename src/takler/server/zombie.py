@@ -55,7 +55,7 @@ from takler.server.connect_config import (
     AuthMode,
     ZombiePolicy,
 )
-from takler.server.protocol.error_code import SUCCESS, error_code_for_exception
+from takler.protocol.error_code import SUCCESS, error_code_for_exception
 
 __all__ = [
     "CHILD_COMMAND_INIT",

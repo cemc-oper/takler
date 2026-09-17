@@ -16,7 +16,7 @@ from takler.exceptions import (
     UnsupportedValueError,
 )
 from takler.server.network_service import _command_error_response
-from takler.server.protocol import error_code
+from takler.protocol import error_code
 
 
 class _UnregisteredTaklerError(TaklerError):

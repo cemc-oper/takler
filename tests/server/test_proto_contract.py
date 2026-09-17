@@ -108,7 +108,7 @@ def test_flag_comment_points_at_the_error_code_table():
     block = _service_response_block(_proto_text())
 
     assert "Error_Code" in block
-    assert "takler/server/protocol/error_code.py" in block
+    assert "takler/protocol/error_code.py" in block
     assert "ERROR_NAME_BY_CODE" in block
 
 

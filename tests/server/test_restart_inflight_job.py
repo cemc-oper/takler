@@ -65,7 +65,7 @@ from takler.server.connect_config import (
     ZombiePolicy,
     generate_connect_config,
 )
-from takler.server.protocol.error_code import SUCCESS, error_code_for_exception
+from takler.protocol.error_code import SUCCESS, error_code_for_exception
 
 
 #: Loopback keeps the test hermetic: no name resolution, no traffic leaving the

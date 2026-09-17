@@ -29,7 +29,13 @@ SHELL_RUNNER_SOURCE = PACKAGE_ROOT / "tasks" / "shell" / "shell_runner.py"
 REMOVED_METHOD = "spwan_v2"
 
 #: The only public method of ``ShellRunner`` allowed to derive a job.
-SPAWN_METHOD = "spwan"
+SPAWN_METHOD = "spawn"
+
+#: The deprecated misspelling of ``spawn`` (M3 task 4). It stays a public
+#: method until the alias is removed, but it derives no job itself -- it
+#: warns and delegates to ``spawn`` -- so the single-spawn-path property this
+#: file guards is unaffected.
+DEPRECATED_ALIAS = "spwan"
 
 
 def _parse(source_path: Path) -> ast.Module:
@@ -79,10 +85,10 @@ def test_no_spwan_v2_function_definition():
 
 
 def test_shell_runner_has_single_public_spawn_method():
-    """``ShellRunner`` exposes exactly one public job spawn method."""
+    """``ShellRunner`` exposes one public job spawn method plus its alias."""
     class_node = _class_def(_parse(SHELL_RUNNER_SOURCE), "ShellRunner")
 
-    assert _public_method_names(class_node) == {SPAWN_METHOD}
+    assert _public_method_names(class_node) == {SPAWN_METHOD, DEPRECATED_ALIAS}
 
 
 def test_spwan_v2_attribute_is_absent():
@@ -100,7 +106,7 @@ def test_scanner_detects_spwan_v2(tmp_path: Path):
         "class ShellRunner:\n"
         '    """spwan_v2 is mentioned in this docstring only."""\n'
         "    # spwan_v2 is mentioned in this comment only\n"
-        "    def spwan(self, command):\n"
+        "    def spawn(self, command):\n"
         "        return command\n",
         encoding="utf-8",
     )
@@ -110,7 +116,7 @@ def test_scanner_detects_spwan_v2(tmp_path: Path):
 
     sample.write_text(
         "class ShellRunner:\n"
-        "    def spwan(self, command):\n"
+        "    def spawn(self, command):\n"
         "        return command\n"
         "\n"
         "    def spwan_v2(self, command):\n"

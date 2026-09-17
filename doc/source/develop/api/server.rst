@@ -60,8 +60,9 @@ Z1/Z2/Z3 僵尸判定。语义见 :doc:`/operation/security` 与
 协议错误码
 ----------
 
-``error_code`` 模块刻意不 import 生成的 stub ，客户端可以独立使用
+``error_code`` 模块在 M3 任务 4 迁入了传输中立的 ``takler.protocol``
+包：只依赖 ``takler.exceptions`` ，客户端可以独立使用
 （见 :doc:`/develop/protocol` ）。
 
-.. automodule:: takler.server.protocol.error_code
+.. automodule:: takler.protocol.error_code
    :members:

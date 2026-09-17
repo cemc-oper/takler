@@ -102,9 +102,11 @@
   ``flag != 0`` 的老客户端因此永远兼容。
   ``tests/server/test_proto_contract.py`` 同时钉住 descriptor 的形状与
   proto 注释里指向分类码表的说明。
-* 分类码表在 ``server/protocol/error_code.py`` ，不是 proto 枚举 ——
-  这个模块刻意不 import 生成的 stub ，客户端不用拉入 protobuf 生成代码
-  就能完成映射。完整的十六码表（码值、分类名、异常类、客户端退出码）
+* 分类码表在 ``protocol/error_code.py`` （ M3 任务 4 起从
+  ``server/protocol/`` 迁入传输中立的 ``takler/protocol`` 包），不是
+  proto 枚举 —— 这个模块只依赖 ``takler.exceptions`` ，客户端不用拉入
+  protobuf 生成代码或服务端包就能完成映射。完整的十六码表（码值、分类名、
+  异常类、客户端退出码）
   见 :doc:`/operation/reference` ，这里只说查找规则：按 **确切异常类
   型** 查表，不沿继承链；没有专属码的 takler 异常归 ``1``
   （ ``takler_error`` ），非 takler 异常归 ``99`` （
@@ -262,7 +264,7 @@ descriptor 里的全部方法。
 #. ``server/scheduler.py`` 加对应的 ``run_command_*`` 。
 #. ``client/service_client.py`` 加客户端方法， ``client/cli.py`` 加命
    令； Go 侧对应改 ``common/client_*.go`` 与 ``cmd/cmd_*.go`` 。
-#. 只有引入了新的异常类型才动 ``server/protocol/error_code.py`` ，并
+#. 只有引入了新的异常类型才动 ``protocol/error_code.py`` ，并
    同步 Go 侧 ``common/errorcode.go`` 与两边的契约测试。
 #. 文档： :doc:`/guide/cli` 的命令表，动了 error_code 或环境变量时连
    带 :doc:`/operation/reference` 。

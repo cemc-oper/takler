@@ -13,43 +13,21 @@ Two entry points cover the two ways a command can fail: a non zero
 (:func:`exit_code_for_error_code`) and an exception raised locally by the
 client, typically by the Call_Wrapper (:func:`exit_code_for_exception`).
 
-**On the duplicated numbers.** The authoritative Error_Code table lives in
-``takler/server/protocol/error_code.py``, and that module was written so the
-client could import it (it deliberately avoids ``takler_pb2``). Importing it
-from here would nevertheless execute ``takler/server/__init__.py``, which pulls
-in the scheduler, the network service and the generated stubs, so a child
-command would drag the whole server package in just to translate an integer.
-Until the mapping moves to a transport neutral package (M3), this module
-therefore restates the two columns of the design table it needs and stays
-dependent on :mod:`takler.exceptions` only. (``takler/client/__init__.py``
-re-exports the service client, so today the server package is loaded anyway
-whenever anything in the client package is imported; keeping this module's own
-dependencies minimal is what makes that fixable later, in one place.)
-The duplication is not left
-unguarded: ``tests/client/test_exit_code_unit.py`` cross-checks every entry
-against ``error_code.py``, so the tables cannot drift apart silently.
+The Error_Code table itself is not restated here: since M3 (task 4) it lives
+in the transport neutral :mod:`takler.protocol.error_code`, which this module
+imports. What stays local is the one column that is genuinely the client's --
+the Error_Code -> process exit code mapping -- plus the four exit code
+constants. ``exit_code_for_exception`` is derived from the shared
+:func:`~takler.protocol.error_code.error_code_for_exception`, so the two entry
+points cannot disagree. (``EXIT_CODE_BY_ERROR_CODE``'s key set is pinned
+against the shared table by ``tests/client/test_exit_code_unit.py``.)
 """
 
 from __future__ import annotations
 
-from typing import Dict, Type
+from typing import Dict
 
-from takler.exceptions import (
-    ClientConnectionError,
-    ExpressionSyntaxError,
-    FlowStateError,
-    InvalidNodePathError,
-    InvalidRequestError,
-    JobSubmissionError,
-    NodeNotFoundError,
-    NodeTypeError,
-    PermissionDeniedError,
-    ServerResponseError,
-    TaklerError,
-    TransportError,
-    UnsupportedValueError,
-    ZombieError,
-)
+from takler.protocol.error_code import error_code_for_exception
 
 __all__ = [
     "EXIT_OK",
@@ -57,7 +35,6 @@ __all__ = [
     "EXIT_SERVER_ERROR",
     "EXIT_UNREACHABLE",
     "EXIT_CODE_BY_ERROR_CODE",
-    "EXIT_CODE_BY_TYPE",
     "exit_code_for_error_code",
     "exit_code_for_exception",
 ]
@@ -78,7 +55,8 @@ EXIT_SERVER_ERROR: int = 3
 EXIT_UNREACHABLE: int = 4
 
 #: Error_Code -> exit code, i.e. the last column of the design's Error_Code
-#: table. Keys mirror ``error_code.ERROR_NAME_BY_CODE`` exactly.
+#: table. Keys mirror
+#: :data:`~takler.protocol.error_code.ERROR_NAME_BY_CODE` exactly.
 EXIT_CODE_BY_ERROR_CODE: Dict[int, int] = {
     0: EXIT_OK,  # success
     1: EXIT_REQUEST_ERROR,  # takler_error
@@ -96,26 +74,6 @@ EXIT_CODE_BY_ERROR_CODE: Dict[int, int] = {
     42: EXIT_SERVER_ERROR,  # server_response
     43: EXIT_REQUEST_ERROR,  # permission_denied
     99: EXIT_SERVER_ERROR,  # internal_error
-}
-
-#: Exception type -> exit code, for failures the client raises locally. Keys
-#: mirror ``error_code.ERROR_CODE_BY_TYPE`` and each value equals the exit code
-#: of that type's Error_Code, so both entry points agree.
-EXIT_CODE_BY_TYPE: Dict[Type[BaseException], int] = {
-    TaklerError: EXIT_REQUEST_ERROR,
-    NodeNotFoundError: EXIT_REQUEST_ERROR,
-    InvalidNodePathError: EXIT_REQUEST_ERROR,
-    NodeTypeError: EXIT_REQUEST_ERROR,
-    UnsupportedValueError: EXIT_REQUEST_ERROR,
-    FlowStateError: EXIT_REQUEST_ERROR,
-    InvalidRequestError: EXIT_REQUEST_ERROR,
-    ExpressionSyntaxError: EXIT_REQUEST_ERROR,
-    JobSubmissionError: EXIT_SERVER_ERROR,
-    ZombieError: EXIT_SERVER_ERROR,
-    TransportError: EXIT_UNREACHABLE,
-    ClientConnectionError: EXIT_UNREACHABLE,
-    ServerResponseError: EXIT_SERVER_ERROR,
-    PermissionDeniedError: EXIT_REQUEST_ERROR,
 }
 
 
@@ -141,13 +99,12 @@ def exit_code_for_error_code(code: int) -> int:
 def exit_code_for_exception(exc: BaseException) -> int:
     """Return the process exit code for an exception raised on the client side.
 
-    The lookup is by exact type and does not walk the MRO, mirroring
-    ``error_code_for_exception``: a ``TaklerError`` subclass without an entry of
-    its own is a takler reported failure that this version does not classify
-    further, which is exactly what the generic ``TaklerError`` code means, so it
-    exits with :data:`EXIT_REQUEST_ERROR`. Anything that is not a
-    ``TaklerError`` is an unexpected internal failure and exits with
-    :data:`EXIT_SERVER_ERROR`.
+    Derived from the shared classification: the exception is mapped to its
+    Error_Code by :func:`~takler.protocol.error_code.error_code_for_exception`
+    (exact type lookup, never through the MRO; an unlisted ``TaklerError``
+    subclass falls back to the generic code, anything else to the internal
+    error code) and that code is mapped to its exit code. Deriving rather than
+    restating is what keeps the two entry points in agreement by construction.
 
     Args:
         exc: The exception that terminated the command.
@@ -155,9 +112,4 @@ def exit_code_for_exception(exc: BaseException) -> int:
     Returns:
         The process exit code. Never raises.
     """
-    exit_code = EXIT_CODE_BY_TYPE.get(type(exc))
-    if exit_code is not None:
-        return exit_code
-    if isinstance(exc, TaklerError):
-        return EXIT_REQUEST_ERROR
-    return EXIT_SERVER_ERROR
+    return exit_code_for_error_code(error_code_for_exception(exc))

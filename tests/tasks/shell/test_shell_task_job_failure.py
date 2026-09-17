@@ -82,11 +82,11 @@ def test_submit_passes_node_path_and_on_failure(tmp_path, scripts_directory):
     """Requirement 12.4: the spawn call carries the node path and the callback."""
     task1 = build_task(tmp_path, str(Path(scripts_directory, "task1.takler")))
 
-    with mock.patch.object(ShellRunner, "spwan") as mock_spwan:
+    with mock.patch.object(ShellRunner, "spawn") as mock_spawn:
         assert task1.submit() is True
 
-    assert mock_spwan.call_count == 1
-    kwargs = mock_spwan.call_args.kwargs
+    assert mock_spawn.call_count == 1
+    kwargs = mock_spawn.call_args.kwargs
     assert kwargs["node_path"] == "/flow1/task1"
     assert kwargs["on_failure"] == task1.on_job_failure
     assert kwargs["command"]

@@ -42,7 +42,7 @@ from takler.server.connect_config import (
     load_connect_config,
     TAKLER_CONNECT_FILE,
 )
-from takler.server.protocol.error_code import SUCCESS, error_name_for_code
+from takler.protocol.error_code import SUCCESS, error_name_for_code
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 
 

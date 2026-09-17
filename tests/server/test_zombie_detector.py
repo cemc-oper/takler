@@ -49,7 +49,7 @@ from takler.server.auth import (
 )
 from takler.server.connect_config import AuthMode, ZombiePolicy
 from takler.server.network_service import _command_error_response
-from takler.server.protocol import error_code
+from takler.protocol import error_code
 from takler.server.scheduler import Scheduler
 from takler.server.zombie import (
     IN_FLIGHT_STATUSES,

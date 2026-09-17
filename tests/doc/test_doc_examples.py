@@ -1623,7 +1623,7 @@ def test_guide_task_script_render_failures_raise_job_submission_error(tmp_path):
 def test_guide_job_management_submission_failure_aborts_without_submitting(tmp_path):
     """job-management.rst: a submission failure aborts the task directly.
 
-    ``ShellRunner.spwan`` needs a running event loop; calling ``run()`` from
+    ``ShellRunner.spawn`` needs a running event loop; calling ``run()`` from
     synchronous code therefore exercises the documented path: the error is
     wrapped in ``JobSubmissionError`` and the task goes straight to
     ``aborted`` without ever being ``submitted`` (``try_no`` was still
@@ -2565,7 +2565,7 @@ def test_operation_zombie_flag_and_exit_code():
     """
     from takler.client.exit_code import exit_code_for_error_code
     from takler.exceptions import ZombieError
-    from takler.server.protocol.error_code import error_code_for_exception
+    from takler.protocol.error_code import error_code_for_exception
 
     assert error_code_for_exception(ZombieError("x")) == 31
     assert exit_code_for_error_code(31) == 3
@@ -3009,7 +3009,7 @@ def test_operation_reference_documents_every_error_code():
     page's exit-code column matches EXIT_CODE_BY_ERROR_CODE.
     """
     from takler.client.exit_code import EXIT_CODE_BY_ERROR_CODE
-    from takler.server.protocol.error_code import ERROR_NAME_BY_CODE
+    from takler.protocol.error_code import ERROR_NAME_BY_CODE
 
     text = _reference_page()
 
@@ -3026,7 +3026,7 @@ def test_operation_reference_error_code_classification_fallbacks():
     unregistered codes.
     """
     from takler.exceptions import PermissionDeniedError, SecurityConfigError
-    from takler.server.protocol.error_code import (
+    from takler.protocol.error_code import (
         error_code_for_exception,
         error_name_for_code,
     )
@@ -3455,7 +3455,7 @@ def test_develop_protocol_documents_all_rpc_methods():
 def test_develop_protocol_error_code_names_documented():
     """Every registered Error_Code name appears on the page (the full table
     itself lives in operation/reference.rst, linked from the page)."""
-    from takler.server.protocol.error_code import ERROR_NAME_BY_CODE
+    from takler.protocol.error_code import ERROR_NAME_BY_CODE
 
     text = _develop_page("protocol.rst")
 
@@ -3893,10 +3893,11 @@ def test_develop_api_exceptions_page_covers_hierarchy():
                     f"{name} -> {base.__name__}"
                 )
 
-    # The two documented ValueError mix-ins.
-    assert issubclass(exc_mod.InvalidRequestError, ValueError)
-    assert issubclass(exc_mod.ExpressionSyntaxError, ValueError)
-    assert text.count("``ValueError``") >= 2
+    # The ValueError mix-ins were removed in M3 (task 4): the page must not
+    # document them, and the types must not regain them.
+    assert not issubclass(exc_mod.InvalidRequestError, ValueError)
+    assert not issubclass(exc_mod.ExpressionSyntaxError, ValueError)
+    assert "``ValueError``" not in text
 
 
 def test_develop_api_internal_pages_cover_modules():
@@ -3913,7 +3914,7 @@ def test_develop_api_internal_pages_cover_modules():
         "takler.server.checkpoint",
         "takler.server.tls",
         "takler.server.connect_config",
-        "takler.server.protocol.error_code",
+        "takler.protocol.error_code",
     )
     logging_modules = (
         "takler.logging",

@@ -81,7 +81,7 @@ from takler.exceptions import (
 from takler.logging import get_logger
 from takler.server.connect_config import ConnectConfig
 from takler.server.protocol import takler_pb2
-from takler.server.protocol.error_code import error_name_for_code
+from takler.protocol.error_code import error_name_for_code
 from takler.server.protocol.takler_pb2_grpc import TaklerServerStub
 from takler.visitor import pre_order_travel, PrintVisitor
 

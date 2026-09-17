@@ -38,7 +38,7 @@ from takler.client.retry import (
     CommandKind,
     backoff_seconds,
 )
-from takler.server.protocol.error_code import (
+from takler.protocol.error_code import (
     ERROR_NAME_BY_CODE,
     UNKNOWN_ERROR_NAME,
     error_name_for_code,

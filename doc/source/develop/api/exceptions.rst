@@ -11,7 +11,7 @@ takler 自有异常全部定义在 ``takler.exceptions`` ，根类是
 
 * :py:exc:`~takler.exceptions.TaklerError`
 
-  * :py:exc:`~takler.exceptions.InvalidRequestError` （同时继承 ``ValueError`` ）
+  * :py:exc:`~takler.exceptions.InvalidRequestError` 
 
     * :py:exc:`~takler.exceptions.NodeNotFoundError`
     * :py:exc:`~takler.exceptions.InvalidNodePathError`
@@ -19,7 +19,7 @@ takler 自有异常全部定义在 ``takler.exceptions`` ，根类是
     * :py:exc:`~takler.exceptions.UnsupportedValueError`
     * :py:exc:`~takler.exceptions.FlowStateError`
 
-  * :py:exc:`~takler.exceptions.ExpressionSyntaxError` （同时继承 ``ValueError`` ）
+  * :py:exc:`~takler.exceptions.ExpressionSyntaxError` 
   * :py:exc:`~takler.exceptions.JobSubmissionError`
   * :py:exc:`~takler.exceptions.ZombieError`
   * :py:exc:`~takler.exceptions.TransportError`

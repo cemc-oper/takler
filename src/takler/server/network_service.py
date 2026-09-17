@@ -5,7 +5,7 @@ import inspect
 import grpc
 
 from takler.server.protocol import takler_pb2, takler_pb2_grpc
-from takler.server.protocol.error_code import SUCCESS, error_code_for_exception
+from takler.protocol.error_code import SUCCESS, error_code_for_exception
 from takler.logging import get_logger
 from takler.server.audit import (
     EVENT_CONTROL,

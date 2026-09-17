@@ -13,10 +13,10 @@ which makes ``str(exc)`` contain that text. The extra attributes
 are structured supplements for programmatic handling, never a replacement for
 the message.
 
-``InvalidRequestError`` and ``ExpressionSyntaxError`` also subclass
-:class:`ValueError`. This is a deliberate transitional choice: the places these
-types replace used to raise ``ValueError``, and existing callers and tests still
-catch ``ValueError``. The compatibility can be dropped after M1.
+Every type derives from :class:`TaklerError` alone. The M1 transitional
+double inheritance of ``InvalidRequestError`` and ``ExpressionSyntaxError``
+from :class:`ValueError` was removed in M3: catch ``TaklerError`` (or the
+specific type) instead of ``ValueError``.
 """
 
 from __future__ import annotations
@@ -46,12 +46,8 @@ class TaklerError(Exception):
     """Base class of all takler owned exceptions."""
 
 
-class InvalidRequestError(TaklerError, ValueError):
-    """The request content is not acceptable: path, type or value.
-
-    Subclasses ``ValueError`` for backward compatibility with callers that
-    still use ``except ValueError``.
-    """
+class InvalidRequestError(TaklerError):
+    """The request content is not acceptable: path, type or value."""
 
 
 class NodeNotFoundError(InvalidRequestError):
@@ -120,12 +116,9 @@ class FlowStateError(InvalidRequestError):
         self.flow_name = flow_name
 
 
-class ExpressionSyntaxError(TaklerError, ValueError):
+class ExpressionSyntaxError(TaklerError):
     """A trigger expression could not be parsed, or references something
     that cannot be evaluated.
-
-    Subclasses ``ValueError`` for backward compatibility, see the module
-    docstring.
 
     Attributes:
         expression: The original expression text, when available.

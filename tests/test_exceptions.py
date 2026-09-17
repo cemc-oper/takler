@@ -2,8 +2,9 @@
 
 These tests pin down the shape of the hierarchy rather than any behaviour:
 callers are expected to catch ``TaklerError`` for every deliberate takler
-failure, and the transitional ``ValueError`` bases must stay in place while
-existing call sites still use ``except ValueError``.
+failure. The transitional ``ValueError`` bases of ``InvalidRequestError`` and
+``ExpressionSyntaxError`` were removed in M3 (task 4); the tests below pin
+their absence, so the compatibility does not creep back in.
 """
 
 import pytest
@@ -79,16 +80,13 @@ class TestRequiredSubclasses:
         assert issubclass(exc_type, TaklerError)
 
 
-class TestValueErrorCompatibility:
-    """Requirement 1.2 / transitional compatibility with ``except ValueError``."""
+class TestNoValueErrorInheritance:
+    """M3 task 4: the transitional ``ValueError`` bases are gone.
 
-    @pytest.mark.parametrize(
-        "exc_type",
-        [InvalidRequestError, ExpressionSyntaxError],
-        ids=lambda t: t.__name__,
-    )
-    def test_transitional_types_subclass_value_error(self, exc_type):
-        assert issubclass(exc_type, ValueError)
+    ``InvalidRequestError``, its subclasses and ``ExpressionSyntaxError``
+    derive from ``TaklerError`` alone; catching them as ``ValueError`` was
+    the M1 compatibility measure and must not come back.
+    """
 
     @pytest.mark.parametrize(
         "exc_type",
@@ -103,24 +101,17 @@ class TestValueErrorCompatibility:
         ],
         ids=lambda t: t.__name__,
     )
-    def test_request_errors_are_caught_by_legacy_value_error_handlers(self, exc_type):
-        with pytest.raises(ValueError):
-            raise exc_type("boom")
+    def test_request_errors_are_not_value_errors(self, exc_type):
+        assert not issubclass(exc_type, ValueError)
 
     @pytest.mark.parametrize(
         "exc_type",
-        [
-            JobSubmissionError,
-            ZombieError,
-            TransportError,
-            ClientConnectionError,
-            ServerResponseError,
-            PermissionDeniedError,
-        ],
+        [InvalidRequestError, ExpressionSyntaxError],
         ids=lambda t: t.__name__,
     )
-    def test_non_request_errors_are_not_value_errors(self, exc_type):
-        assert not issubclass(exc_type, ValueError)
+    def test_former_transitional_types_are_caught_as_takler_error(self, exc_type):
+        with pytest.raises(TaklerError):
+            raise exc_type("boom")
 
 
 class TestLoggingErrorsStillImportable:

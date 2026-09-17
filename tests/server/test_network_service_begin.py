@@ -19,7 +19,7 @@ from takler.core import Bunch, Flow
 from takler.exceptions import FlowStateError, NodeNotFoundError
 from takler.server.network_service import TaklerService
 from takler.server.protocol import takler_pb2
-from takler.server.protocol.error_code import (
+from takler.protocol.error_code import (
     ERROR_CODE_BY_TYPE,
     SUCCESS,
 )

@@ -16,25 +16,25 @@ from takler.tasks.shell import shell_runner as shell_runner_mod
 from takler.tasks.shell.shell_runner import ShellRunner
 
 
-def test_spwan_without_running_loop_raises_job_submission_error():
+def test_spawn_without_running_loop_raises_job_submission_error():
     """Requirement 12.7: a failed spawn surfaces as JobSubmissionError."""
     runner = ShellRunner()
     command = "/bin/true some-job"
 
     with pytest.raises(JobSubmissionError) as exc_info:
-        runner.spwan(command=command)
+        runner.spawn(command=command)
 
     message = str(exc_info.value)
     assert command in message
     assert "no running event loop" in message
 
 
-def test_spwan_keeps_reference_until_task_finishes():
+def test_spawn_keeps_reference_until_task_finishes():
     """Requirements 12.1, 12.2: the runner holds the task and hooks a callback."""
     runner = ShellRunner()
 
     async def scenario():
-        task = runner.spwan(command="exit 0", node_path="/flow1/task1")
+        task = runner.spawn(command="exit 0", node_path="/flow1/task1")
         # Reference held while the task is in flight.
         assert task in runner._job_tasks
         await asyncio.sleep(0)
@@ -59,7 +59,7 @@ def test_failed_job_logs_error_then_triggers_state_change():
         events.append(("on_failure", type(exc).__name__))
 
     async def scenario():
-        task = runner.spwan(
+        task = runner.spawn(
             command="exit 3",
             node_path="/flow1/task1",
             on_failure=on_failure,
@@ -116,7 +116,7 @@ def test_cancelled_job_does_not_log_or_trigger_state_change():
     calls = []
 
     async def scenario():
-        task = runner.spwan(
+        task = runner.spawn(
             command="sleep 30",
             node_path="/flow1/task3",
             on_failure=calls.append,
@@ -136,3 +136,21 @@ def test_cancelled_job_does_not_log_or_trigger_state_change():
 def test_spwan_v2_is_removed():
     """Requirement 12.6: only one public spawn path remains."""
     assert not hasattr(ShellRunner, "spwan_v2")
+
+
+def test_spwan_is_a_deprecated_alias_of_spawn():
+    """The misspelled name still works, warns, and delegates (M3 task 4)."""
+    runner = ShellRunner()
+
+    with mock.patch.object(
+        ShellRunner, "spawn", autospec=True, return_value="task"
+    ) as mock_spawn:
+        with pytest.warns(DeprecationWarning, match="spwan is deprecated"):
+            result = runner.spwan(
+                command="exit 0", node_path="/flow1/task1", on_failure=None
+            )
+
+    assert result == "task"
+    mock_spawn.assert_called_once_with(
+        runner, "exit 0", node_path="/flow1/task1", on_failure=None
+    )

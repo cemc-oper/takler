@@ -121,7 +121,7 @@ class ShellScriptTask(Task):
 
         # run command
         shell_runner = ShellRunner()
-        shell_runner.spwan(
+        shell_runner.spawn(
             command=run_command,
             node_path=self.node_path,
             on_failure=self.on_job_failure,

@@ -1,6 +1,7 @@
 import pytest
 
 from takler.core.node import Node
+from takler.exceptions import NodeNotFoundError
 
 
 def test_node_append_child():
@@ -57,9 +58,9 @@ def test_node_update_child():
     assert node1.children == [new_child1, new_child2]
 
     child3 = Node("child3")
-    with pytest.raises(ValueError):
+    with pytest.raises(NodeNotFoundError):
         node1.update_child("child3", new_child2)
-    with pytest.raises(ValueError):
+    with pytest.raises(NodeNotFoundError):
         node1.update_child(child3, new_child2)
 
     with pytest.raises(TypeError):
@@ -100,7 +101,7 @@ def test_node_delete_child():
     assert node1.children == []
     assert deleted_child2.children == []
 
-    with pytest.raises(ValueError):
+    with pytest.raises(NodeNotFoundError):
         node1.delete_child("child3")
 
     with pytest.raises(TypeError):

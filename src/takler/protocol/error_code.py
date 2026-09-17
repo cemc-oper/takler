@@ -4,10 +4,13 @@
 semantics is the super concept of the classification codes defined here, so
 clients that only test ``flag != 0`` stay compatible.
 
-This module imports only ``takler.exceptions``. It deliberately does **not**
-import ``takler_pb2``, so the client side can map codes without pulling in the
-generated gRPC code, and so the whole module can be relocated to a protocol
-package later without touching its dependencies.
+This module lives in the transport neutral ``takler.protocol`` package
+(moved here from ``takler.server.protocol`` in M3, task 4) and imports only
+``takler.exceptions``: the server maps handler exceptions with it, and the
+client maps the returned codes with it, without either side pulling in the
+other or the generated gRPC code. The Go client's ``errorcode.go`` restates
+the same table by hand and is pinned against it by the cross-language
+contract tests.
 """
 
 from __future__ import annotations

@@ -1,6 +1,7 @@
 import pytest
 
 from takler.core import NodeStatus
+from takler.exceptions import UnsupportedValueError
 
 
 def test_default_node_status_on_task(simple_flow_for_operation):
@@ -84,5 +85,5 @@ def test_set_default_node_status_on_task_with_error_status(simple_flow_for_opera
     """
 
     task1 = simple_flow_for_operation.task1
-    with pytest.raises(ValueError):
+    with pytest.raises(UnsupportedValueError):
         task1.set_default_node_status(NodeStatus.aborted)

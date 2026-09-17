@@ -74,8 +74,6 @@ def test_bunch_find_node_with_relative_path(simple_bunch):
 
     assert exc_info.value.node_path == relative_path
     assert relative_path in str(exc_info.value)
-    # transitional ValueError compatibility
-    assert isinstance(exc_info.value, ValueError)
 
 
 def test_bunch_delete_flow_not_exist(simple_bunch):
@@ -86,7 +84,6 @@ def test_bunch_delete_flow_not_exist(simple_bunch):
 
     assert exc_info.value.node_path == "/not_exist_flow"
     assert "not_exist_flow" in str(exc_info.value)
-    assert isinstance(exc_info.value, ValueError)
 
 
 def test_node_get_bunch(simple_bunch, simple_flow, simple_flow_2):

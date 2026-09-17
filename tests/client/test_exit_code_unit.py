@@ -1,9 +1,11 @@
 """Unit tests for the client exit code mapping (``takler/client/exit_code.py``).
 
-Besides pinning the four values and the conservative fallback, this file guards
-the deliberate duplication documented in ``exit_code.py``: every entry is
-cross-checked against the authoritative Error_Code table in
-``takler/server/protocol/error_code.py``, so the two tables cannot drift apart.
+Besides pinning the four values and the conservative fallback, this file pins
+the one table that remains the client's own -- ``EXIT_CODE_BY_ERROR_CODE``,
+the Error_Code -> exit code column -- against the shared Error_Code table in
+``takler/protocol/error_code.py`` (where it moved in M3, task 4). The
+exception -> exit code mapping is derived from the shared classification, so
+the tests assert the derivation rather than a second table.
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ import pytest
 import takler.client.exit_code
 from takler.client.exit_code import (
     EXIT_CODE_BY_ERROR_CODE,
-    EXIT_CODE_BY_TYPE,
     EXIT_OK,
     EXIT_REQUEST_ERROR,
     EXIT_SERVER_ERROR,
@@ -34,7 +35,7 @@ from takler.exceptions import (
     TaklerError,
     TransportError,
 )
-from takler.server.protocol.error_code import (
+from takler.protocol.error_code import (
     ERROR_CODE_BY_TYPE,
     ERROR_NAME_BY_CODE,
     GENERIC_TAKLER_ERROR,
@@ -131,7 +132,7 @@ def test_foreign_exception_is_a_server_error(exc):
 
 
 def test_error_code_column_covers_the_whole_error_code_table():
-    """The duplicated column must have exactly the registered codes as keys."""
+    """The client-owned column must have exactly the registered codes as keys."""
     assert set(EXIT_CODE_BY_ERROR_CODE) == set(ERROR_NAME_BY_CODE)
     assert set(EXIT_CODE_BY_ERROR_CODE.values()) <= {
         EXIT_OK,
@@ -147,21 +148,28 @@ def test_error_code_column_covers_the_whole_error_code_table():
     ] == [SUCCESS]
 
 
-def test_exception_table_agrees_with_error_code_table():
-    """Both entry points must classify the same exception identically."""
-    assert set(EXIT_CODE_BY_TYPE) == set(ERROR_CODE_BY_TYPE)
+def test_exception_mapping_is_derived_from_the_shared_table():
+    """Both entry points classify the same exception identically.
+
+    ``exit_code_for_exception`` is ``exit_code_for_error_code`` composed with
+    the shared ``error_code_for_exception``; this pins the composition for
+    every registered type.
+    """
     for exc_type, error_code in ERROR_CODE_BY_TYPE.items():
         exc = exc_type("message")
         assert error_code_for_exception(exc) == error_code
         assert exit_code_for_exception(exc) == exit_code_for_error_code(error_code)
 
 
-def test_exit_code_module_only_depends_on_takler_exceptions():
-    """The reason the two columns are restated here rather than imported.
+def test_exit_code_module_only_depends_on_the_shared_table():
+    """The single-table rule of M3 task 4, checked on the source.
 
-    Checked on the source, not on ``sys.modules``: ``takler/client/__init__.py``
-    re-exports the service client, so any import inside the client package
-    currently loads the server package anyway.
+    ``exit_code.py`` may import ``takler.protocol.error_code`` (the shared
+    Error_Code table) and nothing else takler-owned: importing from
+    ``takler.server`` would drag the server package into every child command.
+    Checked on the source, not on ``sys.modules``:
+    ``takler/client/__init__.py`` re-exports the service client, so any import
+    inside the client package currently loads the server package anyway.
     """
     source = pathlib.Path(takler.client.exit_code.__file__).read_text(encoding="utf-8")
     takler_imports = set()
@@ -174,4 +182,4 @@ def test_exit_code_module_only_depends_on_takler_exceptions():
             takler_imports.update(
                 alias.name for alias in node.names if alias.name.startswith("takler")
             )
-    assert takler_imports == {"takler.exceptions"}
+    assert takler_imports == {"takler.protocol.error_code"}

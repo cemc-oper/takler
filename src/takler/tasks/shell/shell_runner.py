@@ -10,6 +10,7 @@ then triggers the caller supplied state change.
 from __future__ import annotations
 
 import asyncio
+import warnings
 from subprocess import CalledProcessError
 from typing import Callable, Dict, Optional, Set, Tuple
 
@@ -37,7 +38,7 @@ class ShellRunner:
         # message and to trigger the state change.
         self._job_context: Dict[asyncio.Task, Tuple[str, str, Optional[OnFailure]]] = {}
 
-    def spwan(
+    def spawn(
         self,
         command: str,
         node_path: str = "",
@@ -91,6 +92,26 @@ class ShellRunner:
         task.add_done_callback(self._on_job_done)
         return task
 
+    def spwan(
+        self,
+        command: str,
+        node_path: str = "",
+        on_failure: Optional[OnFailure] = None,
+    ) -> asyncio.Task:
+        """Deprecated misspelling of :meth:`spawn`, kept as an alias.
+
+        Emits a :class:`DeprecationWarning` and delegates to :meth:`spawn`
+        unchanged. The alias exists so existing flows and tooling calling the
+        old name keep working while they migrate; it will be removed in a
+        future release.
+        """
+        warnings.warn(
+            "ShellRunner.spwan is deprecated, use ShellRunner.spawn instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.spawn(command, node_path=node_path, on_failure=on_failure)
+
     def _on_job_done(
         self,
         task: asyncio.Task,
@@ -102,7 +123,7 @@ class ShellRunner:
         Done callback of a job task: log the failure first, then trigger the
         state change.
 
-        The submit context is taken from the context recorded by ``spwan``;
+        The submit context is taken from the context recorded by ``spawn``;
         the keyword arguments override it when the callback is invoked directly.
         """
         context_command, context_node_path, context_on_failure = self._job_context.pop(
