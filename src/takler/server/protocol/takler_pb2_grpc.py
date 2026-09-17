@@ -73,7 +73,7 @@ class TaklerServerStub:
                 _registered_method=True)
         self.RunCommandResume = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandResume',
-                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.SuspendCommand.SerializeToString,
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ResumeCommand.SerializeToString,
                 response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
                 _registered_method=True)
         self.RunCommandRun = channel.unary_unary(
@@ -264,7 +264,7 @@ def add_TaklerServerServicer_to_server(servicer, server):
             ),
             'RunCommandResume': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandResume,
-                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.SuspendCommand.FromString,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ResumeCommand.FromString,
                     response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
             ),
             'RunCommandRun': grpc.unary_unary_rpc_method_handler(
@@ -524,7 +524,7 @@ class TaklerServer:
             request,
             target,
             '/takler_protocol.TaklerServer/RunCommandResume',
-            takler_dot_server_dot_protocol_dot_takler__pb2.SuspendCommand.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.ResumeCommand.SerializeToString,
             takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
             options,
             channel_credentials,

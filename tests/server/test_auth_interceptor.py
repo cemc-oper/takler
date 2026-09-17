@@ -168,7 +168,7 @@ def build_requests(flow_bytes: bytes) -> Dict[str, Any]:
         # Control_Commands.
         "RunCommandRequeue": takler_pb2.RequeueCommand(node_path=[TASK_PATH]),
         "RunCommandSuspend": takler_pb2.SuspendCommand(node_path=[NESTED_TASK_PATH]),
-        "RunCommandResume": takler_pb2.SuspendCommand(node_path=[NESTED_TASK_PATH]),
+        "RunCommandResume": takler_pb2.ResumeCommand(node_path=[NESTED_TASK_PATH]),
         "RunCommandRun": takler_pb2.RunCommand(force=True, node_path=[TASK_PATH]),
         "RunCommandForce": takler_pb2.ForceCommand(
             state=takler_pb2.ForceCommand.ForceState.Value("complete"),

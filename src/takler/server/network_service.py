@@ -510,7 +510,7 @@ class TaklerService(takler_pb2_grpc.TaklerServerServicer):
             context=context,
         )
 
-    async def RunCommandResume(self, request: takler_pb2.SuspendCommand, context):
+    async def RunCommandResume(self, request: takler_pb2.ResumeCommand, context):
         node_paths = request.node_path
 
         def op():

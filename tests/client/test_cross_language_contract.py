@@ -27,6 +27,7 @@ from takler.client.exit_code import (
     EXIT_CODE_BY_ERROR_CODE,
     exit_code_for_error_code,
 )
+from takler.server.protocol import takler_pb2
 from takler.client.retry import (
     DEFAULT_RETRY_WINDOW_BY_KIND,
     DEFAULT_SINGLE_TIMEOUT,
@@ -166,6 +167,56 @@ CONTRACT_BACKOFF_SEQUENCE = [
     (10_000, 60.0),
 ]
 
+# --------------------------------------------------------------------------
+# The command surface: the sixteen RPCs both clients speak.
+# --------------------------------------------------------------------------
+
+#: RPC name -> (request message, response message), one row per command of the
+#: contract's command table. The Go half of this drift guard restates the same
+#: sixteen rows against the generated Go descriptor. ``RunCommandResume``
+#: taking its own ``ResumeCommand`` (rather than reusing ``SuspendCommand``)
+#: and ``RunCommandBegin`` existing at all are both pinned here.
+CONTRACT_RPC_SURFACE = {
+    "RunCommandInit": ("InitCommand", "ServiceResponse"),
+    "RunCommandComplete": ("CompleteCommand", "ServiceResponse"),
+    "RunCommandAbort": ("AbortCommand", "ServiceResponse"),
+    "RunCommandEvent": ("EventCommand", "ServiceResponse"),
+    "RunCommandMeter": ("MeterCommand", "ServiceResponse"),
+    "RunCommandRequeue": ("RequeueCommand", "ServiceResponse"),
+    "RunCommandSuspend": ("SuspendCommand", "ServiceResponse"),
+    "RunCommandResume": ("ResumeCommand", "ServiceResponse"),
+    "RunCommandRun": ("RunCommand", "ServiceResponse"),
+    "RunCommandForce": ("ForceCommand", "ServiceResponse"),
+    "RunCommandFreeDep": ("FreeDepCommand", "ServiceResponse"),
+    "RunCommandLoad": ("LoadCommand", "ServiceResponse"),
+    "RunCommandBegin": ("BeginCommand", "ServiceResponse"),
+    "RunRequestShow": ("ShowRequest", "ShowResponse"),
+    "RunRequestPing": ("PingRequest", "PingResponse"),
+    "QueryCoroutine": ("CoroutineRequest", "CoroutineResponse"),
+}
+
+#: ForceCommand.ForceState names and numbers, i.e. the values the ``force``
+#: command's state argument may take. Both clients translate the name on their
+#: own side, so the tables must agree exactly.
+CONTRACT_FORCE_STATES = {
+    "unknown": 0,
+    "complete": 1,
+    "queued": 2,
+    "submitted": 3,
+    "active": 4,
+    "aborted": 5,
+    "clear": 6,
+    "set": 7,
+}
+
+#: FreeDepCommand.DepType names and numbers, the ``free-dep`` command's
+#: ``--dep-type`` values.
+CONTRACT_DEP_TYPES = {
+    "all": 0,
+    "trigger": 1,
+    "time": 2,
+}
+
 
 # --------------------------------------------------------------------------
 # Error_Code and exit code mappings.
@@ -276,3 +327,36 @@ def test_non_retryable_status_codes_match_contract():
     assert set(NON_RETRYABLE_EXCEPTION_BY_STATUS) == (
         CONTRACT_NON_RETRYABLE_STATUS_CODES
     )
+
+
+# --------------------------------------------------------------------------
+# The command surface.
+# --------------------------------------------------------------------------
+
+
+# Feature: m3-protocol-decoupling, Property: 跨语言命令面一致性
+# Validates: the m3-tasks 任务 2 acceptance "契约测试覆盖全部命令"
+def test_rpc_surface_matches_contract():
+    """The service descriptor holds exactly the contract's sixteen RPCs."""
+    service = takler_pb2.DESCRIPTOR.services_by_name["TaklerServer"]
+    actual = {
+        method.name: (method.input_type.name, method.output_type.name)
+        for method in service.methods
+    }
+    assert actual == CONTRACT_RPC_SURFACE
+
+
+# Feature: m3-protocol-decoupling, Property: 跨语言命令面一致性
+def test_force_states_match_contract():
+    """The ``force`` command's state names translate identically on both sides."""
+    enum = takler_pb2.ForceCommand.DESCRIPTOR.enum_types_by_name["ForceState"]
+    actual = {value.name: value.number for value in enum.values}
+    assert actual == CONTRACT_FORCE_STATES
+
+
+# Feature: m3-protocol-decoupling, Property: 跨语言命令面一致性
+def test_dep_types_match_contract():
+    """The ``free-dep`` command's type names translate identically on both sides."""
+    enum = takler_pb2.FreeDepCommand.DESCRIPTOR.enum_types_by_name["DepType"]
+    actual = {value.name: value.number for value in enum.values}
+    assert actual == CONTRACT_DEP_TYPES

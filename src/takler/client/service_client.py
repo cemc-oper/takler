@@ -698,7 +698,7 @@ class TaklerServiceClient:
         response = self._call(
             "resume",
             self.stub.RunCommandResume,
-            takler_pb2.SuspendCommand(node_path=node_path),
+            takler_pb2.ResumeCommand(node_path=node_path),
             CommandKind.CONTROL,
         )
         self._print_response(response)

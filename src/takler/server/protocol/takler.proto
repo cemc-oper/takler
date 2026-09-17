@@ -73,6 +73,10 @@ message SuspendCommand {
   repeated string node_path = 1;
 }
 
+message ResumeCommand {
+  repeated string node_path = 1;
+}
+
 message RunCommand {
   bool force = 1;
   repeated string node_path = 2;
@@ -164,7 +168,7 @@ service TaklerServer {
   rpc RunCommandRequeue(RequeueCommand) returns (ServiceResponse){}
 
   rpc RunCommandSuspend(SuspendCommand) returns (ServiceResponse){}
-  rpc RunCommandResume(SuspendCommand) returns (ServiceResponse){}
+  rpc RunCommandResume(ResumeCommand) returns (ServiceResponse){}
 
   rpc RunCommandRun(RunCommand) returns (ServiceResponse) {}
 
