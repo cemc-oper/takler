@@ -23,6 +23,7 @@ import pytest
 
 from takler.core import Bunch, Flow, NodeStatus
 from takler.core.parameter import TAKLER_PASS
+from takler.protocol.commands import ShowRequest
 from takler.server.scheduler import Scheduler
 
 SHOW_KWARGS = dict(
@@ -70,7 +71,7 @@ def test_show_response_does_not_contain_job_password(scheduler):
     """Requirements 4.11, 16.8: the password is absent from the show response."""
     task1 = scheduler.bunch.find_node("/flow1/task1")
 
-    output = scheduler.handle_request_show(**SHOW_KWARGS)
+    output = scheduler.handle_request_show(ShowRequest(**SHOW_KWARGS))
 
     # The response does describe the active task and its user parameter, so
     # the absence of the password below is meaningful.
@@ -96,7 +97,7 @@ def test_client_round_trip_yields_empty_takler_pass(scheduler):
     """
     task1 = scheduler.bunch.find_node("/flow1/task1")
 
-    output = scheduler.handle_request_show(**SHOW_KWARGS)
+    output = scheduler.handle_request_show(ShowRequest(**SHOW_KWARGS))
     restored_bunch = Bunch.from_dict(json.loads(output))
     restored_task1 = restored_bunch.find_node("/flow1/task1")
 

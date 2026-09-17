@@ -50,6 +50,7 @@ from takler.client import cli
 from takler.core import Flow, NodeStatus
 from takler.core.task_node import Task
 from takler.exceptions import ZombieError
+from takler.protocol.commands import CompleteCommand, RequeueCommand
 from takler.server import TaklerServer
 from takler.server.auth import (
     CallCredentials,
@@ -128,7 +129,7 @@ def requeue_under_the_running_job(server: TaklerServer) -> None:
     reaches, but without the wire: with ``Auth_Mode=enabled`` a requeue over gRPC
     would need operator credentials, which is a different requirement's subject.
     """
-    server.scheduler.run_command_requeue(TASK_PATH)
+    server.scheduler.run_command_requeue(RequeueCommand(node_paths=[TASK_PATH]))
 
 
 def snapshot(task: Task) -> Tuple:
@@ -326,7 +327,7 @@ def test_old_job_complete_after_requeue_is_rejected(
     try:
         assert server.zombie_detector.detect(task, "complete") is expected_condition
         with pytest.raises(ZombieError) as excinfo:
-            server.scheduler.run_command_complete(TASK_PATH)
+            server.scheduler.run_command_complete(CompleteCommand(node_path=TASK_PATH))
     finally:
         reset_call_credentials(token)
 
@@ -359,7 +360,7 @@ def test_a_report_of_the_current_job_is_not_a_zombie(monkeypatch, tmp_path):
 
     token = set_call_credentials(CallCredentials(job_password=new_password))
     try:
-        server.scheduler.run_command_complete(TASK_PATH)
+        server.scheduler.run_command_complete(CompleteCommand(node_path=TASK_PATH))
     finally:
         reset_call_credentials(token)
 

@@ -15,6 +15,22 @@ from takler.exceptions import (
     UnsupportedValueError,
 )
 from takler.logging import get_logger
+from takler.protocol.commands import (
+    AbortCommand,
+    BeginCommand,
+    CompleteCommand,
+    EventCommand,
+    ForceCommand,
+    FreeDepCommand,
+    InitCommand,
+    LoadCommand,
+    MeterCommand,
+    RequeueCommand,
+    ResumeCommand,
+    RunCommand,
+    ShowRequest,
+    SuspendCommand,
+)
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
 from takler.server.zombie import ChildAction, ZombieDetector
 
@@ -114,7 +130,7 @@ class Scheduler:
                     # (exception type + message) with a traceback, before any
                     # policy-specific action, regardless of the current policy
                     # (Requirement 2.7). This mirrors the RPC boundary in
-                    # ``TaklerService._handle_command``.
+                    # ``CommandHandlers._handle_command``.
                     logger.error(
                         f"unexpected exception while processing flow {name!r}: "
                         f"{type(exc).__name__}: {exc}",
@@ -304,18 +320,34 @@ class Scheduler:
             return ChildAction.PROCEED
         return self.zombie_detector.guard(node, command, task_id)
 
+    def _find_node_or_raise(self, node_path: str) -> Node:
+        """Locate ``node_path`` in the bunch or raise ``NodeNotFoundError``."""
+        node = self.bunch.find_node(node_path)
+        if node is None:
+            raise NodeNotFoundError(
+                f"node is not found: {node_path}", node_path=node_path
+            )
+        return node
+
+    def _find_task_or_raise(self, node_path: str) -> Task:
+        """Locate ``node_path`` and require it to be a ``Task``."""
+        node = self._find_node_or_raise(node_path)
+        if not isinstance(node, Task):
+            raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
+        return node
+
     # Child command -------------------------------------------------
 
-    async def run_command_init(self, node_path: str, task_id: str):
+    async def run_command_init(self, command: InitCommand):
         """
         Init the ``Task`` node, call child method ``init``.
 
         Parameters
         ----------
-        node_path
-            node path string of a task, starting with "/", such as /flow1/container1/task1.
-        task_id
-            An ID to identify the task, will be set into parameter ``TAKLER_RID``.
+        command
+            The ``init`` DTO: the node path of a task, starting with "/", such
+            as /flow1/container1/task1, and the task id to set into parameter
+            ``TAKLER_RID``.
 
         Raises
         ------
@@ -326,34 +358,24 @@ class Scheduler:
         ZombieError
             If the command hits a Zombie_Condition and the Zombie_Policy is
             ``fail`` (see :meth:`_guard_child_command`).
-
-        Notes
-        -----
-        是否使用异步函数执行客户端命令？
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
+        logger.info(f"Init: {command.node_path} with {command.task_id}")
+        node = self._find_task_or_raise(command.node_path)
 
-        if not isinstance(node, Task):
-            raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
-
-        if self._guard_child_command(node, "init", task_id) is ChildAction.SKIP:
+        if self._guard_child_command(node, "init", command.task_id) is ChildAction.SKIP:
             # fob: answer success without touching the node.
             return
 
-        node.init(task_id)
+        node.init(command.task_id)
 
-    def run_command_complete(self, node_path: str):
+    def run_command_complete(self, command: CompleteCommand):
         """
         Set the node to complete status, call child method ``complete``.
 
         Parameters
         ----------
-        node_path
-            node path string of a task, staring with "/"
+        command
+            The ``complete`` DTO: the node path of a task, starting with "/".
 
         Raises
         ------
@@ -364,19 +386,9 @@ class Scheduler:
         ZombieError
             If the command hits a Zombie_Condition and the Zombie_Policy is
             ``fail`` (see :meth:`_guard_child_command`).
-
-        Returns
-        -------
-
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
-
-        if not isinstance(node, Task):
-            raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
+        logger.info(f"Complete: {command.node_path}")
+        node = self._find_task_or_raise(command.node_path)
 
         if self._guard_child_command(node, "complete") is ChildAction.SKIP:
             # fob: answer success without touching the node.
@@ -384,17 +396,16 @@ class Scheduler:
 
         node.complete()
 
-    def run_command_abort(self, node_path: str, reason: Optional[str] = None):
+    def run_command_abort(self, command: AbortCommand):
         """
         Set task to aborted status with aborted reason
 
         Parameters
         ----------
-        node_path
-            node path string of a task, staring with "/"
+        command
+            The ``abort`` DTO: the node path of a task and the reason it is
+            aborted with.
 
-        reason
-            describe why task is aborted.
         Raises
         ------
         NodeNotFoundError
@@ -404,36 +415,25 @@ class Scheduler:
         ZombieError
             If the command hits a Zombie_Condition and the Zombie_Policy is
             ``fail`` (see :meth:`_guard_child_command`).
-
-        Returns
-        -------
-
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
-
-        if not isinstance(node, Task):
-            raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
+        logger.info(f"Abort: {command.node_path}")
+        node = self._find_task_or_raise(command.node_path)
 
         if self._guard_child_command(node, "abort") is ChildAction.SKIP:
             # fob: answer success without touching the node.
             return
 
-        node.abort(reason)
+        node.abort(command.reason)
 
-    def run_command_event(self, node_path: str, event_name: str):
+    def run_command_event(self, command: EventCommand):
         """
         Set the event in a node, call child method ``set_event``.
 
         Parameters
         ----------
-        node_path
-            node path string of a task, staring with "/"
-        event_name
-            event name
+        command
+            The ``event`` DTO: the node path of the node owning the event and
+            the event name.
 
         Raises
         ------
@@ -442,16 +442,9 @@ class Scheduler:
         ZombieError
             If the target is a ``Task``, the command hits a Zombie_Condition and
             the Zombie_Policy is ``fail`` (see :meth:`_guard_child_command`).
-
-        Returns
-        -------
-
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
+        logger.info(f"Event set: {command.node_path}:{command.event_name}")
+        node = self._find_node_or_raise(command.node_path)
 
         # A non-task target keeps its M1 behaviour: ``event`` accepts any node
         # which owns the event, and such a node has no job instance to judge
@@ -461,20 +454,18 @@ class Scheduler:
                 # fob: answer success without touching the node.
                 return
 
-        node.set_event(event_name, True)
+        node.set_event(command.event_name, True)
 
-    def run_command_meter(self, node_path: str, meter_name: str, meter_value: str):
+    def run_command_meter(self, command: MeterCommand):
         """
         Change meter value, call child method ``meter``.
 
         Parameters
         ----------
-        node_path
-            node path string of a task, staring with "/"
-        meter_name
-            meter name
-        meter_value
-            meter value
+        command
+            The ``meter`` DTO: the node path of the node owning the meter, the
+            meter name and the value. The value arrives as an ``int`` -- the
+            wire carries a string and the DTO owns the conversion.
 
         Raises
         ------
@@ -483,16 +474,11 @@ class Scheduler:
         ZombieError
             If the target is a ``Task``, the command hits a Zombie_Condition and
             the Zombie_Policy is ``fail`` (see :meth:`_guard_child_command`).
-
-        Returns
-        -------
-
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
+        logger.info(
+            f"Meter set: {command.node_path}:{command.meter_name} {command.meter_value}"
+        )
+        node = self._find_node_or_raise(command.node_path)
 
         # Same as ``event``: a non-task target has no job instance, so it keeps
         # its M1 behaviour (Requirement 9.9).
@@ -501,18 +487,18 @@ class Scheduler:
                 # fob: answer success without touching the node.
                 return
 
-        node.set_meter(meter_name, int(meter_value))
+        node.set_meter(command.meter_name, command.meter_value)
 
     # Control -------------------------------------------------
 
-    def run_command_requeue(self, node_path: str):
+    def run_command_requeue(self, command: RequeueCommand):
         """
-        Requeue the node.
+        Requeue the nodes.
 
         Parameters
         ----------
-        node_path
-            node path string.
+        command
+            The ``requeue`` DTO: the node paths to requeue, in order.
 
         Raises
         ------
@@ -520,84 +506,62 @@ class Scheduler:
             If node is not found.
         FlowStateError
             If the node belongs to a flow which has not begun (Requirement 8.10).
-
-        Returns
-        -------
-
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
+        for node_path in command.node_paths:
+            logger.info(f"Requeue: {node_path}")
+            node = self._find_node_or_raise(node_path)
+            self._require_begun(node)
+            node.requeue()
 
-        self._require_begun(node)
-
-        node.requeue()
-
-    def run_command_suspend(self, node_path: str):
+    def run_command_suspend(self, command: SuspendCommand):
         """
-        Suspend a node.
+        Suspend the nodes.
 
         Parameters
         ----------
-        node_path
-            node path string.
+        command
+            The ``suspend`` DTO: the node paths to suspend, in order.
 
         Raises
         ------
         NodeNotFoundError
             If node is not found.
-
-        Returns
-        -------
-
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
+        for node_path in command.node_paths:
+            logger.info(f"Suspend: {node_path}")
+            node = self._find_node_or_raise(node_path)
+            node.suspend()
 
-        node.suspend()
-
-    def run_command_resume(self, node_path: str):
+    def run_command_resume(self, command: ResumeCommand):
         """
-        Resume a node from suspended status.
+        Resume the nodes from suspended status.
 
         Parameters
         ----------
-        node_path
-            node path string.
+        command
+            The ``resume`` DTO: the node paths to resume, in order.
 
         Raises
         ------
         NodeNotFoundError
             If node is not found.
-
-        Returns
-        -------
-
         """
-        node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
+        for node_path in command.node_paths:
+            logger.info(f"Resume: {node_path}")
+            node = self._find_node_or_raise(node_path)
+            node.resume()
 
-        node.resume()
-
-    def run_command_run(self, node_path: str, force: bool = False) -> bool:
+    def run_command_run(self, command: RunCommand):
         """
-        Run the ``Task`` node when task node is not in submitted or active status.
-        If force is set, run the task regardless of task status.
+        Run each ``Task`` node of the command.
+
+        A task is run when it is not in submitted or active status; with
+        ``force`` set it runs regardless of its status.
 
         Parameters
         ----------
-        node_path
-            node path string of a task.
-        force
-            run in force mode.
+        command
+            The ``run`` DTO: the node paths of the tasks and the force flag.
 
         Raises
         ------
@@ -605,12 +569,15 @@ class Scheduler:
             If node is not found.
         FlowStateError
             If the node belongs to a flow which has not begun (Requirement 8.10).
-
-        Returns
-        -------
-        bool
-            return True if call task's run method.
         """
+        for node_path in command.node_paths:
+            if self._run_node(node_path, force=command.force):
+                logger.info(f"Run: {node_path}")
+            else:
+                logger.info(f"Run has error: {node_path}")
+
+    def _run_node(self, node_path: str, force: bool = False) -> bool:
+        """Run one task node; return True if the task's run method was called."""
         node = self.bunch.find_node(node_path)
         if node is None:
             raise NodeNotFoundError(
@@ -631,44 +598,42 @@ class Scheduler:
         node.run()
         return True
 
-    def run_command_force(
-        self, variable_path: str, state: str, recursive: bool = False
-    ) -> bool:
+    def run_command_force(self, command: ForceCommand):
         """
-        Force node or event to some state.
-
-        For node:
-
-        Set node status to some state. If recursive is set, set all its children node also.
-
-        For event:
-
-        Set (``set``) or unset (``clear``) event.
+        Force each target of the command to the command's state.
 
         Parameters
         ----------
-        variable_path
-            Path for a ``Node`` or an ``Event``.
-        state
-            ``NodeState`` string if ``variable_path`` is a node, "clear" or "set" if event
-        recursive
-            If ``variable_path`` is a node, set state for the node and all its descendant nodes.
-
+        command
+            The ``force`` DTO: the target paths (a node path, or an event path
+            of the form ``/flow/task:event``), the state to impose and whether
+            a node target's descendants follow.
 
         Raises
         ------
         NodeNotFoundError
-            If variable path is not found.
+            If a target path is not found.
         UnsupportedValueError
             If state is not a ``NodeStatus`` name for a node, or is not `set`
             or `clear` for an ``Event``.
         FlowStateError
             If the host node belongs to a flow which has not begun
             (Requirement 8.10).
+        """
+        state = command.state.value
+        for variable_path in command.paths:
+            if self._force_path(
+                variable_path, state=state, recursive=command.recursive
+            ):
+                logger.info(f"Force: {variable_path} {state}")
+            else:
+                logger.info(f"Force has error: {variable_path} {state}")
 
-        Returns
-        -------
-        bool
+    def _force_path(self, variable_path: str, state: str, recursive: bool) -> bool:
+        """Force one node or event path to ``state``.
+
+        For a node: set its status, and its descendants' when ``recursive`` is
+        set. For an event: set (``set``) or unset (``clear``) it.
         """
         variable = self.bunch.find_path(variable_path)
         if variable is None:
@@ -710,15 +675,15 @@ class Scheduler:
             return True
         return True
 
-    def run_command_free_dep(self, node_path: str, dep_type: str):
+    def run_command_free_dep(self, command: FreeDepCommand):
         """
-        Free dependencies of the node.
+        Free dependencies of the nodes.
 
         Parameters
         ----------
-        node_path
-        dep_type
-            sell ``Node.free_dependencies``
+        command
+            The ``free-dep`` DTO: the node paths and the dependency class to
+            clear (see ``Node.free_dependencies``).
 
         Raises
         ------
@@ -726,34 +691,23 @@ class Scheduler:
             If node is not found.
         FlowStateError
             If the node belongs to a flow which has not begun (Requirement 8.10).
-
-        Returns
-        -------
-
         """
-        node: Node = self.bunch.find_node(node_path)
-        if node is None:
-            raise NodeNotFoundError(
-                f"node is not found: {node_path}", node_path=node_path
-            )
+        dep_type = command.dep_type.value
+        for node_path in command.paths:
+            node = self._find_node_or_raise(node_path)
+            self._require_begun(node)
+            node.free_dependencies(dep_type)
+            logger.info(f"Free Dep: {dep_type} {node_path}")
 
-        self._require_begun(node)
-
-        node.free_dependencies(dep_type)
-
-    def run_command_load(self, flow_type: str, flow_bytes: bytes):
+    def run_command_load(self, command: LoadCommand):
         """
         Load a new flow into bunch from string bytes.
 
         Parameters
         ----------
-        flow_type
-            type of flow, support:
-
-                * json: json string
-
-        flow_bytes
-            string bytes of flow's definition.
+        command
+            The ``load`` DTO: the flow type (only ``"json"`` is supported) and
+            the serialized flow definition.
 
         Raises
         ------
@@ -761,15 +715,12 @@ class Scheduler:
             If ``flow_type`` is not supported.
         InvalidRequestError
             If the flow definition is not valid json.
-
-        Returns
-        -------
-        None
         """
-        if flow_type == "json":
+        logger.info("Load flow from bytes...")
+        if command.flow_type == "json":
             logger.info("load json flow...")
             try:
-                flow_dict = json.loads(flow_bytes)
+                flow_dict = json.loads(command.flow_bytes)
             except json.JSONDecodeError as exc:
                 raise InvalidRequestError(
                     f"flow definition is not valid json: {exc}"
@@ -780,13 +731,15 @@ class Scheduler:
             # only registers the definition, ``run_command_begin`` starts it.
             logger.info(f"load json flow...done [flow name: {flow.name}]")
         else:
-            logger.warning(f"flow type {flow_type} is not supported for command load.")
+            logger.warning(
+                f"flow type {command.flow_type} is not supported for command load."
+            )
             raise UnsupportedValueError(
-                f"flow type {flow_type} is not supported for command load.",
-                value=flow_type,
+                f"flow type {command.flow_type} is not supported for command load.",
+                value=command.flow_type,
             )
 
-    def run_command_begin(self, flow_name: Optional[str] = None, force: bool = False):
+    def run_command_begin(self, command: BeginCommand):
         """
         Begin one flow, or all flows in bunch.
 
@@ -796,11 +749,10 @@ class Scheduler:
 
         Parameters
         ----------
-        flow_name
-            name of the flow to begin. ``None`` or an empty string means all flows
-            in bunch (Requirement 8.1).
-        force
-            begin again a flow which has already begun.
+        command
+            The ``begin`` DTO: the name of the flow to begin -- an empty string
+            means all flows in bunch (Requirement 8.1) -- and the force flag,
+            which begins again a flow which has already begun.
 
         Raises
         ------
@@ -820,17 +772,19 @@ class Scheduler:
         to (re)begin flows regardless of their current begun state
         (Requirement 8.12).
         """
-        if flow_name:
-            flow = self.bunch.find_flow(flow_name)
+        logger.info(f"Begin: {command.flow_name} force={command.force}")
+        if command.flow_name:
+            flow = self.bunch.find_flow(command.flow_name)
             if flow is None:
                 raise NodeNotFoundError(
-                    f"flow is not found: {flow_name}", node_path=f"/{flow_name}"
+                    f"flow is not found: {command.flow_name}",
+                    node_path=f"/{command.flow_name}",
                 )
             flows = [flow]
         else:
             flows = list(self.bunch.flows.values())
 
-        if not force:
+        if not command.force:
             # Check every flow first so the command either begins all its
             # targets or changes nothing at all.
             for flow in flows:
@@ -840,19 +794,13 @@ class Scheduler:
                     )
 
         for flow in flows:
-            logger.info(f"begin flow [flow name: {flow.name}, force: {force}]")
-            flow.begin(force=force)
+            logger.info(f"begin flow [flow name: {flow.name}, force: {command.force}]")
+            flow.begin(force=command.force)
 
     # Query -------------------------------------------------
 
-    def handle_request_show(
-        self,
-        show_parameter: bool,
-        show_trigger: bool,
-        show_limit: bool,
-        show_event: bool,
-        show_meter: bool,
-    ) -> str:
+    def handle_request_show(self, request: ShowRequest) -> str:
+        """Serialize the bunch; the flags select the detail sections."""
         bunch_dict = self.bunch.to_dict()
         bunch_json_str = json.dumps(bunch_dict)
 

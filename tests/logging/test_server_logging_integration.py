@@ -55,9 +55,11 @@ import pytest
 
 import takler.logging
 import takler.server as server_mod
+from takler.core import Bunch, Flow, NodeStatus
 from takler.server import TaklerServer
 from takler.server.network_service import TaklerService
 from takler.server.protocol import takler_pb2
+from takler.server.scheduler import Scheduler
 from takler.logging.backends.stdlib_backend import (
     ROOT_LOGGER_NAME,
     _MANAGED_HANDLER_FLAG,
@@ -225,16 +227,25 @@ def test_configuration_failure_allows_startup_with_console_info_and_warning() ->
 def test_command_handling_emits_info_record() -> None:
     """Req 10.6: handling a command emits an INFO record naming the command.
 
-    A ``TaklerService`` is built with a mock scheduler and its
-    ``RunCommandComplete`` handler invoked with a stub request. Logging is
+    A ``TaklerService`` is built over a real scheduler holding one task, and
+    its ``RunCommandComplete`` handler invoked with a stub request. Logging is
     configured inside the redirect so the console sink binds to the buffer, and
     the handled command must appear in an INFO record.
+
+    Since M3 task 5 the per-command INFO line is emitted by the ``Scheduler``
+    (the handler layer only logs failures), which is why the scheduler is real
+    here: a mock would swallow the record under test.
     """
-    scheduler = mock.MagicMock()
+    bunch = Bunch(name="bunch")
+    flow = Flow("flow1")
+    flow.add_task("task1")
+    bunch.add_flow(flow)
+    scheduler = Scheduler(bunch=bunch)
     service = TaklerService(scheduler=scheduler, host="[::]", port=33999)
 
-    request = mock.MagicMock()
-    request.child_options.node_path = "/flow1/task1"
+    request = takler_pb2.CompleteCommand(
+        child_options=takler_pb2.ChildCommandOptions(node_path="/flow1/task1")
+    )
     context = mock.MagicMock()
 
     buffer = io.StringIO()
@@ -246,12 +257,13 @@ def test_command_handling_emits_info_record() -> None:
 
     output = buffer.getvalue()
 
-    # The handler logged the command-handling event at INFO.
+    # The command-handling event was logged at INFO.
     assert "INFO" in output
     assert "Complete: /flow1/task1" in output
 
-    # The handler delegated to the scheduler and returned a normal response.
-    scheduler.run_command_complete.assert_called_once_with("/flow1/task1")
+    # The command ran end to end and returned a normal response.
+    node = bunch.find_node("/flow1/task1")
+    assert node.state.node_status is NodeStatus.complete
     assert isinstance(response, takler_pb2.ServiceResponse)
     assert response.flag == 0
 

@@ -8,8 +8,8 @@ files stay at their own level and are not duplicated here:
 ``Scheduler``, and ``test_zombie_after_requeue.py`` is the end-to-end
 requeue scenario.
 
-The ``flag`` assertions go through ``_command_error_response``, the same
-function ``TaklerService._handle_command`` uses, rather than through a literal
+The ``flag`` assertions go through ``command_error_response``, the same
+function ``CommandHandlers._handle_command`` uses, rather than through a literal
 31: the requirement is about what the client receives, and reading the mapping
 from the boundary keeps the test honest if the code ever moves.
 
@@ -48,8 +48,9 @@ from takler.server.auth import (
     set_call_credentials,
 )
 from takler.server.connect_config import AuthMode, ZombiePolicy
-from takler.server.network_service import _command_error_response
+from takler.server.handlers import command_error_response
 from takler.protocol import error_code
+from takler.protocol.commands import CompleteCommand, InitCommand
 from takler.server.scheduler import Scheduler
 from takler.server.zombie import (
     IN_FLIGHT_STATUSES,
@@ -140,7 +141,7 @@ def guarded_flag(detector: ZombieDetector, node: Task, command: str, **kwargs):
     try:
         action = detector.guard(node, command, **kwargs)
     except ZombieError as exc:
-        return _command_error_response(exc).flag, None
+        return command_error_response(exc).flag, None
     return error_code.SUCCESS, action
 
 
@@ -511,7 +512,11 @@ def test_adopt_of_a_z3_init_adopts_the_job_id_and_the_password():
             scheduler.zombie_detector.detect(task, "init", "job-2")
             is ZombieCondition.Z3
         )
-        asyncio.run(scheduler.run_command_init(TASK_PATH, "job-2"))
+        asyncio.run(
+            scheduler.run_command_init(
+                InitCommand(node_path=TASK_PATH, task_id="job-2")
+            )
+        )
 
     assert task.task_id == "job-2"
     assert task.job_password == CALL_PASSWORD
@@ -535,7 +540,7 @@ def test_a_command_of_the_current_run_executes_and_keeps_the_password():
 
     with call_credentials(CallCredentials(job_password=NODE_PASSWORD)):
         # No exception: the RPC boundary answers a returning handler ``flag=0``.
-        scheduler.run_command_complete(TASK_PATH)
+        scheduler.run_command_complete(CompleteCommand(node_path=TASK_PATH))
 
     assert task.state.node_status is NodeStatus.complete
     assert task.job_password == NODE_PASSWORD

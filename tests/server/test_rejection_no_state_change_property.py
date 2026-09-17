@@ -73,6 +73,13 @@ from takler.server.auth import (
     set_call_credentials,
 )
 from takler.server.connect_config import AuthMode, ZombiePolicy
+from takler.protocol.commands import (
+    AbortCommand,
+    CompleteCommand,
+    EventCommand,
+    InitCommand,
+    MeterCommand,
+)
 from takler.server.scheduler import Scheduler
 from takler.server.zombie import IN_FLIGHT_STATUSES, ChildAction, ZombieDetector
 
@@ -457,15 +464,29 @@ def _run_child_command(scheduler: Scheduler, case: _ZombieCall) -> None:
     """Issue the drawn Child_Command through the real Scheduler method."""
     path = case.node_path
     if case.command == "init":
-        asyncio.run(scheduler.run_command_init(path, case.args["task_id"]))
+        asyncio.run(
+            scheduler.run_command_init(
+                InitCommand(node_path=path, task_id=case.args["task_id"])
+            )
+        )
     elif case.command == "complete":
-        scheduler.run_command_complete(path)
+        scheduler.run_command_complete(CompleteCommand(node_path=path))
     elif case.command == "abort":
-        scheduler.run_command_abort(path, case.args["reason"])
+        scheduler.run_command_abort(
+            AbortCommand(node_path=path, reason=case.args["reason"])
+        )
     elif case.command == "event":
-        scheduler.run_command_event(path, case.args["name"])
+        scheduler.run_command_event(
+            EventCommand(node_path=path, event_name=case.args["name"])
+        )
     else:
-        scheduler.run_command_meter(path, case.args["name"], case.args["value"])
+        scheduler.run_command_meter(
+            MeterCommand(
+                node_path=path,
+                meter_name=case.args["name"],
+                meter_value=case.args["value"],
+            )
+        )
 
 
 # Feature: m2-security, Property 6: 拒绝路径的状态不变性

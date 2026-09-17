@@ -460,7 +460,7 @@ def test_rpc_fail_fast_logs_and_triggers_fatal_shutdown():
     )
     context = mock.MagicMock()
 
-    with mock.patch("takler.server.network_service.logger") as mock_logger:
+    with mock.patch("takler.server.handlers.logger") as mock_logger:
         response = asyncio.run(service.RunCommandComplete(request, context))
 
     # The fatal-shutdown trigger was invoked (server will exit cleanly).

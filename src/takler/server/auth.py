@@ -1281,7 +1281,7 @@ class CallCredentials:
 #: The Auth_Interceptor parses the metadata once and publishes it here; the
 #: Zombie_Detector and the Audit_Logger read it back. The alternative -- passing
 #: the credentials down as arguments -- would have to thread them through
-#: ``TaklerService._handle_command`` and five ``Scheduler.run_command_*``
+#: ``CommandHandlers._handle_command`` and five ``Scheduler.run_command_*``
 #: methods to reach the ``Z1`` check, and the audit fields are needed at three
 #: unrelated call sites, so the parameter would spread further than the feature.
 #:

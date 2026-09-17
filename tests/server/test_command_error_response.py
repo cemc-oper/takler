@@ -15,7 +15,7 @@ from takler.exceptions import (
     TaklerError,
     UnsupportedValueError,
 )
-from takler.server.network_service import _command_error_response
+from takler.server.handlers import command_error_response
 from takler.protocol import error_code
 
 
@@ -36,12 +36,12 @@ class _UnregisteredTaklerError(TaklerError):
     ],
 )
 def test_command_error_response_flag(exc, expected_flag):
-    response = _command_error_response(exc)
+    response = command_error_response(exc)
     assert response.flag == expected_flag
     assert response.flag != error_code.SUCCESS
 
 
 def test_command_error_response_message_keeps_type_and_text():
     exc = NodeNotFoundError("no such node: /flow1/task1", node_path="/flow1/task1")
-    response = _command_error_response(exc)
+    response = command_error_response(exc)
     assert response.message == "NodeNotFoundError: no such node: /flow1/task1"

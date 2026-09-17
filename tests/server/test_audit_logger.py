@@ -85,8 +85,10 @@ from takler.server.auth import (
     set_call_credentials,
 )
 from takler.server.connect_config import AuthMode, ZombiePolicy
-from takler.server.network_service import CONTROL_METHOD_NAMES, TaklerService
+from takler.server.handlers import CONTROL_METHOD_NAMES
+from takler.server.network_service import TaklerService
 from takler.server.protocol import takler_pb2
+from takler.protocol.commands import CompleteCommand
 from takler.server.scheduler import Scheduler
 from takler.server.zombie import ZombieDetector
 
@@ -681,7 +683,7 @@ def test_zombie_disposition_writes_exactly_one_record(
     scheduler = make_zombie_scheduler(audit_file, policy)
 
     def action() -> None:
-        scheduler.run_command_complete(TASK3)
+        scheduler.run_command_complete(CompleteCommand(node_path=TASK3))
 
     captured = capture(
         raising(action, ZombieError) if raises else action, audit_file=audit_file
@@ -709,7 +711,8 @@ def test_a_clean_child_command_writes_no_record(
     task3.run()  # -> submitted, so ``complete`` hits nothing
 
     captured = capture(
-        lambda: scheduler.run_command_complete(TASK3), audit_file=audit_file
+        lambda: scheduler.run_command_complete(CompleteCommand(node_path=TASK3)),
+        audit_file=audit_file,
     )
 
     assert captured.audit_lines == []
@@ -735,7 +738,8 @@ def test_the_zombie_record_carries_no_job_password(
 
     try:
         captured = capture(
-            lambda: scheduler.run_command_complete(TASK3), audit_file=audit_file
+            lambda: scheduler.run_command_complete(CompleteCommand(node_path=TASK3)),
+            audit_file=audit_file,
         )
     finally:
         reset_call_credentials(token)

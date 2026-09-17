@@ -79,7 +79,7 @@ class ChildAction(enum.Enum):
 
     Two outcomes are enough to express all three policies without adding a
     result type between the Scheduler and the Network_Service, because the M1
-    contract of ``TaklerService._handle_command`` already covers the third:
+    contract of ``CommandHandlers._handle_command`` already covers the third:
     "whatever ``op()`` returns is the success response, whatever it raises is
     the error response".
 
@@ -394,7 +394,7 @@ def dispose_zombie(
     * ``fail``: raise :class:`~takler.exceptions.ZombieError`. Nothing is
       written to the node, so its status, ``task_id``, ``try_no``,
       ``aborted_reason`` and Job_Password all stay as they were, and
-      ``TaklerService._handle_command`` turns the exception into ``flag=31``
+      ``CommandHandlers._handle_command`` turns the exception into ``flag=31``
       under the M1 contract.
     * ``fob``: return :attr:`ChildAction.SKIP`. Again nothing is written; the
       caller returns before running the command, and the handler builds its

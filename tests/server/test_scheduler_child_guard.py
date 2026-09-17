@@ -27,6 +27,21 @@ from takler.core import Bunch, Flow, NodeStatus
 from takler.core.task_node import Task
 from takler.exceptions import NodeNotFoundError, NodeTypeError, ZombieError
 from takler.server.connect_config import ZombiePolicy
+from takler.protocol.commands import (
+    AbortCommand,
+    BeginCommand,
+    CompleteCommand,
+    EventCommand,
+    ForceCommand,
+    FreeDepCommand,
+    InitCommand,
+    MeterCommand,
+    RequeueCommand,
+    ResumeCommand,
+    RunCommand,
+    ShowRequest,
+    SuspendCommand,
+)
 from takler.server.scheduler import Scheduler
 from takler.server.zombie import ChildAction, ZombieDetector
 
@@ -92,15 +107,25 @@ def status_map(node) -> dict:
 def run_child_command(scheduler: Scheduler, command: str, node_path: str = TASK1):
     """Issue one Child_Command by its short name, with a fixed payload."""
     if command == "init":
-        return asyncio.run(scheduler.run_command_init(node_path, "job-42"))
+        return asyncio.run(
+            scheduler.run_command_init(
+                InitCommand(node_path=node_path, task_id="job-42")
+            )
+        )
     if command == "complete":
-        return scheduler.run_command_complete(node_path)
+        return scheduler.run_command_complete(CompleteCommand(node_path=node_path))
     if command == "abort":
-        return scheduler.run_command_abort(node_path, "boom")
+        return scheduler.run_command_abort(
+            AbortCommand(node_path=node_path, reason="boom")
+        )
     if command == "event":
-        return scheduler.run_command_event(node_path, "event1")
+        return scheduler.run_command_event(
+            EventCommand(node_path=node_path, event_name="event1")
+        )
     if command == "meter":
-        return scheduler.run_command_meter(node_path, "meter1", "50")
+        return scheduler.run_command_meter(
+            MeterCommand(node_path=node_path, meter_name="meter1", meter_value=50)
+        )
     raise AssertionError(f"unknown child command: {command}")
 
 
@@ -222,9 +247,13 @@ def test_event_and_meter_on_a_non_task_keep_m1_behaviour(command, variable, expe
     container1 = scheduler.bunch.find_node(CONTAINER1)
 
     if command == "event":
-        scheduler.run_command_event(CONTAINER1, "event_c")
+        scheduler.run_command_event(
+            EventCommand(node_path=CONTAINER1, event_name="event_c")
+        )
     else:
-        scheduler.run_command_meter(CONTAINER1, "meter_c", "50")
+        scheduler.run_command_meter(
+            MeterCommand(node_path=CONTAINER1, meter_name="meter_c", meter_value=50)
+        )
 
     assert container1.find_variable(variable).value == expected
     assert detector.calls == []
@@ -237,15 +266,25 @@ def test_control_and_query_commands_do_not_consult_the_guard():
     detector = RecordingDetector(ChildAction.SKIP)
     scheduler = make_scheduler(detector)
 
-    scheduler.run_command_begin("flow1")
-    scheduler.run_command_suspend(TASK1)
-    scheduler.run_command_resume(TASK1)
-    scheduler.run_command_run(TASK1, force=True)
-    scheduler.run_command_force(f"{TASK1}:event1", "set")
-    scheduler.run_command_force(TASK1, NodeStatus.complete.name)
-    scheduler.run_command_free_dep(TASK1, "all")
-    scheduler.run_command_requeue(TASK1)
-    scheduler.handle_request_show(False, False, False, False, False)
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
+    scheduler.run_command_suspend(SuspendCommand(node_paths=[TASK1]))
+    scheduler.run_command_resume(ResumeCommand(node_paths=[TASK1]))
+    scheduler.run_command_run(RunCommand(node_paths=[TASK1], force=True))
+    scheduler.run_command_force(ForceCommand(paths=[f"{TASK1}:event1"], state="set"))
+    scheduler.run_command_force(
+        ForceCommand(paths=[TASK1], state=NodeStatus.complete.name, recursive=False)
+    )
+    scheduler.run_command_free_dep(FreeDepCommand(paths=[TASK1]))
+    scheduler.run_command_requeue(RequeueCommand(node_paths=[TASK1]))
+    scheduler.handle_request_show(
+        ShowRequest(
+            show_parameter=False,
+            show_trigger=False,
+            show_limit=False,
+            show_event=False,
+            show_meter=False,
+        )
+    )
 
     assert detector.calls == []
 
@@ -260,7 +299,7 @@ def test_without_a_detector_child_commands_keep_m1_behaviour():
     assert scheduler.zombie_detector is None
     assert scheduler._guard_child_command(task1, "complete") is ChildAction.PROCEED
 
-    scheduler.run_command_complete(TASK1)
+    scheduler.run_command_complete(CompleteCommand(node_path=TASK1))
     assert task1.state.node_status is NodeStatus.complete
 
 
@@ -277,7 +316,7 @@ def test_fail_policy_rejects_a_command_against_a_queued_task():
     before = status_map(flow)
 
     with pytest.raises(ZombieError):
-        scheduler.run_command_complete(TASK1)
+        scheduler.run_command_complete(CompleteCommand(node_path=TASK1))
 
     assert status_map(flow) == before
     assert task1.job_password is None
@@ -293,7 +332,7 @@ def test_a_command_of_the_current_run_proceeds_and_keeps_the_password():
     task1.init("job-42")
     task1.job_password = "password-of-the-current-run"
 
-    scheduler.run_command_complete(TASK1)
+    scheduler.run_command_complete(CompleteCommand(node_path=TASK1))
 
     assert task1.state.node_status is NodeStatus.complete
     assert task1.job_password == "password-of-the-current-run"

@@ -14,10 +14,14 @@
 调度与网络服务
 --------------
 
-``Scheduler`` 是调度主循环的载体； ``TaklerService`` 把 16 个 RPC 接
-进节点树。机制见 :doc:`/develop/architecture` 。
+``Scheduler`` 是调度主循环的载体； ``TaklerService`` 是 gRPC 边界，只做
+pb2 ↔ DTO 转换； ``CommandHandlers`` 是传输中立的命令 handler 层，承载
+异常边界、error_code 映射与控制命令审计。机制见 :doc:`/develop/architecture` 。
 
 .. automodule:: takler.server.scheduler
+   :members:
+
+.. automodule:: takler.server.handlers
    :members:
 
 .. automodule:: takler.server.network_service
@@ -61,8 +65,4 @@ Z1/Z2/Z3 僵尸判定。语义见 :doc:`/operation/security` 与
 ----------
 
 ``error_code`` 模块在 M3 任务 4 迁入了传输中立的 ``takler.protocol``
-包：只依赖 ``takler.exceptions`` ，客户端可以独立使用
-（见 :doc:`/develop/protocol` ）。
-
-.. automodule:: takler.protocol.error_code
-   :members:
+包，收录于 :doc:`/develop/api/protocol` 。

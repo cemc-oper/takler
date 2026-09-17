@@ -10,6 +10,7 @@ import pytest
 
 from takler.core import Bunch, Flow, NodeStatus
 from takler.exceptions import FlowStateError, NodeNotFoundError
+from takler.protocol.commands import BeginCommand, LoadCommand
 from takler.server.scheduler import Scheduler
 
 
@@ -34,7 +35,7 @@ def test_begin_single_flow(scheduler):
     flow = scheduler.bunch.add_flow(build_flow("flow1"))
     assert flow.begun is False
 
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
 
     assert flow.begun is True
     assert flow.calendar.initial_time is not None
@@ -46,7 +47,7 @@ def test_begin_unknown_flow_raises_node_not_found(scheduler):
     scheduler.bunch.add_flow(build_flow("flow1"))
 
     with pytest.raises(NodeNotFoundError) as exc_info:
-        scheduler.run_command_begin("no_such_flow")
+        scheduler.run_command_begin(BeginCommand(flow_name="no_such_flow"))
 
     assert exc_info.value.node_path == "/no_such_flow"
 
@@ -54,12 +55,12 @@ def test_begin_unknown_flow_raises_node_not_found(scheduler):
 def test_begin_already_begun_flow_rejected(scheduler):
     """An already begun flow is rejected without force, and keeps its state."""
     flow = scheduler.bunch.add_flow(build_flow("flow1"))
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
     initial_time = flow.calendar.initial_time
     flow.find_node("/flow1/task1").set_node_status(NodeStatus.complete)
 
     with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_begin("flow1")
+        scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
 
     assert "flow1" in str(exc_info.value)
     assert flow.calendar.initial_time == initial_time
@@ -69,11 +70,11 @@ def test_begin_already_begun_flow_rejected(scheduler):
 def test_begin_force_restarts_begun_flow(scheduler):
     """force begins again: calendar restarted and node tree reset."""
     flow = scheduler.bunch.add_flow(build_flow("flow1"))
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
     initial_time = flow.calendar.initial_time
     flow.find_node("/flow1/task1").set_node_status(NodeStatus.complete)
 
-    scheduler.run_command_begin("flow1", force=True)
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1", force=True))
 
     assert flow.begun is True
     assert flow.calendar.initial_time >= initial_time
@@ -83,12 +84,16 @@ def test_begin_force_restarts_begun_flow(scheduler):
 # begin: all flows ------------------------------------------------------
 
 
-@pytest.mark.parametrize("flow_name", [None, ""])
+@pytest.mark.parametrize("flow_name", [""])
 def test_begin_all_flows(scheduler, flow_name):
-    """Requirement 8.1: None or empty string means all flows."""
+    """Requirement 8.1: an empty flow name means all flows.
+
+    The ``None`` form of the pre-DTO signature is gone: ``BeginCommand``'s
+    ``flow_name`` is a string, and its default is the empty one.
+    """
     flows = [scheduler.bunch.add_flow(build_flow(f"flow{i}")) for i in range(3)]
 
-    scheduler.run_command_begin(flow_name)
+    scheduler.run_command_begin(BeginCommand(flow_name=flow_name))
 
     for flow in flows:
         assert flow.begun is True
@@ -99,10 +104,10 @@ def test_begin_all_flows_is_all_or_nothing(scheduler):
     """One already begun flow fails the whole command without touching the others."""
     scheduler.bunch.add_flow(build_flow("flow1"))
     flow2 = scheduler.bunch.add_flow(build_flow("flow2"))
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
 
     with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_begin(None)
+        scheduler.run_command_begin(BeginCommand())
 
     assert "flow1" in str(exc_info.value)
     assert flow2.begun is False
@@ -113,9 +118,9 @@ def test_begin_all_flows_with_force(scheduler):
     """With force, a mix of begun and un-begun flows all end up begun."""
     flow1 = scheduler.bunch.add_flow(build_flow("flow1"))
     flow2 = scheduler.bunch.add_flow(build_flow("flow2"))
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
 
-    scheduler.run_command_begin("", force=True)
+    scheduler.run_command_begin(BeginCommand(force=True))
 
     assert flow1.begun is True
     assert flow2.begun is True
@@ -123,7 +128,7 @@ def test_begin_all_flows_with_force(scheduler):
 
 def test_begin_all_on_empty_bunch_is_noop(scheduler):
     """begin over an empty bunch does nothing and does not raise."""
-    scheduler.run_command_begin(None)
+    scheduler.run_command_begin(BeginCommand())
 
     assert scheduler.bunch.flows == {}
 
@@ -135,7 +140,9 @@ def test_load_leaves_flow_not_begun(scheduler):
     """Requirement 8.8: load registers the flow but leaves it un-begun."""
     flow_dict = build_flow("flow1").to_dict()
 
-    scheduler.run_command_load("json", json.dumps(flow_dict).encode("utf-8"))
+    scheduler.run_command_load(
+        LoadCommand(flow_bytes=json.dumps(flow_dict).encode("utf-8"))
+    )
 
     loaded = scheduler.bunch.find_flow("flow1")
     assert loaded is not None
@@ -147,9 +154,11 @@ def test_load_leaves_flow_not_begun(scheduler):
 def test_load_then_begin_starts_flow(scheduler):
     """A loaded flow becomes runnable once begin is called."""
     flow_dict = build_flow("flow1").to_dict()
-    scheduler.run_command_load("json", json.dumps(flow_dict).encode("utf-8"))
+    scheduler.run_command_load(
+        LoadCommand(flow_bytes=json.dumps(flow_dict).encode("utf-8"))
+    )
 
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
 
     loaded = scheduler.bunch.find_flow("flow1")
     assert loaded.begun is True
@@ -176,7 +185,7 @@ def test_process_flow_skips_not_begun_flow(scheduler):
 def test_process_flow_processes_begun_flow(scheduler):
     """A begun flow is processed: calendar advances and dependencies resolve."""
     flow = scheduler.bunch.add_flow(build_flow("flow1"))
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
     flow_time_before = flow.calendar.flow_time
 
     scheduler._process_flow(

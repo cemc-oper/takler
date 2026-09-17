@@ -156,12 +156,15 @@ gRPC 服务、周期快照任务。
 
 两条贯穿运行期的主线：
 
-* **RPC 主线** ：每个 ``RunCommand*`` / ``RunRequest*`` 处理器都把
-  调用 ``Scheduler`` 的那段代码包在 ``TaklerService._handle_command``
-  里 —— 这是 RPC 异常边界：正常路径原样返回；异常路径按异常策略
+* **RPC 主线** ： gRPC 边界 ``TaklerService`` 只做 pb2 ↔ DTO 转换
+  （ ``takler.server.protocol.adapter`` ），命令本身交给传输中立的
+  ``CommandHandlers`` （ ``takler.server.handlers`` ）：每个命令都把
+  调用 ``Scheduler`` 的那段代码包在 ``CommandHandlers._handle_command``
+  里 —— 这是命令的异常边界：正常路径原样返回；异常路径按异常策略
   记日志、转成 ``flag != 0`` 的 ``ServiceResponse`` （ ``flag`` 取值
   见 :doc:`/operation/reference` 的 error_code 表），控制命令另写一
-  条审计记录（见 :doc:`/operation/audit` ）。
+  条审计记录（见 :doc:`/operation/audit` ）。 ``Scheduler`` 的
+  ``run_command_*`` 公开接口收发 ``takler.protocol`` 的 DTO。
 * **调度主线** ： ``Scheduler.main_loop`` 每轮对每个已开始
   （ ``begun`` ）的 flow 调 ``_process_flow`` —— 先
   ``flow.update_calendar(now)`` 推进日历，再
@@ -193,7 +196,7 @@ gRPC 服务、周期快照任务。
             Note over TASK : 依赖全部满足 → Task.run()
             TASK ->> TASK : before_run：try_no +1 ，轮换作业口令
             TASK ->> TASK : create_job_script：渲染脚本写作业文件
-            TASK ->> JOB : ShellRunner.spwan：/bin/sh -c
+            TASK ->> JOB : ShellRunner.spawn：/bin/sh -c
             TASK -->> SCH : after_run：状态置为 submitted
         end
         JOB ->> SVC : init（child 命令，带 TAKLER_PASS ）

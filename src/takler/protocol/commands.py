@@ -15,7 +15,7 @@ Two encodings of this model exist, and this module belongs to neither:
   ``takler_pb2.InitCommand`` is one encoding of it. The proto's
   ``ChildCommandOptions`` wrapper is a gRPC encoding detail and is flattened
   into each child command's ``node_path`` field here.
-* HTTP: the JSON envelope of :class:`takler.protocol.Envelope`, whose
+* HTTP: the JSON envelope of :class:`~takler.protocol.envelope.Envelope`, whose
   ``payload`` is a request or response DTO serialized with
   ``model_dump(mode="json")``.
 
@@ -86,7 +86,7 @@ __all__ = [
 
 
 class ProtocolModel(BaseModel):
-    """Base of every DTO in :mod:`takler.protocol`.
+    """Base of every DTO in ``takler.protocol``.
 
     ``extra="forbid"`` makes a misspelled or unknown field a validation error
     instead of a silently dropped one. That is the right default while the
@@ -327,11 +327,11 @@ class CoroutineRequest(ProtocolModel):
 
 
 class ServiceResponse(ProtocolModel):
-    """The response of every Child_ and Control_Command.
+    """The response of every child and control command.
 
     ``flag`` is the Error_Code: ``0`` for success, a non-zero classification
     otherwise; ``message`` carries the human-readable detail. The error-code
-    table itself moves into this package with task 4.
+    table itself lives beside the commands, in ``takler.protocol.error_code``.
     """
 
     flag: int = 0

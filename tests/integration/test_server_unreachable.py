@@ -56,6 +56,7 @@ import pytest
 
 from takler.client.service_client import TaklerServiceClient
 from takler.core import Flow, NodeStatus
+from takler.protocol.commands import BeginCommand, ForceCommand
 from takler.server import TaklerServer
 from takler.server.connect_config import get_port
 
@@ -178,8 +179,10 @@ def test_child_command_survives_a_five_minute_outage(
         flow.add_task("task1")
         first.bunch.add_flow(flow)
         await first.start()
-        first.scheduler.run_command_begin("flow1")
-        first.scheduler.run_command_force(NODE_PATH, state="submitted", recursive=False)
+        first.scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
+        first.scheduler.run_command_force(
+            ForceCommand(paths=[NODE_PATH], state="submitted", recursive=False)
+        )
 
         # 2. The server goes away; the port is refused from here on.
         await _stop_listening(first)

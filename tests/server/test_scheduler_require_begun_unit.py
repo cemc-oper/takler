@@ -6,9 +6,23 @@ the flow name, and leave the node and all its descendants unchanged.
 """
 
 import pytest
+from pydantic import ValidationError
 
 from takler.core import Bunch, Flow, NodeContainer, NodeStatus
 from takler.exceptions import FlowStateError, TaklerError
+from takler.protocol.commands import (
+    AbortCommand,
+    BeginCommand,
+    CompleteCommand,
+    EventCommand,
+    ForceCommand,
+    FreeDepCommand,
+    MeterCommand,
+    RequeueCommand,
+    ResumeCommand,
+    RunCommand,
+    SuspendCommand,
+)
 from takler.server.scheduler import Scheduler
 
 
@@ -52,7 +66,7 @@ def test_requeue_rejected_on_not_begun_flow(scheduler, flow, node_path):
     before = status_map(node)
 
     with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_requeue(node_path)
+        scheduler.run_command_requeue(RequeueCommand(node_paths=[node_path]))
 
     assert isinstance(exc_info.value, TaklerError)
     assert "flow1" in str(exc_info.value)
@@ -65,7 +79,7 @@ def test_run_rejected_on_not_begun_flow(scheduler, flow):
     before = status_map(task1)
 
     with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_run("/flow1/container1/task1")
+        scheduler.run_command_run(RunCommand(node_paths=["/flow1/container1/task1"]))
 
     assert "flow1" in str(exc_info.value)
     assert status_map(task1) == before
@@ -74,13 +88,15 @@ def test_run_rejected_on_not_begun_flow(scheduler, flow):
 def test_run_force_rejected_on_not_begun_flow(scheduler, flow):
     """Even ``run --force`` is guarded: the flow gate comes first."""
     with pytest.raises(FlowStateError):
-        scheduler.run_command_run("/flow1/container1/task1", force=True)
+        scheduler.run_command_run(
+            RunCommand(node_paths=["/flow1/container1/task1"], force=True)
+        )
 
 
 def test_run_on_non_task_rejected_before_type_check(scheduler, flow):
     """The guard runs before the "not a Task" branch."""
     with pytest.raises(FlowStateError):
-        scheduler.run_command_run("/flow1/container1")
+        scheduler.run_command_run(RunCommand(node_paths=["/flow1/container1"]))
 
 
 @pytest.mark.parametrize("recursive", [False, True])
@@ -90,7 +106,11 @@ def test_force_node_rejected_on_not_begun_flow(scheduler, flow, recursive):
 
     with pytest.raises(FlowStateError) as exc_info:
         scheduler.run_command_force(
-            "/flow1/container1", NodeStatus.complete.name, recursive=recursive
+            ForceCommand(
+                paths=["/flow1/container1"],
+                state=NodeStatus.complete.name,
+                recursive=recursive,
+            )
         )
 
     assert "flow1" in str(exc_info.value)
@@ -103,7 +123,9 @@ def test_force_event_rejected_on_not_begun_flow(scheduler, flow):
     event1 = task1.find_variable("event1")
 
     with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_force("/flow1/container1/task1:event1", "set")
+        scheduler.run_command_force(
+            ForceCommand(paths=["/flow1/container1/task1:event1"], state="set")
+        )
 
     assert "flow1" in str(exc_info.value)
     assert event1.value is False
@@ -115,15 +137,23 @@ def test_force_meter_rejected_on_not_begun_flow(scheduler, flow):
     value_before = meter1.value
 
     with pytest.raises(FlowStateError):
-        scheduler.run_command_force("/flow1/container1/task1:meter1", "set")
+        scheduler.run_command_force(
+            ForceCommand(paths=["/flow1/container1/task1:meter1"], state="set")
+        )
 
     assert meter1.value == value_before
 
 
-def test_force_invalid_state_still_rejected_by_guard(scheduler, flow):
-    """The flow gate is reported before the unsupported state value."""
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_force("/flow1/container1", "no_such_status")
+def test_force_invalid_state_never_reaches_the_guard(scheduler, flow):
+    """An unsupported state is rejected by the DTO before the scheduler runs.
+
+    M3 task 5 moved the state name validation onto ``ForceCommand`` itself, so
+    the old ordering question -- flow gate or value error first -- no longer
+    exists at the scheduler's boundary: ``no_such_status`` cannot be
+    expressed as a ``ForceCommand`` at all.
+    """
+    with pytest.raises(ValidationError):
+        ForceCommand(paths=["/flow1/container1"], state="no_such_status")
 
 
 @pytest.mark.parametrize("dep_type", ["all", "trigger", "time"])
@@ -132,7 +162,9 @@ def test_free_dep_rejected_on_not_begun_flow(scheduler, flow, dep_type):
     before = status_map(task1)
 
     with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_free_dep("/flow1/container1/task1", dep_type)
+        scheduler.run_command_free_dep(
+            FreeDepCommand(paths=["/flow1/container1/task1"], dep_type=dep_type)
+        )
 
     assert "flow1" in str(exc_info.value)
     assert status_map(task1) == before
@@ -142,13 +174,23 @@ def test_free_dep_rejected_on_not_begun_flow(scheduler, flow, dep_type):
 
 
 def test_guarded_commands_work_after_begin(scheduler, flow):
-    scheduler.run_command_begin("flow1")
+    scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
 
-    scheduler.run_command_requeue("/flow1/container1")
-    scheduler.run_command_free_dep("/flow1/container1/task1", "all")
-    scheduler.run_command_force("/flow1/container1/task1:event1", "set")
-    assert scheduler.run_command_run("/flow1/container1/task1") is True
-    scheduler.run_command_force("/flow1/container1/task2", NodeStatus.complete.name)
+    scheduler.run_command_requeue(RequeueCommand(node_paths=["/flow1/container1"]))
+    scheduler.run_command_free_dep(
+        FreeDepCommand(paths=["/flow1/container1/task1"], dep_type="all")
+    )
+    scheduler.run_command_force(
+        ForceCommand(paths=["/flow1/container1/task1:event1"], state="set")
+    )
+    assert scheduler._run_node("/flow1/container1/task1") is True
+    scheduler.run_command_force(
+        ForceCommand(
+            paths=["/flow1/container1/task2"],
+            state=NodeStatus.complete.name,
+            recursive=False,
+        )
+    )
 
     task1 = scheduler.bunch.find_node("/flow1/container1/task1")
     assert task1.find_variable("event1").value is True
@@ -161,27 +203,35 @@ def test_guarded_commands_work_after_begin(scheduler, flow):
 
 def test_suspend_and_resume_not_guarded(scheduler, flow):
     """ "suspend then begin" is a legitimate operator order, so it is not guarded."""
-    scheduler.run_command_suspend("/flow1")
+    scheduler.run_command_suspend(SuspendCommand(node_paths=["/flow1"]))
     assert flow.state.suspended is True
 
-    scheduler.run_command_resume("/flow1")
+    scheduler.run_command_resume(ResumeCommand(node_paths=["/flow1"]))
     assert flow.state.suspended is False
 
 
 def test_child_commands_not_guarded(scheduler, flow):
     """Child commands stay accepted: zombie semantics belong to M2."""
-    scheduler.run_command_complete("/flow1/container1/task1")
+    scheduler.run_command_complete(CompleteCommand(node_path="/flow1/container1/task1"))
     task1 = scheduler.bunch.find_node("/flow1/container1/task1")
     assert task1.state.node_status is NodeStatus.complete
 
-    scheduler.run_command_abort("/flow1/container1/task2", "some reason")
+    scheduler.run_command_abort(
+        AbortCommand(node_path="/flow1/container1/task2", reason="some reason")
+    )
     task2 = scheduler.bunch.find_node("/flow1/container1/task2")
     assert task2.state.node_status is NodeStatus.aborted
 
-    scheduler.run_command_event("/flow1/container1/task1", "event1")
+    scheduler.run_command_event(
+        EventCommand(node_path="/flow1/container1/task1", event_name="event1")
+    )
     assert task1.find_variable("event1").value is True
 
-    scheduler.run_command_meter("/flow1/container1/task1", "meter1", "50")
+    scheduler.run_command_meter(
+        MeterCommand(
+            node_path="/flow1/container1/task1", meter_name="meter1", meter_value=50
+        )
+    )
     assert task1.find_variable("meter1").value == 50
 
 

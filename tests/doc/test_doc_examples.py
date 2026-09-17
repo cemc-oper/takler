@@ -558,6 +558,7 @@ def test_step13_begin_starts_calendar_and_rejects_second_begin():
     """
     from takler.core import Bunch, NodeStatus
     from takler.exceptions import FlowStateError
+    from takler.protocol.commands import BeginCommand
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
@@ -566,16 +567,16 @@ def test_step13_begin_starts_calendar_and_rejects_second_begin():
 
     assert flow.begun is False
 
-    scheduler.run_command_begin("")
+    scheduler.run_command_begin(BeginCommand())
 
     assert flow.begun is True
     assert flow.state.node_status == NodeStatus.queued
 
     with pytest.raises(FlowStateError):
-        scheduler.run_command_begin("test")
+        scheduler.run_command_begin(BeginCommand(flow_name="test"))
 
     # ``--force`` begins an already begun flow again.
-    scheduler.run_command_begin("test", force=True)
+    scheduler.run_command_begin(BeginCommand(flow_name="test", force=True))
 
 
 def test_step13_control_commands_require_a_begun_flow():
@@ -586,6 +587,12 @@ def test_step13_control_commands_require_a_begun_flow():
     """
     from takler.core import Bunch
     from takler.exceptions import FlowStateError
+    from takler.protocol.commands import (
+        ForceCommand,
+        FreeDepCommand,
+        RequeueCommand,
+        RunCommand,
+    )
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
@@ -593,13 +600,15 @@ def test_step13_control_commands_require_a_begun_flow():
     scheduler.bunch.add_flow(module.create_flow())
 
     with pytest.raises(FlowStateError):
-        scheduler.run_command_requeue("/test")
+        scheduler.run_command_requeue(RequeueCommand(node_paths=["/test"]))
     with pytest.raises(FlowStateError):
-        scheduler.run_command_run("/test/t1")
+        scheduler.run_command_run(RunCommand(node_paths=["/test/t1"]))
     with pytest.raises(FlowStateError):
-        scheduler.run_command_force("/test/t1", "complete")
+        scheduler.run_command_force(ForceCommand(paths=["/test/t1"], state="complete"))
     with pytest.raises(FlowStateError):
-        scheduler.run_command_free_dep("/test/t3", "time")
+        scheduler.run_command_free_dep(
+            FreeDepCommand(paths=["/test/t3"], dep_type="time")
+        )
 
 
 def test_step13_suspending_a_flow_blocks_its_whole_subtree():
@@ -610,14 +619,15 @@ def test_step13_suspending_a_flow_blocks_its_whole_subtree():
     walk stops at the suspended container.
     """
     from takler.core import Bunch
+    from takler.protocol.commands import BeginCommand, ResumeCommand, SuspendCommand
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
-    scheduler.run_command_begin("")
+    scheduler.run_command_begin(BeginCommand())
 
-    scheduler.run_command_suspend("/test")
+    scheduler.run_command_suspend(SuspendCommand(node_paths=["/test"]))
 
     assert flow.is_suspended() is True
     # The marker is not pushed down to children...
@@ -627,7 +637,7 @@ def test_step13_suspending_a_flow_blocks_its_whole_subtree():
     # never reaches the children (see NodeContainer.resolve_dependencies).
     assert flow.check_dependencies() is False
 
-    scheduler.run_command_resume("/test")
+    scheduler.run_command_resume(ResumeCommand(node_paths=["/test"]))
     assert flow.is_suspended() is False
 
 
@@ -639,21 +649,26 @@ def test_step13_force_sets_node_status_recursively():
     node changes and the parents re-aggregate from their children.
     """
     from takler.core import Bunch, NodeStatus
+    from takler.protocol.commands import BeginCommand, ForceCommand
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
-    scheduler.run_command_begin("")
+    scheduler.run_command_begin(BeginCommand())
 
-    scheduler.run_command_force("/test", "complete", recursive=True)
+    scheduler.run_command_force(
+        ForceCommand(paths=["/test"], state="complete", recursive=True)
+    )
 
     assert flow.state.node_status == NodeStatus.complete
     for child in flow.children:
         assert child.state.node_status == NodeStatus.complete
 
     # Non-recursive: only t1 changes; the flow re-aggregates to queued.
-    scheduler.run_command_force("/test/t1", "queued", recursive=False)
+    scheduler.run_command_force(
+        ForceCommand(paths=["/test/t1"], state="queued", recursive=False)
+    )
 
     assert flow.find_node("/test/t1").state.node_status == NodeStatus.queued
     assert flow.state.node_status == NodeStatus.queued
@@ -665,26 +680,30 @@ def test_step13_force_sets_and_clears_events():
     controlling-the-flow.rst uses ``force set /test/t1:a`` as the example; an
     unsupported state is rejected and leaves the event untouched.
     """
+    from pydantic import ValidationError
+
     from takler.core import Bunch
-    from takler.exceptions import UnsupportedValueError
+    from takler.protocol.commands import BeginCommand, ForceCommand
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
-    scheduler.run_command_begin("")
+    scheduler.run_command_begin(BeginCommand())
 
     event_a = flow.find_node("/test/t1").find_event("a")
     assert event_a.value is False
 
-    scheduler.run_command_force("/test/t1:a", "set")
+    scheduler.run_command_force(ForceCommand(paths=["/test/t1:a"], state="set"))
     assert event_a.value is True
 
-    scheduler.run_command_force("/test/t1:a", "clear")
+    scheduler.run_command_force(ForceCommand(paths=["/test/t1:a"], state="clear"))
     assert event_a.value is False
 
-    with pytest.raises(UnsupportedValueError):
-        scheduler.run_command_force("/test/t1:a", "bogus")
+    # An unsupported state no longer reaches the scheduler: the ForceCommand
+    # DTO rejects it at construction (M3 task 5).
+    with pytest.raises(ValidationError):
+        ForceCommand(paths=["/test/t1:a"], state="bogus")
     assert event_a.value is False
 
 
@@ -697,20 +716,23 @@ def test_step13_free_dep_releases_time_and_trigger():
     12:00. A requeue re-arms both.
     """
     from takler.core import Bunch
+    from takler.protocol.commands import BeginCommand, FreeDepCommand
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
-    scheduler.run_command_begin("")
+    scheduler.run_command_begin(BeginCommand())
 
     task2 = flow.find_node("/test/t2")
     task3 = flow.find_node("/test/t3")
     assert task2.evaluate_trigger() is False
     assert task3.times[0].free is False
 
-    scheduler.run_command_free_dep("/test/t2", "trigger")
-    scheduler.run_command_free_dep("/test/t3", "time")
+    scheduler.run_command_free_dep(
+        FreeDepCommand(paths=["/test/t2"], dep_type="trigger")
+    )
+    scheduler.run_command_free_dep(FreeDepCommand(paths=["/test/t3"], dep_type="time"))
 
     assert task2.evaluate_trigger() is True
     assert task3.times[0].free is True
@@ -728,21 +750,25 @@ def test_step13_run_skips_a_submitted_task():
     jobs at once; the forced form is exercised in zombies.rst.
     """
     from takler.core import Bunch, NodeStatus
+    from takler.protocol.commands import BeginCommand, RunCommand
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     flow = scheduler.bunch.add_flow(module.create_flow())
-    scheduler.run_command_begin("")
+    scheduler.run_command_begin(BeginCommand())
 
     task1 = flow.find_node("/test/t1")
     task1.set_node_status(NodeStatus.submitted)
 
-    assert scheduler.run_command_run("/test/t1") is False
+    scheduler.run_command_run(RunCommand(node_paths=["/test/t1"]))
     assert task1.state.node_status == NodeStatus.submitted
 
-    # ``run`` only applies to tasks; targeting a container is refused.
-    assert scheduler.run_command_run("/test") is False
+    # ``run`` only applies to tasks; targeting a container is refused (logged,
+    # no state change).
+    flow_status = flow.state.node_status
+    scheduler.run_command_run(RunCommand(node_paths=["/test"]))
+    assert flow.state.node_status == flow_status
 
 
 def test_step13_load_registers_a_flow_without_beginning_it():
@@ -755,13 +781,16 @@ def test_step13_load_registers_a_flow_without_beginning_it():
 
     from takler.core import Bunch
     from takler.exceptions import InvalidRequestError
+    from takler.protocol.commands import LoadCommand
     from takler.server.scheduler import Scheduler
 
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
     flow = module.create_flow()
 
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
-    scheduler.run_command_load("json", json.dumps(flow.to_dict()).encode())
+    scheduler.run_command_load(
+        LoadCommand(flow_bytes=json.dumps(flow.to_dict()).encode())
+    )
 
     loaded = scheduler.bunch.find_flow("test")
     assert loaded is not None
@@ -769,7 +798,7 @@ def test_step13_load_registers_a_flow_without_beginning_it():
     assert loaded.find_node("/test/t2") is not None
 
     with pytest.raises(InvalidRequestError):
-        scheduler.run_command_load("json", b"not a json")
+        scheduler.run_command_load(LoadCommand(flow_bytes=b"not a json"))
 
 
 def test_step13_try_no_and_job_password_lifecycle():
@@ -2690,7 +2719,7 @@ def test_operation_audit_audited_command_set():
     service audits: operator-level write commands, with the read-only
     show/coroutine opted out.
     """
-    from takler.server.network_service import CONTROL_METHOD_NAMES
+    from takler.server.handlers import CONTROL_METHOD_NAMES
 
     assert sorted(CONTROL_METHOD_NAMES) == [
         "RunCommandBegin",
@@ -3170,7 +3199,7 @@ def test_develop_architecture_documents_layers_and_components():
         "``ZombieDetector``",
         "``AuthInterceptor``",
         "``AuditLogger``",
-        "``TaklerService._handle_command``",
+        "``CommandHandlers._handle_command``",
         "``resolve_dependencies``",
         "``ShellRunner``",
         "``TaklerServer``",
@@ -3907,6 +3936,7 @@ def test_develop_api_internal_pages_cover_modules():
 
     server_modules = (
         "takler.server.scheduler",
+        "takler.server.handlers",
         "takler.server.network_service",
         "takler.server.auth",
         "takler.server.zombie",
@@ -3914,7 +3944,6 @@ def test_develop_api_internal_pages_cover_modules():
         "takler.server.checkpoint",
         "takler.server.tls",
         "takler.server.connect_config",
-        "takler.protocol.error_code",
     )
     logging_modules = (
         "takler.logging",
@@ -3957,6 +3986,17 @@ def test_develop_api_internal_pages_cover_modules():
         # The stability disclaimer is part of the contract of these pages
         # (whitespace-normalized: the phrase may wrap across source lines).
         assert "内部实现" in re.sub(r"\s+", "", text), page
+
+    # The transport-neutral protocol layer got its own page in M3 (tasks 3-5);
+    # it is a public interface, so no 内部实现 disclaimer is required there.
+    protocol_text = _api_page("protocol.rst")
+    for module in (
+        "takler.protocol.commands",
+        "takler.protocol.envelope",
+        "takler.protocol.error_code",
+    ):
+        assert f".. automodule:: {module}" in protocol_text, module
+        importlib.import_module(module)
 
 
 def test_develop_api_conf_nitpick_allowlist_matches_reality():
