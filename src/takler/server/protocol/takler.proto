@@ -1,12 +1,20 @@
 syntax = "proto3";
 /*
+This file is the single source of truth of the wire protocol. Both client
+implementations mirror it and gate on drift in CI.
+
 Python
 
     python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. takler/server/protocol/takler.proto
 
 Golang
 
-    protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative .\takler_protocol\takler.proto
+    The Go stubs live in the takler-client repo and are regenerated there:
+
+        scripts/proto.sh sync
+
+    protoc comes from this repo's locked uv environment (grpcio-tools in the
+    dev dependency group), so no separate protoc installation is needed.
 */
 
 

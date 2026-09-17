@@ -101,3 +101,24 @@ jobs:
           echo "statement coverage below 85% for:$failed" >&2
           exit 1
         fi
+
+  proto-drift:
+
+    name: proto drift check
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v10.0.1
+      with:
+        enable-cache: true
+    # 两层校验，脚本见 scripts/check_proto.sh：
+    #   1. 新鲜度——提交进来的 takler_pb2*.py 与用锁定 grpcio-tools 现场重新生成的
+    #      结果 diff 为空（改了 proto 忘了重新生成会在这里暴露）；
+    #   2. 跨仓漂移——takler-client 仓的 takler_protocol/takler.proto 与本仓的
+    #      事实来源逐字节一致（Go 端落后时本 job 变红）。takler-client 的副本经
+    #      raw.githubusercontent.com 拉取；takler-client 侧 CI 跑的是镜像检查。
+    - name: Proto drift and freshness check
+      run: ./scripts/check_proto.sh
