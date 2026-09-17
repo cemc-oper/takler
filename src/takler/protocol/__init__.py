@@ -1,0 +1,76 @@
+"""The transport-neutral protocol model of takler.
+
+This package defines the sixteen commands as pydantic DTOs
+(:mod:`takler.protocol.commands`) and the envelope that carries them
+(:mod:`takler.protocol.envelope`). It is the one protocol definition both
+transports -- gRPC and HTTP -- and both sides -- server and client -- are
+built against. See the module docstrings for the layering rules.
+"""
+
+from takler.protocol.commands import (
+    REQUEST_TYPE_BY_COMMAND,
+    RESPONSE_TYPE_BY_COMMAND,
+    AbortCommand,
+    BeginCommand,
+    ChildCommand,
+    Command,
+    CompleteCommand,
+    Coroutine,
+    CoroutineRequest,
+    CoroutineResponse,
+    DepType,
+    EventCommand,
+    ForceCommand,
+    ForceState,
+    FreeDepCommand,
+    InitCommand,
+    LoadCommand,
+    MeterCommand,
+    NodePathsCommand,
+    PingRequest,
+    PingResponse,
+    ProtocolModel,
+    RequeueCommand,
+    ResumeCommand,
+    RunCommand,
+    ServiceResponse,
+    ShowRequest,
+    ShowResponse,
+    SuspendCommand,
+)
+from takler.protocol.envelope import PROTOCOL_VERSION, AuthInfo, Envelope
+
+__all__ = [
+    "PROTOCOL_VERSION",
+    "Command",
+    "ForceState",
+    "DepType",
+    "ProtocolModel",
+    "ChildCommand",
+    "InitCommand",
+    "CompleteCommand",
+    "AbortCommand",
+    "EventCommand",
+    "MeterCommand",
+    "NodePathsCommand",
+    "RequeueCommand",
+    "SuspendCommand",
+    "ResumeCommand",
+    "RunCommand",
+    "ForceCommand",
+    "FreeDepCommand",
+    "LoadCommand",
+    "BeginCommand",
+    "ShowRequest",
+    "PingRequest",
+    "CoroutineRequest",
+    "ServiceResponse",
+    "ShowResponse",
+    "PingResponse",
+    "Coroutine",
+    "CoroutineResponse",
+    "REQUEST_TYPE_BY_COMMAND",
+    "RESPONSE_TYPE_BY_COMMAND",
+    "AuthInfo",
+    "Envelope",
+]

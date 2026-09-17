@@ -183,9 +183,9 @@ show_missing = true
 # 主因是 `takler/tui` 缺测试），且 `pytest tests/some_file.py` 这类局部运行不应因门槛失败。
 # 门槛因此放在 CI 的独立步骤（见 `.github/workflows/test.yml`），复用本段写出的同一份
 # 覆盖率数据、各自限定 `--include` 范围：
-#   # M1：客户端与 Protocol_Layer
+#   # M1：客户端与 Protocol_Layer（M3 任务 3 起含 takler/protocol/ 的 DTO 层）
 #   coverage report \
-#     --include="src/takler/client/*,src/takler/server/network_service.py,src/takler/server/protocol/*" \
+#     --include="src/takler/client/*,src/takler/server/network_service.py,src/takler/server/protocol/*,src/takler/protocol/*" \
 #     --fail-under=85
 #   # M2：安全相关新增模块，逐个模块检查（合并成一次 `--include` 会让高覆盖率的小模块
 #   # 把回退的大模块托过门槛，因为 `--fail-under` 比的是included文件的合计值）
