@@ -73,10 +73,9 @@ if __name__ == "__main__":
 
 ### 2. Write the task scripts
 
-Each `ShellScriptTask` renders a `.takler` script (a Jinja2 template) into a
-job script and runs it. The script calls back to the server with *child
-commands*: `init` when it starts and `complete` when it finishes. Create
-**test/t1.takler**:
+Each `ShellScriptTask` renders a `.takler` script (a Jinja2 template) into a job script and runs it. 
+The script calls back to the server with *child commands*: `init` when it starts and `complete` when it finishes. 
+Create **test/t1.takler**:
 
 ```bash
 #!/bin/bash
@@ -92,10 +91,9 @@ takler-client-py complete --host {{ TAKLER_HOST }} --port {{ TAKLER_PORT }} \
     --node-path {{ TAKLER_NAME }}
 ```
 
-and **test/t2.takler** the same way, with `echo "hello from t2"` as the
-payload. `TAKLER_HOST`, `TAKLER_PORT` and `TAKLER_NAME` are parameters takler
-generates for every task; the client used inside the script can be either
-`takler-client-py` (installed with takler) or the Go client `takler_client`,
+and **test/t2.takler** the same way, with `echo "hello from t2"` as the payload.
+`TAKLER_HOST`, `TAKLER_PORT` and `TAKLER_NAME` are parameters takler generates for every task;
+the client used inside the script can be either `takler-client-py` (installed with takler) or the Go client `takler_client`, 
 as long as it is on the job's `PATH`.
 
 ### 3. Run it
@@ -106,8 +104,7 @@ Start the server (it listens on `localhost:33083` by default):
 python test.py
 ```
 
-In another terminal, begin the flow and requeue it so the scheduler picks it
-up:
+In another terminal, begin the flow and requeue it so the scheduler picks it up:
 
 ```bash
 takler-client-py begin test      # begin acts on a flow name, not a path
@@ -115,8 +112,7 @@ takler-client-py requeue /test
 takler-client-py show
 ```
 
-`t1` runs first; once it reports `complete`, the trigger releases `t2`, and
-finally the whole flow reaches `complete`:
+`t1` runs first; once it reports `complete`, the trigger releases `t2`, and finally the whole flow reaches `complete`:
 
 ```
 |- test [complete]
@@ -124,34 +120,11 @@ finally the whole flow reaches `complete`:
   |- t2 [complete]
 ```
 
-For events, meters, time dependencies, families and more, see the
-[documentation](https://takler.readthedocs.io/) (中文文档).
-
-## Documentation
-
-### Build documentation locally
-
-Documentation dependencies (Sphinx, pydata-sphinx-theme, etc.) live in the `docs`
-dependency group in `pyproject.toml`, kept separate from the `dev` group so a docs
-build doesn't also pull in the linter or test tooling. Build the HTML docs with:
-
-```bash
-uv run --group docs sphinx-build -b html doc/source doc/build/html
-```
-
-or, using the Sphinx Makefile:
-
-```bash
-cd doc
-uv run --project .. --group docs make html
-```
-
-The generated HTML is written to `doc/build/html/index.html`. This is the same
-`uv sync --group docs` toolchain that Read the Docs uses (see `.readthedocs.yml`).
+For events, meters, time dependencies, families and more, see the [documentation](https://takler.readthedocs.io/) (中文文档).
 
 ## LICENSE
 
-Copyright &copy; 2022-2025, developers at cemc-oper.
+Copyright &copy; 2022-2026, developers at cemc-oper.
 
 *takler* is licensed under [Apache License, Version 2.0](./LICENSE)
 
