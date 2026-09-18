@@ -75,6 +75,9 @@ nitpick_ignore = [
     ("py:class", "grpc.StatusCode"),
     ("py:class", "grpc.aio.ServerInterceptor"),
     ("py:func", "grpc.ssl_server_credentials"),
+    # fastapi / uvicorn 是 ``http`` extra 的可选依赖，不进 intersphinx；
+    # http_transport 模块 docstring 与注解里的引用保持为本地说明性文字。
+    ("py:class", "fastapi.FastAPI"),
     ("py:class", "pydantic.config.ConfigDict"),
     ("py:class", "rich.text.Text"),
     ("py:class", "textual.geometry.Offset"),
@@ -157,8 +160,9 @@ autosummary_generate = True
 # 受支持的 Python 版本（CI 矩阵 3.11/3.12，Read the Docs 3.12）下渲染一致。
 always_use_bars_union = True
 
-# 可选依赖（tui / log extras）在只装 docs 依赖组的环境（如 Read the Docs，
-# 见 .readthedocs.yml）里不存在。autodoc 遇到这些导入失败时用 mock 顶替，
-# 使 develop/api 的 tui.rst 与 logging.rst 在任何环境都能通过严格构建；
-# 本地已安装对应库时仍使用真实导入（mock 只是后备）。
-autodoc_mock_imports = ["textual", "rich", "loguru"]
+# 可选依赖（tui / log / http extras）在只装 docs 依赖组的环境（如 Read the
+# Docs，见 .readthedocs.yml）里不存在。autodoc 遇到这些导入失败时用 mock 顶
+# 替，使 develop/api 的 tui.rst、logging.rst 与 server.rst（http_transport
+# 一节）在任何环境都能通过严格构建；本地已安装对应库时仍使用真实导入
+# （mock 只是后备）。
+autodoc_mock_imports = ["textual", "rich", "loguru", "fastapi", "uvicorn"]

@@ -6,13 +6,13 @@ fixtures (the suite runs with ``--import-mode=importlib``, so sharing goes
 through fixtures rather than module imports). Two test modules consume them --
 
 * ``test_handlers_unit.py`` runs each case directly against
-  :class:`~takler.server.handlers.CommandHandlers` (DTO in, DTO out), and
+  :class:`~takler.server.handlers.CommandHandlers` (DTO in, DTO out),
 * ``test_handlers_grpc_boundary.py`` runs the same case through the gRPC
   adapter (:class:`~takler.server.grpc_transport.GrpcTransport` with a pb2
-  request), proving the adapter preserves the handler's semantics.
-
-The HTTP transport of task 7 adds a third consumer without touching the
-cases.
+  request), proving the adapter preserves the handler's semantics, and
+* ``test_handlers_http_boundary.py`` runs it through the HTTP transport
+  (:class:`~takler.server.http_transport.HttpTransport`'s FastAPI app with an
+  envelope body), proving the JSON boundary preserves them too (M3 task 7).
 
 A case carries the request as plain kwargs rather than a built DTO so the
 parse -- including its failures, e.g. a non-numeric ``meter_value`` -- happens
@@ -23,6 +23,7 @@ production boundary runs it.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -36,6 +37,7 @@ from takler.protocol.commands import (
     BeginCommand,
     Command,
 )
+from takler.protocol.envelope import Envelope
 from takler.server.handlers import METHOD_NAME_BY_COMMAND, CommandHandlers
 from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
@@ -328,6 +330,45 @@ def run_via_grpc(case: HandlerCase) -> Tuple[Any, Bunch]:
     return response, scheduler.bunch
 
 
+def run_via_http(case: HandlerCase) -> Tuple[Any, Bunch]:
+    """Run one case through the HTTP boundary: envelope JSON in, envelope JSON out.
+
+    The app is driven through httpx's ASGI transport, so the whole HTTP stack
+    -- routing, envelope validation, the authentication dependency, dispatch
+    -- runs without a uvicorn server (uvicorn's own lifecycle is covered in
+    ``test_http_transport_unit.py``). Both imports are lazy: fastapi and
+    httpx live behind the ``http`` extra, and a gRPC-only checkout must still
+    collect this conftest.
+    """
+    import httpx
+
+    from takler.server.http_transport import API_PREFIX, create_app
+
+    scheduler = build_scheduler()
+    app = create_app(CommandHandlers(scheduler))
+
+    async def post():
+        payload = dict(case.kwargs)
+        if "flow_bytes" in payload:
+            # The JSON envelope carries raw bytes base64 encoded, mirroring
+            # what ``LoadCommand``'s model config does on the client side.
+            payload["flow_bytes"] = base64.b64encode(payload["flow_bytes"]).decode(
+                "ascii"
+            )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        ) as client:
+            return await client.post(
+                f"{API_PREFIX}/commands/{case.command.value}",
+                json={"command": case.command.value, "payload": payload},
+            )
+
+    http_response = asyncio.run(post())
+    assert http_response.status_code == 200, http_response.text
+    envelope = Envelope.model_validate(http_response.json())
+    return envelope.parse_response(), scheduler.bunch
+
+
 def assert_case(case: HandlerCase, response, bunch: Bunch) -> None:
     """Assert a case's expectations against either response encoding.
 
@@ -447,6 +488,12 @@ def run_via_handlers_fixture():
 def run_via_grpc_fixture():
     """The gRPC-boundary driver: pb2 in, pb2 out."""
     return run_via_grpc
+
+
+@pytest.fixture
+def run_via_http_fixture():
+    """The HTTP-boundary driver: envelope JSON in, envelope JSON out."""
+    return run_via_http
 
 
 @pytest.fixture

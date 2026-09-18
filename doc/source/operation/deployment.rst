@@ -193,3 +193,47 @@ takler-server 选项
 服务可达时打印往返耗时并以退出码 ``0`` 结束；重试窗口耗尽仍连不上
 时退出码为 ``4`` 。用 systemd 时可配合 ``ExecStartPost`` 或
 看门狗脚本定期检查。
+
+HTTP 监听（ M3 ）
+-----------------
+
+默认安装形态只挂 gRPC 监听。在 ``connect.yaml`` 的 ``server`` 段配置
+``http`` 小节后，服务会在**同一进程**内于独立端口再挂一个 HTTP
+transport（ FastAPI + uvicorn ，需 ``pip install takler[http]`` ）：
+
+.. code-block:: yaml
+
+    server:
+      address:
+        hostname: login01
+        ip: 10.0.0.9
+        port: "33083"      # gRPC
+      http:
+        port: "33084"      # HTTP，独立于 gRPC 端口
+
+两个 transport 共用同一个调度器、同一套鉴权判定（ Auth_Gate ）与同一
+份审计日志：同一份凭据在两个端口上的接受 / 拒绝完全一致，控制命令的
+审计记录格式也完全一致。HTTP 端点为
+``POST /v1/commands/{command}`` ，请求与响应都是信封 JSON （
+``takler.protocol.Envelope`` ）；HTTP 状态码只表达传输层与鉴权结果
+（ ``401`` / ``403`` 对应未认证 / 未授权， ``422`` 为信封格式错误）
+，命令本身的成败仍在响应信封的 ``flag`` 里——``200`` 不代表业务成功
+。服务自带 OpenAPI 文档（ ``/docs`` ）。
+
+TLS 有两种配置方式，推荐第一种：
+
+#. **前置反向代理终止 TLS （推荐）。** 让 HTTP 监听保持明文并只绑定
+   回环或内网网卡（ ``server.http.host`` ），由 nginx 等反向代理终止
+   TLS 并转发。证书热更新、统一入口与访问控制都在代理层解决，服务进
+   程完全不碰证书。
+#. **uvicorn 直接持有证书。** 在 ``server.http`` 小节配置
+   ``tls_cert_file`` / ``tls_key_file`` （成对，只给一个会终止启动）
+   ；两者都不配时回落到 gRPC 监听解析出的同一证书对，仍无则为明文并
+   在启动日志记 WARNING 。证书对与 gRPC 侧一样在启动前校验：不可读
+   或不匹配都会让服务拒绝启动。
+
+凭据三键在 HTTP 下平移为请求头，键名与 gRPC 元数据相同：
+``takler-pass`` / ``takler-secret`` / ``takler-user`` （ HTTP 头不区
+分大小写）。取值来源与 gRPC 客户端一致：作业脚本内是注入的
+``TAKLER_PASS`` ，运维命令是 ``TAKLER_SECRET_FILE`` 指向的密钥文件
+与当前 OS 用户名，见 :doc:`/operation/security` 。

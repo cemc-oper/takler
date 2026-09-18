@@ -3938,6 +3938,7 @@ def test_develop_api_internal_pages_cover_modules():
         "takler.server.scheduler",
         "takler.server.handlers",
         "takler.server.grpc_transport",
+        "takler.server.http_transport",
         "takler.server.transport",
         "takler.server.auth",
         "takler.server.zombie",
@@ -4020,4 +4021,7 @@ def test_develop_api_conf_nitpick_allowlist_matches_reality():
 
     assert "nitpick_ignore_regex" in conf_text
     # autodoc mock list keeps the optional extras buildable on RTD.
-    assert 'autodoc_mock_imports = ["textual", "rich", "loguru"]' in conf_text
+    assert (
+        'autodoc_mock_imports = ["textual", "rich", "loguru", "fastapi", "uvicorn"]'
+        in conf_text
+    )

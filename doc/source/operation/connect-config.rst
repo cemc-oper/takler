@@ -61,6 +61,26 @@ server 段
     * - ``server.address.port``
       - 无（必填）
       - 服务端口， YAML 中写作字符串
+    * - ``server.http``
+      - 未配置
+      - HTTP 监听小节（ M3 ）。配置即在 gRPC 端口之外再挂一个 HTTP
+        transport（需要 ``takler[http]`` extra ）；省略则服务保持
+        gRPC-only
+    * - ``server.http.host``
+      - ``0.0.0.0``
+      - HTTP 监听网卡
+    * - ``server.http.port``
+      - 无（ ``http`` 小节存在时必填）
+      - HTTP 监听端口，独立于 gRPC 端口， YAML 中写作字符串
+    * - ``server.http.tls_cert_file``
+      - 回落到 gRPC 证书对
+      - HTTP 监听自身的证书，与 ``tls_key_file`` 成对配置；两者都不配
+        则继承 gRPC 监听解析出的证书对（命令行 ``--tls-cert`` /
+        ``--tls-key`` > ``security`` 段），仍无则为明文——推荐由前置
+        反向代理终止 TLS ，见 :doc:`/operation/deployment`
+    * - ``server.http.tls_key_file``
+      - 回落到 gRPC 证书对
+      - 上述证书的私钥；只配置两者之一会终止启动
 
 checkpoint 段
 -------------

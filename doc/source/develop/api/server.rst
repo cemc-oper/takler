@@ -16,9 +16,10 @@
 
 ``Scheduler`` 是调度主循环的载体； ``ServerTransport`` 是服务端
 transport 的挂载点抽象（ M3 任务 6 ）， ``GrpcTransport`` 是其 gRPC 实
-现，只做 pb2 ↔ DTO 转换与监听生命周期； ``CommandHandlers`` 是传输中立
-的命令 handler 层，承载异常边界、 error_code 映射与控制命令审计。机制
-见 :doc:`/develop/architecture` 。
+现，只做 pb2 ↔ DTO 转换与监听生命周期； ``HttpTransport`` 是其 HTTP
+实现（ M3 任务 7 ，由 ``takler[http]`` extra 提供，信封 JSON 进出）；
+``CommandHandlers`` 是传输中立的命令 handler 层，承载异常边界、
+error_code 映射与控制命令审计。机制见 :doc:`/develop/architecture` 。
 
 .. automodule:: takler.server.scheduler
    :members:
@@ -30,6 +31,9 @@ transport 的挂载点抽象（ M3 任务 6 ）， ``GrpcTransport`` 是其 gRPC
    :members:
 
 .. automodule:: takler.server.grpc_transport
+   :members:
+
+.. automodule:: takler.server.http_transport
    :members:
 
 鉴权与僵尸检测

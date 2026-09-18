@@ -271,8 +271,37 @@ class Address(BaseModel):
     port: str
 
 
+class HttpSettings(BaseModel):
+    """The optional ``http`` subsection of the ``server`` section.
+
+    Present means the server mounts the HTTP transport
+    (:class:`takler.server.http_transport.HttpTransport`) next to the gRPC
+    one, on its own address; absent means the server stays gRPC-only, which
+    is also the only shape a deployment without the ``takler[http]`` extra
+    can run (M3).
+
+    Attributes:
+        host: Interface the HTTP listener binds.
+        port: Port the HTTP listener binds, independent of the gRPC port in
+            ``address``. Text like ``Address.port``, because that is the
+            shape the rest of the file already uses.
+        tls_cert_file: Certificate file enabling TLS on the HTTP listener,
+            all-or-nothing with ``tls_key_file``. Both unset falls back to
+            the gRPC pair of the ``security`` section / command line, and
+            with that unset the listener is plaintext -- the recommended
+            shape behind a TLS-terminating reverse proxy.
+        tls_key_file: Private key of the pair.
+    """
+
+    host: str = "0.0.0.0"
+    port: str
+    tls_cert_file: Optional[str] = None
+    tls_key_file: Optional[str] = None
+
+
 class Server(BaseModel):
     address: Address
+    http: Optional[HttpSettings] = None
 
 
 class CheckpointSettings(BaseModel):

@@ -1,18 +1,20 @@
 import asyncio
 import contextlib
 import os
+import ssl
 import stat
 from pathlib import Path
-from typing import Union, Optional
+from typing import TYPE_CHECKING, Union, Optional
 
 from takler.core import Bunch, NodeStatus
+from takler.exceptions import SecurityConfigError, TaklerError
 from takler.logging import configure, get_logger
 
 from .scheduler import Scheduler
 from .grpc_transport import GrpcTransport
 from .checkpoint import CheckpointManager
 from .audit import AuditLogger
-from .auth import AuthInterceptor, CredentialStore
+from .auth import AuthGate, AuthInterceptor, CredentialStore
 from .tls import build_server_credentials, resolve_tls_paths
 from .zombie import ZombieDetector
 from .connect_config import (
@@ -26,6 +28,11 @@ from .connect_config import (
     resolve_exception_policy,
     resolve_zombie_policy,
 )
+
+if TYPE_CHECKING:
+    # Imported lazily where it is used: fastapi/uvicorn sit behind the
+    # ``http`` extra, so this module must stay importable without them.
+    from .http_transport import HttpTransport
 
 
 logger = get_logger("server")
@@ -89,7 +96,10 @@ class TaklerServer:
 
     * bunch: A bunch for flows.
     * scheduler: A scheduler to check dependencies in loop.
-    * grpc transport: A gRPC server to receive client command.
+    * grpc transport: A gRPC server to receive client command. When the
+      ``server.http`` section of the Connect_Config asks for it, an HTTP
+      transport (``http_transport``, M3, ``takler[http]``) serves the same
+      commands on a second port.
     * checkpoint manager: owns the Checkpoint_File of this server process.
     """
 
@@ -184,11 +194,16 @@ class TaklerServer:
             connect_config=connect_config
         )
         self.audit_logger: AuditLogger = AuditLogger(self.audit_file)
-        self.auth_interceptor: AuthInterceptor = AuthInterceptor(
+        # The one Auth_Gate of this server, shared by every transport's
+        # authentication adapter: the gRPC interceptor below and the HTTP
+        # transport's dependency, so a credential is accepted or refused
+        # identically whichever port the call arrives on (M3).
+        self.auth_gate: AuthGate = AuthGate(
             auth_mode=self.auth_mode,
             credential_store=self.credential_store,
             audit_logger=self.audit_logger,
         )
+        self.auth_interceptor: AuthInterceptor = AuthInterceptor(gate=self.auth_gate)
 
         # Shared fatal-error signal. In ``FAIL_FAST`` mode the scheduler / service
         # request a clean server exit by triggering this event; ``run()`` waits on
@@ -234,6 +249,12 @@ class TaklerServer:
             interceptors=(self.auth_interceptor,),
             audit_logger=self.audit_logger,
         )
+        # The HTTP transport (M3) only exists when the ``server.http`` section
+        # of the Connect_Config asks for it; a gRPC-only deployment -- the
+        # default, and the only shape available without the ``takler[http]``
+        # extra -- keeps ``http_transport`` as ``None`` and never touches
+        # fastapi.
+        self.http_transport: Optional["HttpTransport"] = self._build_http_transport()
         # The manager keeps a reference to the same live bunch the scheduler and
         # the gRPC transport hold, so a restored snapshot is visible to both
         # without any of them being re-wired (Requirements 5.1, 6.1).
@@ -255,6 +276,51 @@ class TaklerServer:
         if self.connect_config is None:
             return None
         return self.connect_config.security
+
+    def _build_http_transport(self) -> Optional["HttpTransport"]:
+        """Build the HTTP transport when the Connect_Config asks for one.
+
+        The ``server.http`` section is the only switch: absent means gRPC-only
+        and this returns ``None``. When the section is present the
+        ``takler[http]`` extra becomes a hard requirement -- importing it here,
+        lazily, is what keeps a gRPC-only deployment free of the fastapi
+        dependency; a missing extra is reported as a startup error naming the
+        fix rather than as a raw ImportError.
+
+        The transport shares this server's scheduler, exception policy,
+        fatal-shutdown trigger, audit logger and -- through the gate -- its
+        credential store, so the two listeners differ only in wire encoding.
+        """
+        http_settings = None
+        if self.connect_config is not None:
+            http_settings = self.connect_config.server.http
+        if http_settings is None:
+            return None
+
+        try:
+            import fastapi  # noqa: F401
+            import uvicorn  # noqa: F401
+        except ImportError as exc:
+            raise TaklerError(
+                f"the server.http section of the Connect_Config enables the "
+                f"HTTP transport on port {http_settings.port}, but the HTTP "
+                f"dependencies are not installed ({exc.name}); install takler "
+                f"with the http extra: pip install 'takler[http]'"
+            ) from exc
+
+        from .http_transport import HttpTransport
+
+        return HttpTransport(
+            scheduler=self.scheduler,
+            host=http_settings.host,
+            port=int(http_settings.port),
+            exception_policy=self.exception_policy,
+            fatal_shutdown=self._trigger_fatal_shutdown,
+            gate=self.auth_gate,
+            audit_logger=self.audit_logger,
+            tls_cert_file=http_settings.tls_cert_file,
+            tls_key_file=http_settings.tls_key_file,
+        )
 
     def _trigger_fatal_shutdown(self):
         """Signal that the server must exit (the ``FAIL_FAST`` path).
@@ -302,6 +368,61 @@ class TaklerServer:
             f"set the server process umask to {_RECOMMENDED_UMASK:04o}."
         )
 
+    def _resolve_http_tls(
+        self, fallback_cert_file: Optional[str], fallback_key_file: Optional[str]
+    ) -> None:
+        """Resolve and validate the HTTP listener's TLS pair.
+
+        Precedence: the ``tls_cert_file`` / ``tls_key_file`` of the
+        ``server.http`` section win as a pair; both unset falls back to the
+        pair the gRPC listener resolved (command line > ``security`` section),
+        so one certificate covers both listeners of one server; that pair
+        being unset too leaves the HTTP listener plaintext, which the
+        transport's start-up record states as a WARNING -- the recommended
+        shape behind a TLS-terminating reverse proxy.
+
+        The pair is all-or-nothing, like the gRPC one (Requirement 1.4), and
+        it is validated here -- before any listener has started -- by loading
+        it into a throwaway SSL context: a half configured, unreadable or
+        mismatched pair aborts the start-up with a
+        :class:`~takler.exceptions.SecurityConfigError` rather than surfacing
+        as a uvicorn failure after the gRPC listener is already serving
+        (Requirement 1.6).
+        """
+        http_settings = self.connect_config.server.http
+        cert_file = _as_optional_path_str(http_settings.tls_cert_file)
+        key_file = _as_optional_path_str(http_settings.tls_key_file)
+        if (cert_file is None) != (key_file is None):
+            given = "tls_cert_file" if cert_file is not None else "tls_key_file"
+            missing = "tls_key_file" if cert_file is not None else "tls_cert_file"
+            message = (
+                f"the server.http section configures {given} but not "
+                f"{missing}; the certificate and the private key of the HTTP "
+                f"listener must be given together -- configure both, or "
+                f"neither to inherit the gRPC listener's pair"
+            )
+            logger.error(message)
+            raise SecurityConfigError(message)
+        if cert_file is None:
+            cert_file, key_file = fallback_cert_file, fallback_key_file
+        if cert_file is None:
+            return
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        try:
+            context.load_cert_chain(cert_file, key_file)
+        except (OSError, ssl.SSLError) as exc:
+            message = (
+                f"cannot load the TLS pair of the HTTP listener "
+                f"(certificate {cert_file!r}, key {key_file!r}): "
+                f"{type(exc).__name__}: {exc}"
+            )
+            logger.error(message)
+            raise SecurityConfigError(message) from exc
+
+        self.http_transport.tls_cert_file = cert_file
+        self.http_transport.tls_key_file = key_file
+
     def _start_security(self):
         """Validate the security configuration and report the resulting posture.
 
@@ -340,7 +461,7 @@ class TaklerServer:
         # Resolved separately from the credentials because the INFO record of
         # Requirement 1.7 names the certificate file, and a ServerCredentials
         # object does not remember where its bytes came from.
-        cert_file, _ = resolve_tls_paths(
+        cert_file, key_file = resolve_tls_paths(
             security, self.tls_cert_file, self.tls_key_file
         )
         # Warns about the mTLS extension point, raises on a half configured or
@@ -350,6 +471,9 @@ class TaklerServer:
         )
         self.grpc_transport.server_credentials = credentials
         self.grpc_transport.tls_cert_file = cert_file
+
+        if self.http_transport is not None:
+            self._resolve_http_tls(cert_file, key_file)
 
         if self.auth_mode is AuthMode.ENABLED:
             whitelist_file = self.credential_store.whitelist_file
@@ -443,6 +567,8 @@ class TaklerServer:
         self.checkpoint_manager.restore()
         await self.scheduler.start()
         await self.grpc_transport.start()
+        if self.http_transport is not None:
+            await self.http_transport.start()
         await self.checkpoint_manager.start()
         logger.info("start server...done")
 
@@ -463,6 +589,10 @@ class TaklerServer:
         loop.create_task(
             self.grpc_transport.run(), name="takler.server.network_service"
         )
+        if self.http_transport is not None:
+            loop.create_task(
+                self.http_transport.run(), name="takler.server.http_transport"
+            )
 
         scheduler_task = loop.create_task(
             self.scheduler.run(), name="takler.server.scheduler"
@@ -506,6 +636,8 @@ class TaklerServer:
         self._stopped = True
         logger.info("stop server...")
         await self.grpc_transport.stop()
+        if self.http_transport is not None:
+            await self.http_transport.stop()
         await self.scheduler.stop()
         # Cancels the periodic task and writes the last snapshot; never raises.
         await self.checkpoint_manager.stop()

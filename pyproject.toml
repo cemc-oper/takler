@@ -54,6 +54,14 @@ tui = [
 log = [
     "loguru>=0.7",
 ]
+# HTTP transport (M3): FastAPI server side and, from task 8 on, the httpx
+# client side. The default install stays gRPC-only; the server mounts the
+# HTTP listener only when connect.yaml asks for it, so a deployment without
+# this extra never notices.
+http = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
 
 [project.scripts]
 # The server entry is deliberately not the bare name `takler`, and the Python
@@ -84,6 +92,7 @@ test = [
     # floor is the first release whose `not_valid_before`/`not_valid_after`
     # accept timezone-aware datetimes, which is what the generators pass.
     "cryptography>=42",
+    "httpx>=0.27",
 ]
 # The default group: a bare `uv sync` yields the complete development
 # environment, so `uv run pytest` / `uv run ruff` work without extra flags.
@@ -94,7 +103,7 @@ dev = [
     # logging code paths (textual/rich/loguru must be importable). Dependency
     # groups never appear in wheel metadata, so this self-reference has no
     # effect on what `pip install takler` resolves.
-    "takler[tui,log]",
+    "takler[tui,log,http]",
     "build",
     "twine",
     "ipython",
@@ -183,9 +192,10 @@ show_missing = true
 # 主因是 `takler/tui` 缺测试），且 `pytest tests/some_file.py` 这类局部运行不应因门槛失败。
 # 门槛因此放在 CI 的独立步骤（见 `.github/workflows/test.yml`），复用本段写出的同一份
 # 覆盖率数据、各自限定 `--include` 范围：
-#   # M1：客户端与 Protocol_Layer（M3 任务 3 起含 takler/protocol/ 的 DTO 层）
+#   # M1：客户端与 Protocol_Layer（M3 任务 3 起含 takler/protocol/ 的 DTO 层，
+#   # 任务 5/6/7 起含 handlers 与三个 transport 模块）
 #   coverage report \
-#     --include="src/takler/client/*,src/takler/server/network_service.py,src/takler/server/protocol/*,src/takler/protocol/*" \
+#     --include="src/takler/client/*,src/takler/server/transport.py,src/takler/server/grpc_transport.py,src/takler/server/http_transport.py,src/takler/server/handlers.py,src/takler/server/protocol/*,src/takler/protocol/*" \
 #     --fail-under=85
 #   # M2：安全相关新增模块，逐个模块检查（合并成一次 `--include` 会让高覆盖率的小模块
 #   # 把回退的大模块托过门槛，因为 `--fail-under` 比的是included文件的合计值）

@@ -204,3 +204,33 @@ def takler_server(tmp_path: Path) -> Iterator[ServerRunner]:
         yield runner
     finally:
         runner.stop()
+
+
+@pytest.fixture
+def free_port_fixture():
+    """The free-port picker, exposed as a fixture (the suite runs with
+    ``--import-mode=importlib``, so sharing goes through fixtures)."""
+    return free_port
+
+
+@pytest.fixture
+def server_runner_factory(tmp_path: Path) -> Iterator:
+    """A factory of started :class:`ServerRunner` instances.
+
+    For tests that need a server built with extra ``TaklerServer`` arguments
+    (a Connect_Config of its own, say); every runner the factory starts is
+    stopped at the end of the test.
+    """
+    runners = []
+
+    def factory(**kwargs) -> ServerRunner:
+        kwargs.setdefault("checkpoint_file", tmp_path / "takler.check")
+        runner = ServerRunner(**kwargs)
+        runner.start()
+        runners.append(runner)
+        return runner
+
+    yield factory
+
+    for runner in runners:
+        runner.stop()

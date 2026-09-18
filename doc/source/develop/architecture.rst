@@ -20,6 +20,7 @@
         end
         subgraph server["服务端进程（takler-server ）"]
             GRPC["GrpcTransport<br/>（gRPC 服务）"]
+            HTTP["HttpTransport<br/>（HTTP 服务， M3 可选）"]
             SCHED["Scheduler<br/>（调度主循环）"]
             CKPT["CheckpointManager<br/>（周期快照）"]
         end
@@ -27,15 +28,20 @@
 
         CLI -- "gRPC" --> GRPC
         TUI -- "gRPC" --> GRPC
-        GO -- "gRPC" --> GRPC
+        GO -- "gRPC / HTTP" --> GRPC
+        GO -- "gRPC / HTTP" --> HTTP
         GRPC --> SCHED
+        HTTP --> SCHED
         SCHED -- "派生子进程" --> JOB
         JOB -- "child 命令<br/>（gRPC 上报）" --> GRPC
         CKPT -.->|"读写快照文件"| DISK[("takler.check")]
 
 * **服务端进程** 是唯一持有节点树真源的进程。同一个 ``asyncio`` 事件
-  循环里跑着三个服务： gRPC 服务（ ``GrpcTransport`` ）响应请求、
-  ``Scheduler`` 主循环默认每 ``10`` 秒推进一次依赖解析、
+  循环里跑着几个服务： gRPC 服务（ ``GrpcTransport`` ）响应请求——配
+  置 ``connect.yaml`` 的 ``server.http`` 小节后（ M3 ，需
+  ``takler[http]`` extra ）， HTTP 服务（ ``HttpTransport`` ）在独立
+  端口响应同一批命令，两个 transport 共用调度器、鉴权判定层与审计日
+  志； ``Scheduler`` 主循环默认每 ``10`` 秒推进一次依赖解析、
   ``CheckpointManager`` 周期性把节点树写成快照文件。
 * **客户端进程** 是无状态的命令行与界面：把运维命令（ ``requeue`` /
   ``suspend`` / ``show`` 等）翻译成 RPC 发出去，打印响应后退出
@@ -103,10 +109,12 @@
     * - ``takler.server``
       - 服务端的一切： ``TaklerServer`` 组装与生命周期、 ``Scheduler``
         主循环与全部 ``run_command_*`` 操作、 ``GrpcTransport`` 的
-        gRPC 适配与监听生命周期、 ``CommandHandlers`` 的传输中立命令处理
+        gRPC 适配与监听生命周期、 ``HttpTransport`` 的 HTTP 适配与
+        uvicorn 生命周期（ M3 ， ``takler[http]`` ）、
+        ``CommandHandlers`` 的传输中立命令处理
         （异常边界、 error_code 映射、控制命令审计）、 ``ServerTransport``
         挂载点抽象、快照、鉴权（ ``AuthGate`` 判定层 + gRPC
-        ``AuthInterceptor`` 适配）、 zombie 判定、审计、
+        ``AuthInterceptor`` / HTTP 依赖注入两处适配）、 zombie 判定、审计、
         ``connect.yaml`` 模型。 ``server.protocol`` 子包放 proto 生成的
         stub 与 pb2 ↔ DTO 编解码。
     * - ``takler.client``

@@ -39,7 +39,7 @@ import pytest
 # ``tests/packaging/test_pyproject.py`` -> project root.
 PYPROJECT_PATH = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
-EXPECTED_EXTRAS = {"tui", "log"}
+EXPECTED_EXTRAS = {"tui", "log", "http"}
 EXPECTED_GROUPS = {"dev", "test", "docs"}
 EXPECTED_SCRIPTS = {"takler-server", "takler-client-py", "takler-tui"}
 FORBIDDEN_SCRIPTS = {"takler", "takler_client"}
@@ -129,10 +129,10 @@ def _all_requirements(
 # ---------------------------------------------------------------------------
 
 
-def test_optional_dependency_groups_are_exactly_tui_log(
+def test_optional_dependency_groups_are_exactly_tui_log_http(
     optional_dependencies: dict[str, list[str]],
 ):
-    """The two user-facing extras exist, and no other extra is declared.
+    """The user-facing extras exist, and no other extra is declared.
 
     Test tooling is deliberately not an extra: ``pip install takler[test]``
     was never something a downstream user needed, and publishing it would
@@ -155,6 +155,15 @@ def test_log_extra_installs_loguru(optional_dependencies: dict[str, list[str]]):
     names = {_distribution_name(req) for req in optional_dependencies["log"]}
 
     assert "loguru" in names
+
+
+def test_http_extra_installs_fastapi_and_uvicorn(
+    optional_dependencies: dict[str, list[str]],
+):
+    """``pip install takler[http]`` pulls in the HTTP transport stack (M3)."""
+    names = {_distribution_name(req) for req in optional_dependencies["http"]}
+
+    assert {"fastapi", "uvicorn"} <= names
 
 
 def test_dependency_groups_are_dev_test_and_docs(pyproject: dict):

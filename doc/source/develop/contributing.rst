@@ -78,7 +78,8 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 复用 pytest 步骤写出的同一份覆盖率数据：
 
 * ``takler/client/*`` 、 ``server/transport.py`` 、
-  ``server/grpc_transport.py`` 、 ``server/handlers.py`` 、
+  ``server/grpc_transport.py`` 、 ``server/http_transport.py`` 、
+  ``server/handlers.py`` 、
   ``server/protocol/*`` 与 ``takler/protocol/*`` 合计不低于 ``85%`` ；
 * ``server/auth.py`` / ``zombie.py`` / ``audit.py`` / ``tls.py`` **逐
   模块** 不低于 ``85%`` —— 刻意不合并成一次检查：合计值会让高覆盖率
@@ -90,7 +91,7 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 
     $ uv run pytest --cov=takler --cov-report=term
     $ uv run coverage report \
-        --include="src/takler/client/*,src/takler/server/transport.py,src/takler/server/grpc_transport.py,src/takler/server/handlers.py,src/takler/server/protocol/*,src/takler/protocol/*" \
+        --include="src/takler/client/*,src/takler/server/transport.py,src/takler/server/grpc_transport.py,src/takler/server/http_transport.py,src/takler/server/handlers.py,src/takler/server/protocol/*,src/takler/protocol/*" \
         --fail-under=85
 
 版本号

@@ -41,7 +41,9 @@ def _server_section() -> dict:
             "hostname": "login01",
             "ip": "10.0.0.11",
             "port": "33083",
-        }
+        },
+        # Present since M3 task 7: absent / null means no HTTP listener.
+        "http": None,
     }
 
 

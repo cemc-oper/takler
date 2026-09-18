@@ -258,6 +258,14 @@ TLS 传输加密
 ``takler-pass``\ （作业一次性口令）、``takler-secret``\ （运维共享密钥）、
 ``takler-user``\ （调用方 OS 用户名）。客户端自动注入，作业脚本与运维命令的写法不变。
 
+HTTP transport（ M3 ， ``takler[http]`` ）下这三个键原样平移为同名
+HTTP 请求头（ HTTP 头不区分大小写），鉴权判定由两种 transport 共用的
+同一判定层（ Auth_Gate ）完成：分级表、拒绝分类、拒绝时的 WARNING 与
+``denied`` 审计记录逐字一致，只是 gRPC 的 ``UNAUTHENTICATED`` /
+``PERMISSION_DENIED`` 状态码在 HTTP 下对应为 ``401`` / ``403`` 。
+取值来源也与 gRPC 客户端一致：作业脚本内是注入的 ``TAKLER_PASS`` ，
+运维命令是 ``TAKLER_SECRET_FILE`` 指向的密钥文件与当前 OS 用户名。
+
 命令分级：
 
 .. list-table::
