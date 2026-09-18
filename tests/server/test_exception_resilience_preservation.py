@@ -57,7 +57,7 @@ from hypothesis import strategies as st
 
 from takler.core import Bunch, Flow, NodeStatus
 from takler.server import TaklerServer
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.server.scheduler import Scheduler
 
@@ -79,8 +79,8 @@ def _make_bunch() -> Bunch:
     return Bunch(host="localhost", port="33999")
 
 
-def _make_service_with_tasks(task_names) -> TaklerService:
-    """Build a hermetic ``TaklerService`` over a bunch ``/flow1/<task_name>``.
+def _make_service_with_tasks(task_names) -> GrpcTransport:
+    """Build a hermetic ``GrpcTransport`` over a bunch ``/flow1/<task_name>``.
 
     The gRPC server is never started, so no port is bound (mirrors the hermetic
     setup used by the bug-condition and logging integration tests).
@@ -95,7 +95,7 @@ def _make_service_with_tasks(task_names) -> TaklerService:
     # un-begun flow (Requirement 8.10).
     flow.begin()
     scheduler = Scheduler(bunch=bunch)
-    return TaklerService(scheduler=scheduler, host="[::]", port=33999)
+    return GrpcTransport(scheduler=scheduler, host="[::]", port=33999)
 
 
 def _free_port() -> int:
@@ -358,7 +358,7 @@ def test_valid_meter_value_executes_and_returns_success(data):
     task.add_meter("m", min_value, max_value)
     bunch.add_flow(flow)
     scheduler = Scheduler(bunch=bunch)
-    service = TaklerService(scheduler=scheduler, host="[::]", port=33999)
+    service = GrpcTransport(scheduler=scheduler, host="[::]", port=33999)
 
     node_path = f"/flow1/{task_name}"
     request = mock.MagicMock()

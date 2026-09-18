@@ -14,9 +14,11 @@
 调度与网络服务
 --------------
 
-``Scheduler`` 是调度主循环的载体； ``TaklerService`` 是 gRPC 边界，只做
-pb2 ↔ DTO 转换； ``CommandHandlers`` 是传输中立的命令 handler 层，承载
-异常边界、error_code 映射与控制命令审计。机制见 :doc:`/develop/architecture` 。
+``Scheduler`` 是调度主循环的载体； ``ServerTransport`` 是服务端
+transport 的挂载点抽象（ M3 任务 6 ）， ``GrpcTransport`` 是其 gRPC 实
+现，只做 pb2 ↔ DTO 转换与监听生命周期； ``CommandHandlers`` 是传输中立
+的命令 handler 层，承载异常边界、 error_code 映射与控制命令审计。机制
+见 :doc:`/develop/architecture` 。
 
 .. automodule:: takler.server.scheduler
    :members:
@@ -24,7 +26,10 @@ pb2 ↔ DTO 转换； ``CommandHandlers`` 是传输中立的命令 handler 层�
 .. automodule:: takler.server.handlers
    :members:
 
-.. automodule:: takler.server.network_service
+.. automodule:: takler.server.transport
+   :members:
+
+.. automodule:: takler.server.grpc_transport
    :members:
 
 鉴权与僵尸检测

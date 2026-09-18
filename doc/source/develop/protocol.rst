@@ -257,10 +257,13 @@ descriptor 里的全部方法。
    库）。
 #. ``server/auth.py`` 的 ``PRIVILEGE_BY_METHOD`` 加一条显式分类。不加
    也会安全地回落到 ``OPERATOR`` ，但完备性测试会失败。
-#. ``server/network_service.py`` 的 ``TaklerService`` 加处理器，并把核
-   心调用包进 ``_handle_command`` （见 :doc:`architecture` 的 RPC 主
-   线）。 ``OPERATOR`` 级的写操作从被分类起就自动进审计；只读方法要
-   列进 ``_READ_ONLY_OPERATOR_METHODS`` 才不会被记审计。
+#. ``server/protocol/adapter.py`` 加 pb2 ↔ DTO 转换，
+   ``server/grpc_transport.py`` 的 ``GrpcTransport`` 加一行分派方法，
+   ``server/handlers.py`` 的 ``CommandHandlers`` 加命令实现（异常边
+   界与 error_code 映射由 ``_handle_command`` 统一承担，见
+   :doc:`architecture` 的 RPC 主线）。 ``OPERATOR`` 级的写操作从被分
+   类起就自动进审计；只读方法要列进 ``_READ_ONLY_OPERATOR_METHODS``
+   才不会被记审计。
 #. ``server/scheduler.py`` 加对应的 ``run_command_*`` 。
 #. ``client/service_client.py`` 加客户端方法， ``client/cli.py`` 加命
    令； Go 侧对应改 ``common/client_*.go`` 与 ``cmd/cmd_*.go`` 。

@@ -15,6 +15,7 @@ import pytest
 
 import takler.logging
 from takler.client.retry import (
+    COMMAND_KIND_BY_COMMAND,
     DEFAULT_RETRY_WINDOW_BY_KIND,
     DEFAULT_SINGLE_TIMEOUT,
     ENV_RETRY_WINDOW,
@@ -32,6 +33,7 @@ from takler.exceptions import (
     PermissionDeniedError,
     TaklerError,
 )
+from takler.protocol.commands import Command
 
 
 def test_constants():
@@ -45,6 +47,30 @@ def test_constants():
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CHILD] == 86400.0
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CONTROL] == 60.0
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.QUERY] == 60.0
+
+
+def test_command_kind_table_covers_the_sixteen_commands():
+    """Command -> CommandKind, as a literal: the five Child_Commands retry
+    for a day, the Control_ and Query_Commands give up after a minute
+    (requirements 9.10, 9.11)."""
+    assert COMMAND_KIND_BY_COMMAND == {
+        Command.INIT: CommandKind.CHILD,
+        Command.COMPLETE: CommandKind.CHILD,
+        Command.ABORT: CommandKind.CHILD,
+        Command.EVENT: CommandKind.CHILD,
+        Command.METER: CommandKind.CHILD,
+        Command.REQUEUE: CommandKind.CONTROL,
+        Command.SUSPEND: CommandKind.CONTROL,
+        Command.RESUME: CommandKind.CONTROL,
+        Command.RUN: CommandKind.CONTROL,
+        Command.FORCE: CommandKind.CONTROL,
+        Command.FREE_DEP: CommandKind.CONTROL,
+        Command.LOAD: CommandKind.CONTROL,
+        Command.BEGIN: CommandKind.CONTROL,
+        Command.SHOW: CommandKind.QUERY,
+        Command.PING: CommandKind.QUERY,
+        Command.COROUTINE: CommandKind.QUERY,
+    }
 
 
 def test_status_code_classification_is_disjoint():

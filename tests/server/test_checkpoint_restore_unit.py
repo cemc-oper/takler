@@ -144,7 +144,7 @@ def test_restore_brings_back_every_flow_into_the_existing_bunch(tmp_path):
 
     assert manager.restore() is True
 
-    # The bunch object itself is never replaced: Scheduler and TaklerService
+    # The bunch object itself is never replaced: Scheduler and GrpcTransport
     # already hold this reference.
     assert manager.bunch is bunch_before
     assert sorted(manager.bunch.flows) == ["flow1", "flow2"]

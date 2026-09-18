@@ -10,7 +10,7 @@ deliberately assert the *expected (post-fix) resilient behavior* described in
   server process) must keep running and continue processing the remaining
   flows on the next interval.
 * An exception raised by a scheduler operation invoked from a
-  :class:`TaklerService` RPC handler must be caught/logged and converted into a
+  :class:`GrpcTransport` RPC handler must be caught/logged and converted into a
   ``ServiceResponse`` with a non-zero ``flag`` and a descriptive ``message``
   -- the exception must not escape the handler / abort the RPC.
 
@@ -53,7 +53,7 @@ from hypothesis import given, settings, HealthCheck
 from hypothesis import strategies as st
 
 from takler.core import Bunch, Flow
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.server.scheduler import Scheduler
 from takler.server import TaklerServer
@@ -119,8 +119,8 @@ def _make_bunch() -> Bunch:
     return Bunch(host="localhost", port="33999")
 
 
-def _make_service_with_task() -> TaklerService:
-    """Build a TaklerService over a real bunch containing /flow1/task1.
+def _make_service_with_task() -> GrpcTransport:
+    """Build a GrpcTransport over a real bunch containing /flow1/task1.
 
     The gRPC server is never started, so no port is bound (mirrors the hermetic
     setup used by the logging integration tests).
@@ -130,7 +130,7 @@ def _make_service_with_task() -> TaklerService:
     flow.add_task("task1")
     bunch.add_flow(flow)
     scheduler = Scheduler(bunch=bunch)
-    return TaklerService(scheduler=scheduler, host="[::]", port=33999)
+    return GrpcTransport(scheduler=scheduler, host="[::]", port=33999)
 
 
 def _drive_main_loop(scheduler: Scheduler, run_seconds: float = 0.1):
@@ -365,7 +365,7 @@ def test_rpc_meter_invalid_value_returns_error_response(meter_value):
 #   the exception (with operation + error detail) and then trigger a clean
 #   server-process shutdown.
 #
-# These assertions construct the Scheduler / TaklerService / TaklerServer with
+# These assertions construct the Scheduler / GrpcTransport / TaklerServer with
 # ``ExceptionPolicy.FAIL_FAST`` and assert that on an exception the failure is
 # logged and the fatal-shutdown is triggered (via a mock callback and via the
 # server's shared fatal-error event), and that the server goes through its
@@ -446,7 +446,7 @@ def test_rpc_fail_fast_logs_and_triggers_fatal_shutdown():
     scheduler = Scheduler(bunch=bunch)
 
     fatal_shutdown = mock.MagicMock(name="fatal_shutdown")
-    service = TaklerService(
+    service = GrpcTransport(
         scheduler=scheduler,
         host="[::]",
         port=33999,

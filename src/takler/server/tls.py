@@ -4,7 +4,7 @@ This module does one thing: turn the TLS part of the Security_Settings (plus the
 two command line options that override it) into a
 :class:`grpc.ServerCredentials`, or state unambiguously that TLS is not
 configured by returning ``None``. Binding the port is the caller's job -- the
-Network_Service picks ``add_secure_port`` or ``add_insecure_port`` from that
+GrpcTransport picks ``add_secure_port`` or ``add_insecure_port`` from that
 return value -- which keeps every decision about certificates in one testable
 function that needs no gRPC server to exercise.
 

@@ -314,7 +314,7 @@ class HandlerSpy:
     happens to be a no-op for this request would satisfy the second and not the
     first. Counting entries is the only way to observe the difference.
 
-    The wrapping has to happen before :meth:`TaklerService.start`, because
+    The wrapping has to happen before :meth:`GrpcTransport.start`, because
     ``add_TaklerServerServicer_to_server`` binds the servicer methods once at
     registration time; a later ``setattr`` would not be seen by the registered
     handlers.
@@ -407,7 +407,7 @@ class ServedServer:
 
     def __init__(self, server: TaklerServer) -> None:
         self.server = server
-        self.spy = HandlerSpy(server.network_service)
+        self.spy = HandlerSpy(server.grpc_transport)
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._ready = threading.Event()
@@ -415,7 +415,7 @@ class ServedServer:
 
     @property
     def port(self) -> Any:
-        return self.server.network_service.port
+        return self.server.grpc_transport.port
 
     @property
     def address(self) -> str:

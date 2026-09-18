@@ -1,9 +1,10 @@
 """Boundary unit tests for the Call_Wrapper and channel lifecycle.
 
-``takler/client/service_client.py`` is exercised here with a fake stub, so no
-gRPC server is involved: the interesting behaviour (timeout argument, retry,
-status code mapping, channel lifetime, ``show`` response parsing) is all client
-side. The exhaustive "for all inputs" assertions belong to the property tests.
+``takler/client/service_client.py`` and its
+:class:`~takler.client.grpc_transport.GrpcTransport` are exercised here with a
+fake stub, so no gRPC server is involved: the interesting behaviour (timeout
+argument, retry, status code mapping, channel lifetime, ``show`` response
+parsing) is all client side. The exhaustive "for all inputs" assertions belong to the property tests.
 
 Requirements: 9.1, 9.2, 9.5, 9.6, 9.7, 9.8, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6.
 """
@@ -110,7 +111,7 @@ def call_capturing_stderr(client, rpc, retry_window=None):
         with contextlib.redirect_stderr(buffer):
             takler.logging.configure(level="WARNING", console=True)
             try:
-                result = client._call(
+                result = client.transport._call(
                     "complete", rpc, FakeResponse(), CommandKind.CHILD
                 )
                 error = None
@@ -129,7 +130,7 @@ def test_call_passes_single_timeout_and_returns_response(fake_clock):
     response = FakeResponse(flag=0)
     rpc = FakeRpc(response)
 
-    assert client._call("complete", rpc, "req", CommandKind.CHILD) is response
+    assert client.transport._call("complete", rpc, "req", CommandKind.CHILD) is response
     assert rpc.calls == [("req", DEFAULT_SINGLE_TIMEOUT)]
 
 
@@ -144,7 +145,7 @@ def test_call_uses_configured_single_timeout(fake_clock):
     )
     rpc = FakeRpc(FakeResponse())
 
-    client._call("ping", rpc, "req", CommandKind.QUERY)
+    client.transport._call("ping", rpc, "req", CommandKind.QUERY)
 
     assert rpc.calls[0][1] == 2.5
 
@@ -155,7 +156,7 @@ def test_call_does_not_retry_business_failure(fake_clock):
     response = FakeResponse(flag=10, message="no such node")
     rpc = FakeRpc(response)
 
-    result = client._call("complete", rpc, "req", CommandKind.CHILD)
+    result = client.transport._call("complete", rpc, "req", CommandKind.CHILD)
 
     assert result is response
     assert len(rpc.calls) == 1
@@ -212,7 +213,7 @@ def test_call_zero_window_makes_a_single_attempt(fake_clock):
     rpc = FakeRpc(FakeRpcError(grpc.StatusCode.UNAVAILABLE))
 
     with pytest.raises(ClientConnectionError):
-        client._call("complete", rpc, "req", CommandKind.CHILD)
+        client.transport._call("complete", rpc, "req", CommandKind.CHILD)
 
     assert len(rpc.calls) == 1
     assert fake_clock.slept == []
@@ -235,7 +236,7 @@ def test_call_maps_non_retryable_status_without_retry(fake_clock, code, expected
     rpc = FakeRpc(FakeRpcError(code, details="bad request"))
 
     with pytest.raises(expected) as excinfo:
-        client._call("complete", rpc, "req", CommandKind.CHILD)
+        client.transport._call("complete", rpc, "req", CommandKind.CHILD)
 
     assert len(rpc.calls) == 1
     assert fake_clock.slept == []
@@ -250,7 +251,7 @@ def test_call_maps_unclassified_status_to_transport_error(fake_clock):
     rpc = FakeRpc(FakeRpcError(grpc.StatusCode.INTERNAL))
 
     with pytest.raises(TransportError) as excinfo:
-        client._call("complete", rpc, "req", CommandKind.CHILD)
+        client.transport._call("complete", rpc, "req", CommandKind.CHILD)
 
     assert not isinstance(excinfo.value, ClientConnectionError)
     assert len(rpc.calls) == 1

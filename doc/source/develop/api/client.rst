@@ -8,8 +8,15 @@
 服务客户端
 ----------
 
-``TaklerServiceClient`` 封装全部 16 个 RPC ，每个公开方法对应一条客
+``TaklerServiceClient`` 封装全部 16 个命令，每个公开方法对应一条客
 户端命令；重试与凭据在内部装配，调用方只需要 host 与 port 。
+
+线路相关的一切 —— 连接生命周期、请求/响应编码、凭据 metadata 、重
+试循环 —— 都在 ``ClientTransport`` 抽象（ ``takler.client.transport``
+）后面，默认实现是 gRPC 的
+``takler.client.grpc_transport.GrpcTransport`` ；HTTP transport 随
+``takler[http]`` extra 提供（ M3 任务 8 ）。命令方法只收发
+``takler.protocol`` 的 DTO 与 payload 字典，不接触生成类。
 
 .. autosummary::
    :toctree: generated

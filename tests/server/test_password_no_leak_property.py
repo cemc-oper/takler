@@ -21,7 +21,7 @@ cannot have:
   constrains what a Job_Password may hold -- it is compared as bytes
   (:func:`takler.server.zombie._constant_time_equal`) and interpolated nowhere.
 * **speed.** 100 examples must not mean 100 gRPC servers, so the scenario is
-  driven in process: :class:`~takler.server.network_service.TaklerService`
+  driven in process: :class:`~takler.server.grpc_transport.GrpcTransport`
   handlers are awaited directly, with the Credential_Metadata published into the
   context variable the Auth_Interceptor would have published it into. Everything
   below the RPC transport -- the exception boundary, the audit record points, the
@@ -66,7 +66,7 @@ from takler.server.auth import (
     set_call_credentials,
 )
 from takler.server.connect_config import AuthMode, ZombiePolicy
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.server.scheduler import Scheduler
 from takler.server.zombie import ZombieDetector
@@ -249,7 +249,7 @@ class FakeContext:
         return PEER
 
 
-def build_service(bunch: Bunch, audit_logger: AuditLogger) -> TaklerService:
+def build_service(bunch: Bunch, audit_logger: AuditLogger) -> GrpcTransport:
     """Wire a service the way ``TaklerServer`` does, minus the gRPC server.
 
     Auth_Mode is ``enabled`` and Zombie_Policy is ``fail``: with authentication
@@ -263,7 +263,7 @@ def build_service(bunch: Bunch, audit_logger: AuditLogger) -> TaklerService:
         audit_logger=audit_logger,
     )
     scheduler = Scheduler(bunch=bunch, zombie_detector=detector)
-    return TaklerService(scheduler=scheduler, audit_logger=audit_logger)
+    return GrpcTransport(scheduler=scheduler, audit_logger=audit_logger)
 
 
 def build_bunch(password: str) -> Tuple[Bunch, Task]:
@@ -309,7 +309,7 @@ def credentials_of(password: str = None, secret: str = None, user: str = JOB_USE
         reset_call_credentials(token)
 
 
-async def drive(service: TaklerService, password: str) -> Tuple[List[str], str]:
+async def drive(service: GrpcTransport, password: str) -> Tuple[List[str], str]:
     """Run the scenario against ``service``, returning the texts it answered.
 
     One complete Child_Command sequence presenting ``password``, one stale

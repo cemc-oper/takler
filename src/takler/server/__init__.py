@@ -9,7 +9,7 @@ from takler.core import Bunch, NodeStatus
 from takler.logging import configure, get_logger
 
 from .scheduler import Scheduler
-from .network_service import TaklerService
+from .grpc_transport import GrpcTransport
 from .checkpoint import CheckpointManager
 from .audit import AuditLogger
 from .auth import AuthInterceptor, CredentialStore
@@ -89,7 +89,7 @@ class TaklerServer:
 
     * bunch: A bunch for flows.
     * scheduler: A scheduler to check dependencies in loop.
-    * network service: A gRPC server to receive client command.
+    * grpc transport: A gRPC server to receive client command.
     * checkpoint manager: owns the Checkpoint_File of this server process.
     """
 
@@ -154,7 +154,7 @@ class TaklerServer:
         # certificate and private key (Requirement 1.10). Only kept here; the
         # pair is turned into gRPC server credentials -- and the Connect_Config
         # ``security`` section consulted for whatever the command line left out
-        # -- when the network service is started.
+        # -- when the gRPC transport is started.
         self.tls_cert_file: Optional[str] = _as_optional_path_str(tls_cert_file)
         self.tls_key_file: Optional[str] = _as_optional_path_str(tls_key_file)
 
@@ -173,7 +173,7 @@ class TaklerServer:
             ),
         )
         # One Audit_Logger for the whole server, shared by its record points:
-        # the Control_Command handler in the Network_Service (Requirement 11.2)
+        # the Control_Command handler layer (Requirement 11.2)
         # and the rejection path of the Auth_Interceptor (Requirement 11.3).
         # Resolved with the usual precedence -- ``TAKLER_AUDIT_FILE`` env var >
         # the ``audit_file`` field of the Connect_Config ``security`` section >
@@ -221,7 +221,7 @@ class TaklerServer:
             fatal_shutdown=self._trigger_fatal_shutdown,
             zombie_detector=self.zombie_detector,
         )
-        self.network_service: TaklerService = TaklerService(
+        self.grpc_transport: GrpcTransport = GrpcTransport(
             scheduler=self.scheduler,
             host="[::]",
             port=port,
@@ -235,7 +235,7 @@ class TaklerServer:
             audit_logger=self.audit_logger,
         )
         # The manager keeps a reference to the same live bunch the scheduler and
-        # the network service hold, so a restored snapshot is visible to both
+        # the gRPC transport hold, so a restored snapshot is visible to both
         # without any of them being re-wired (Requirements 5.1, 6.1).
         self.checkpoint_manager: CheckpointManager = CheckpointManager(
             bunch=self.bunch,
@@ -313,7 +313,7 @@ class TaklerServer:
            Operator_Secret_File is unusable (Requirements 7.3, 7.4);
         2. the TLS pair is turned into gRPC server credentials, which aborts the
            start-up when the pair is half configured or unreadable
-           (Requirements 1.4, 1.5), and is handed to the Network_Service so it
+           (Requirements 1.4, 1.5), and is handed to the gRPC transport so it
            can pick ``add_secure_port`` over ``add_insecure_port``
            (Requirements 1.1, 1.2);
         3. the effective Auth_Mode is stated in the log.
@@ -348,8 +348,8 @@ class TaklerServer:
         credentials = build_server_credentials(
             security, self.tls_cert_file, self.tls_key_file
         )
-        self.network_service.server_credentials = credentials
-        self.network_service.tls_cert_file = cert_file
+        self.grpc_transport.server_credentials = credentials
+        self.grpc_transport.tls_cert_file = cert_file
 
         if self.auth_mode is AuthMode.ENABLED:
             whitelist_file = self.credential_store.whitelist_file
@@ -377,7 +377,7 @@ class TaklerServer:
         * validate the security configuration and report the security posture
         * restore the bunch from the Checkpoint_File
         * start scheduler
-        * start network service
+        * start the gRPC transport
         * start the periodic snapshot task
 
         The order is the contract. The umask check reads the process umask with a
@@ -442,7 +442,7 @@ class TaklerServer:
         # file and then to an empty bunch, so startup always proceeds.
         self.checkpoint_manager.restore()
         await self.scheduler.start()
-        await self.network_service.start()
+        await self.grpc_transport.start()
         await self.checkpoint_manager.start()
         logger.info("start server...done")
 
@@ -450,7 +450,7 @@ class TaklerServer:
         """
         Run services:
 
-        * run network service
+        * run the gRPC transport
         * run scheduler
 
         ``run()`` returns when either the scheduler task finishes (e.g. after a
@@ -461,7 +461,7 @@ class TaklerServer:
         """
         loop = asyncio.get_running_loop()
         loop.create_task(
-            self.network_service.run(), name="takler.server.network_service"
+            self.grpc_transport.run(), name="takler.server.network_service"
         )
 
         scheduler_task = loop.create_task(
@@ -491,7 +491,7 @@ class TaklerServer:
         """
         Clean shutdown flow shared by :meth:`stop` and :meth:`run`.
 
-        Stops the network service, the scheduler and the checkpoint manager
+        Stops the gRPC transport, the scheduler and the checkpoint manager
         without raising. Guarded by ``self._stopped`` so it runs at most once
         even when both an external ``stop()`` call and ``run()`` reach it
         (Requirement 3.4).
@@ -505,7 +505,7 @@ class TaklerServer:
             return
         self._stopped = True
         logger.info("stop server...")
-        await self.network_service.stop()
+        await self.grpc_transport.stop()
         await self.scheduler.stop()
         # Cancels the periodic task and writes the last snapshot; never raises.
         await self.checkpoint_manager.stop()
@@ -515,7 +515,7 @@ class TaklerServer:
         """
         Stop all services:
 
-        * stop network service
+        * stop the gRPC transport
         * stop scheduler
         """
         # Record the server shutdown event at INFO level through the named

@@ -7,7 +7,7 @@ startup.
 
 It deliberately depends only on ``takler.core`` and
 :mod:`takler.server.connect_config`, never on ``Scheduler`` or the gRPC
-``TaklerService``, so snapshot behaviour can be tested without standing up a
+``GrpcTransport``, so snapshot behaviour can be tested without standing up a
 server.
 
 This module holds the configuration layer (constants, path and interval
@@ -241,7 +241,7 @@ class CheckpointManager:
 
     The manager keeps a reference to the live :class:`~takler.core.bunch.Bunch`
     instead of a copy of its state, and it never replaces that object:
-    ``Scheduler`` and ``TaklerService`` already hold the same reference, so
+    ``Scheduler`` and ``GrpcTransport`` already hold the same reference, so
     swapping it out would leave them pointing at a stale bunch.
 
     Attributes:
@@ -953,7 +953,7 @@ class CheckpointManager:
 
         Flows are added through ``Bunch.add_flow``, which sets the flow's back
         reference to *this* bunch. The bunch object itself is never replaced --
-        ``Scheduler`` and ``TaklerService`` hold the same reference -- and the
+        ``Scheduler`` and ``GrpcTransport`` hold the same reference -- and the
         snapshot's ``server_state`` is deliberately dropped, so ``TAKLER_HOST``
         and ``TAKLER_PORT`` keep announcing the current process rather than the
         process that wrote the snapshot (requirements 6.5, 6.22).

@@ -254,7 +254,7 @@ def _restart(checkpoint_file: Path, port: int) -> Tuple[TaklerServer, str]:
 
     async def runner() -> None:
         await server.start()
-        await server.network_service.stop()
+        await server.grpc_transport.stop()
         await server.checkpoint_manager.stop()
 
     try:

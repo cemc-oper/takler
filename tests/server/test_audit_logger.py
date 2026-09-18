@@ -86,7 +86,7 @@ from takler.server.auth import (
 )
 from takler.server.connect_config import AuthMode, ZombiePolicy
 from takler.server.handlers import CONTROL_METHOD_NAMES
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.protocol.commands import CompleteCommand
 from takler.server.scheduler import Scheduler
@@ -277,15 +277,15 @@ def make_scheduler(zombie_detector=None, begin: bool = True) -> Scheduler:
 def make_service(
     audit_file: Optional[str] = None,
     scheduler: Optional[Scheduler] = None,
-) -> TaklerService:
+) -> GrpcTransport:
     """A service wired to an :class:`AuditLogger` for ``audit_file``."""
-    return TaklerService(
+    return GrpcTransport(
         scheduler=scheduler if scheduler is not None else make_scheduler(),
         audit_logger=AuditLogger(audit_file),
     )
 
 
-def call(service: TaklerService, method: str, request: Any) -> Any:
+def call(service: GrpcTransport, method: str, request: Any) -> Any:
     """Invoke one rpc handler of ``service`` and return its response."""
     return asyncio.run(getattr(service, method)(request, _Context()))
 

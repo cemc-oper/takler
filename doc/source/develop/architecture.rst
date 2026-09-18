@@ -19,7 +19,7 @@
             GO["takler_client<br/>（Go 客户端）"]
         end
         subgraph server["服务端进程（takler-server ）"]
-            GRPC["TaklerService<br/>（gRPC 服务）"]
+            GRPC["GrpcTransport<br/>（gRPC 服务）"]
             SCHED["Scheduler<br/>（调度主循环）"]
             CKPT["CheckpointManager<br/>（周期快照）"]
         end
@@ -34,7 +34,7 @@
         CKPT -.->|"读写快照文件"| DISK[("takler.check")]
 
 * **服务端进程** 是唯一持有节点树真源的进程。同一个 ``asyncio`` 事件
-  循环里跑着三个服务： gRPC 服务（ ``TaklerService`` ）响应请求、
+  循环里跑着三个服务： gRPC 服务（ ``GrpcTransport`` ）响应请求、
   ``Scheduler`` 主循环默认每 ``10`` 秒推进一次依赖解析、
   ``CheckpointManager`` 周期性把节点树写成快照文件。
 * **客户端进程** 是无状态的命令行与界面：把运维命令（ ``requeue`` /
@@ -102,10 +102,13 @@
         :doc:`core-design` 的序列化一节）。
     * - ``takler.server``
       - 服务端的一切： ``TaklerServer`` 组装与生命周期、 ``Scheduler``
-        主循环与全部 ``run_command_*`` 操作、 ``TaklerService`` 的
-        RPC 处理器与异常边界、快照、鉴权、 zombie 判定、审计、
+        主循环与全部 ``run_command_*`` 操作、 ``GrpcTransport`` 的
+        gRPC 适配与监听生命周期、 ``CommandHandlers`` 的传输中立命令处理
+        （异常边界、 error_code 映射、控制命令审计）、 ``ServerTransport``
+        挂载点抽象、快照、鉴权（ ``AuthGate`` 判定层 + gRPC
+        ``AuthInterceptor`` 适配）、 zombie 判定、审计、
         ``connect.yaml`` 模型。 ``server.protocol`` 子包放 proto 生成的
-        stub 与 ``error_code`` 分类表。
+        stub 与 pb2 ↔ DTO 编解码。
     * - ``takler.client``
       - Python 客户端： Typer 命令行、 ``TaklerServiceClient`` 的
         channel / 重试 / 凭据装配、退出码与 stderr 契约。它 **复用**
@@ -131,7 +134,7 @@
 命令行与 ``connect.yaml`` ，构建 ``TaklerServer`` 后交给
 ``asyncio.run`` 。所有装配都在 ``TaklerServer.__init__`` 里完成 ——
 ``AuditLogger`` 、 ``AuthInterceptor`` 、 ``ZombieDetector`` 、
-``Scheduler`` 、 ``TaklerService`` 、 ``CheckpointManager`` 与唯一的
+``Scheduler`` 、 ``GrpcTransport`` 、 ``CheckpointManager`` 与唯一的
 ``Bunch`` ：
 
 .. mermaid::
@@ -142,7 +145,7 @@
         TS --> AI["AuthInterceptor<br/>gRPC 鉴权拦截器"]
         TS --> ZD["ZombieDetector<br/>Z1 / Z2 / Z3 判定"]
         TS --> SCHED["Scheduler<br/>主循环 + run_command_*"]
-        TS --> SVC["TaklerService<br/>RPC 处理器"]
+        TS --> SVC["GrpcTransport<br/>RPC 处理器"]
         TS --> CM["CheckpointManager<br/>恢复 + 周期快照"]
         ZD --> SCHED
         SCHED --> BUNCH[("Bunch<br/>（core 节点树）")]
@@ -156,7 +159,7 @@ gRPC 服务、周期快照任务。
 
 两条贯穿运行期的主线：
 
-* **RPC 主线** ： gRPC 边界 ``TaklerService`` 只做 pb2 ↔ DTO 转换
+* **RPC 主线** ： gRPC transport ``GrpcTransport`` 只做 pb2 ↔ DTO 转换
   （ ``takler.server.protocol.adapter`` ），命令本身交给传输中立的
   ``CommandHandlers`` （ ``takler.server.handlers`` ）：每个命令都把
   调用 ``Scheduler`` 的那段代码包在 ``CommandHandlers._handle_command``
@@ -183,7 +186,7 @@ gRPC 服务、周期快照任务。
 
     sequenceDiagram
         participant OP as 运维客户端
-        participant SVC as TaklerService
+        participant SVC as GrpcTransport
         participant SCH as Scheduler
         participant TASK as Task（core ）
         participant JOB as 作业进程

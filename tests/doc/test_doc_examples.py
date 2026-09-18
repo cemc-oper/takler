@@ -3193,7 +3193,7 @@ def test_develop_architecture_documents_layers_and_components():
         "``takler.logging``",
         "``takler.exceptions``",
         "``takler.visitor``",
-        "``TaklerService``",
+        "``GrpcTransport``",
         "``Scheduler``",
         "``CheckpointManager``",
         "``ZombieDetector``",
@@ -3937,7 +3937,8 @@ def test_develop_api_internal_pages_cover_modules():
     server_modules = (
         "takler.server.scheduler",
         "takler.server.handlers",
-        "takler.server.network_service",
+        "takler.server.grpc_transport",
+        "takler.server.transport",
         "takler.server.auth",
         "takler.server.zombie",
         "takler.server.audit",

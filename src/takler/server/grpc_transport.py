@@ -1,16 +1,21 @@
-"""The gRPC boundary of the takler server.
+"""The gRPC transport of the takler server.
 
-``TaklerService`` is the generated servicer's implementation, reduced by M3
-task 5 to the gRPC transport's adapter role: each RPC method converts its
-pb2 request into the command's DTO (``takler.server.protocol.adapter``),
-hands it to the transport-neutral :class:`~takler.server.handlers.CommandHandlers`
-and converts the response DTO back. Everything a command needs beyond its
-encoding -- the exception boundary, the Error_Code mapping, the control
-audit -- lives in that handler layer and is shared with any other transport.
+``GrpcTransport`` is the :class:`~takler.server.transport.ServerTransport`
+that speaks gRPC: it owns the ``grpc.aio`` server lifecycle (``start`` /
+``run`` / ``stop``) and the listen-address bookkeeping, and -- as the
+generated servicer's implementation -- adapts each of the 16 RPCs to the
+transport-neutral handler layer: every method converts its pb2 request into
+the command's DTO (``takler.server.protocol.adapter``), hands it to
+:class:`~takler.server.handlers.CommandHandlers` and converts the response
+DTO back. Everything a command needs beyond its encoding -- the exception
+boundary, the Error_Code mapping, the control audit -- lives in that handler
+layer and is shared with any other transport.
 
-This module also owns the gRPC server lifecycle (``start`` / ``run`` /
-``stop``) and the listen-address bookkeeping, which are transport matters
-and stay here.
+Authentication is not the transport's business either: every RPC passes the
+:class:`~takler.server.auth.AuthInterceptor` -- the gRPC adapter of the
+transport-neutral :class:`~takler.server.auth.AuthGate` -- which
+``TaklerServer`` registers at construction, because ``grpc.aio`` only accepts
+interceptors when the server object is created.
 """
 
 from typing import Callable, Optional, Sequence
@@ -24,6 +29,7 @@ from takler.server.audit import AuditLogger
 from takler.server.handlers import CommandHandlers
 from takler.server.scheduler import Scheduler
 from takler.server.connect_config import ExceptionPolicy
+from takler.server.transport import ServerTransport
 
 
 logger = get_logger("server.service")
@@ -44,7 +50,7 @@ def _peer_of(context) -> Optional[str]:
         return None
 
 
-class TaklerService(takler_pb2_grpc.TaklerServerServicer):
+class GrpcTransport(takler_pb2_grpc.TaklerServerServicer, ServerTransport):
     """
     gRPC 服务端，把 16 个 RPC 适配到传输中立的命令 handler。
 

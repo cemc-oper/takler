@@ -329,7 +329,7 @@ def harness(monkeypatch, tmp_path: Path, capfd) -> Iterator[Harness]:
     served = ServedServer(server).start()
     client = TaklerServiceClient(
         host=LOCALHOST,
-        port=server.network_service.port,
+        port=server.grpc_transport.port,
         single_timeout=TEST_SINGLE_TIMEOUT,
         retry_window=TEST_RETRY_WINDOW,
         secret_file=str(secret_file),

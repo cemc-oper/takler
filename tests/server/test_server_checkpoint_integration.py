@@ -53,9 +53,9 @@ def _mock_services(server: TaklerServer, calls: List[str]) -> None:
     server.scheduler.start.side_effect = lambda: calls.append("scheduler.start")
     server.scheduler.stop.side_effect = lambda: calls.append("scheduler.stop")
 
-    server.network_service = mock.AsyncMock()
-    server.network_service.start.side_effect = lambda: calls.append("network.start")
-    server.network_service.stop.side_effect = lambda: calls.append("network.stop")
+    server.grpc_transport = mock.AsyncMock()
+    server.grpc_transport.start.side_effect = lambda: calls.append("network.start")
+    server.grpc_transport.stop.side_effect = lambda: calls.append("network.stop")
 
 
 # ---------------------------------------------------------------------------
@@ -210,5 +210,5 @@ def test_shutdown_runs_at_most_once(tmp_path: Path) -> None:
     asyncio.run(stop_twice())
 
     server.checkpoint_manager.stop.assert_awaited_once()
-    server.network_service.stop.assert_awaited_once()
+    server.grpc_transport.stop.assert_awaited_once()
     server.scheduler.stop.assert_awaited_once()

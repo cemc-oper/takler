@@ -114,7 +114,7 @@ async def _stop_listening(server: TaklerServer) -> None:
     ``CheckpointManager.stop()`` writes the final snapshot, which is how the
     node states of the stopping server reach the one that replaces it.
     """
-    await server.network_service.stop()
+    await server.grpc_transport.stop()
     await server.checkpoint_manager.stop()
 
 

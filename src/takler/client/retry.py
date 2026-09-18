@@ -26,7 +26,7 @@ import enum
 import os
 import re
 import time
-from typing import Callable, Mapping, Optional, Type
+from typing import Callable, Dict, Mapping, Optional, Type
 
 import grpc
 
@@ -37,9 +37,11 @@ from takler.exceptions import (
     TaklerError,
 )
 from takler.logging import get_logger
+from takler.protocol.commands import Command
 
 __all__ = [
     "CommandKind",
+    "COMMAND_KIND_BY_COMMAND",
     "ENV_RETRY_WINDOW",
     "DEFAULT_SINGLE_TIMEOUT",
     "MAX_BACKOFF_SECONDS",
@@ -67,6 +69,35 @@ class CommandKind(enum.Enum):
     CHILD = "child"
     CONTROL = "control"
     QUERY = "query"
+
+
+#: The CommandKind of every command (requirements 9.10, 9.11).
+#:
+#: The classification follows the caller, not the wire: the five
+#: Child_Commands are reported from inside a job script and retry for a day,
+#: the eight Control_Commands and the three Query_Commands are typed by an
+#: operator and give up after a minute. A literal table rather than a name
+#: pattern, for the same reason as the server's privilege table: a future
+#: command must be classified deliberately, not by accident of its name. The
+#: module's tests pin the table against the sixteen Commands.
+COMMAND_KIND_BY_COMMAND: Dict[Command, CommandKind] = {
+    Command.INIT: CommandKind.CHILD,
+    Command.COMPLETE: CommandKind.CHILD,
+    Command.ABORT: CommandKind.CHILD,
+    Command.EVENT: CommandKind.CHILD,
+    Command.METER: CommandKind.CHILD,
+    Command.REQUEUE: CommandKind.CONTROL,
+    Command.SUSPEND: CommandKind.CONTROL,
+    Command.RESUME: CommandKind.CONTROL,
+    Command.RUN: CommandKind.CONTROL,
+    Command.FORCE: CommandKind.CONTROL,
+    Command.FREE_DEP: CommandKind.CONTROL,
+    Command.LOAD: CommandKind.CONTROL,
+    Command.BEGIN: CommandKind.CONTROL,
+    Command.SHOW: CommandKind.QUERY,
+    Command.PING: CommandKind.QUERY,
+    Command.COROUTINE: CommandKind.QUERY,
+}
 
 
 #: Environment variable holding the Retry_Window in seconds (requirement 9.9).

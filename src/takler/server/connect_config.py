@@ -26,7 +26,7 @@ class ExceptionPolicy(enum.Enum):
     """How the server handles unexpected exceptions at its boundaries.
 
     The policy governs both the :class:`~takler.server.scheduler.Scheduler`
-    main loop and the gRPC ``TaklerService`` command/query handlers:
+    main loop and the gRPC ``GrpcTransport`` command/query handlers:
 
     * :attr:`RESILIENT` (default): catch, log and recover from unexpected
       exceptions so the server process keeps running (skip the offending flow

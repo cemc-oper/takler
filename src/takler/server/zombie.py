@@ -78,7 +78,7 @@ class ChildAction(enum.Enum):
     """What the caller of the zombie guard should do with the Child_Command.
 
     Two outcomes are enough to express all three policies without adding a
-    result type between the Scheduler and the Network_Service, because the M1
+    result type between the Scheduler and the transport, because the M1
     contract of ``CommandHandlers._handle_command`` already covers the third:
     "whatever ``op()`` returns is the success response, whatever it raises is
     the error response".

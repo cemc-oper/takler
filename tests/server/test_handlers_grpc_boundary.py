@@ -1,7 +1,7 @@
 """The shared handler cases driven through the gRPC boundary.
 
 Each case (``tests/server/conftest.py``) is built as a pb2 request and invoked
-on :class:`~takler.server.network_service.TaklerService`, proving the gRPC
+on :class:`~takler.server.grpc_transport.GrpcTransport`, proving the gRPC
 adapter (pb2 <-> DTO conversion plus dispatch) preserves the semantics the
 cases pin at the handler level. The HTTP transport of task 7 reuses the same
 cases for its own boundary.

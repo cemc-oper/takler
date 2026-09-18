@@ -2,7 +2,7 @@
 
 Three units meet here:
 
-* :meth:`takler.client.service_client.TaklerServiceClient._build_metadata` --
+* :meth:`takler.client.grpc_transport.GrpcTransport._build_metadata` --
   which Credential_Metadata keys a logical call carries, per
   :class:`~takler.client.retry.CommandKind` (Requirements 8.1 - 8.5, 8.7);
 * the ``resolve_*`` family of :mod:`takler.client.credentials` -- where the CA
@@ -236,7 +236,7 @@ def test_every_attempt_of_one_call_carries_the_same_metadata(
     spy = FailingRpc()
 
     with pytest.raises(ClientConnectionError):
-        client._call("complete", spy, "req", CommandKind.CHILD)
+        client.transport._call("complete", spy, "req", CommandKind.CHILD)
 
     assert len(spy.metadata_calls) > 1
     for metadata in spy.metadata_calls:
@@ -280,7 +280,7 @@ def test_query_command_carries_the_operator_credentials(tmp_path, new_secret):
     """A Query_Command is an Operator_Command as far as the client is concerned."""
     client = make_client(secret_file=str(_secret_file(tmp_path, new_secret)))
 
-    metadata = client._build_metadata(CommandKind.QUERY)
+    metadata = client.transport._build_metadata(CommandKind.QUERY)
 
     assert [key for key, _ in metadata] == [METADATA_KEY_SECRET, METADATA_KEY_USER]
 

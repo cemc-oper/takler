@@ -17,7 +17,7 @@ import pytest
 
 from takler.core import Bunch, Flow
 from takler.exceptions import FlowStateError, NodeNotFoundError
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.protocol.error_code import (
     ERROR_CODE_BY_TYPE,
@@ -34,12 +34,12 @@ def build_flow(name: str) -> Flow:
 
 
 @pytest.fixture
-def service() -> TaklerService:
+def service() -> GrpcTransport:
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
-    return TaklerService(scheduler=scheduler)
+    return GrpcTransport(scheduler=scheduler)
 
 
-def run_begin(service: TaklerService, flow_name: str, force: bool = False):
+def run_begin(service: GrpcTransport, flow_name: str, force: bool = False):
     request = takler_pb2.BeginCommand(flow_name=flow_name, force=force)
     return asyncio.run(service.RunCommandBegin(request, mock.MagicMock()))
 

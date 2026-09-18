@@ -2,23 +2,27 @@
 
 This module owns the server side of the authentication contract: the
 Operator_Secret_Set and the Operator_Whitelist (:class:`CredentialStore`), the
-method-name privilege table, the per-call credentials taken from the gRPC
-metadata and the Auth_Interceptor that applies them.
+method-name privilege table, the per-call credentials taken from the
+transport's metadata and the check every call passes through.
 
-Four pieces live here: :class:`CredentialStore` with its file handling, the
+Five pieces live here: :class:`CredentialStore` with its file handling, the
 method-name privilege table (:class:`PrivilegeLevel`,
 :data:`PRIVILEGE_BY_METHOD`, :func:`privilege_for_method`), the per-call
 credentials (:class:`CallCredentials` plus the context variable that carries
-them from the interceptor to the Zombie_Detector and to the Audit_Logger), and
-:class:`AuthInterceptor`, which joins the three into the single check every RPC
-passes through.
+them from the transport boundary to the Zombie_Detector and to the
+Audit_Logger), :class:`AuthGate` -- the transport-neutral decision layer,
+which joins credential extraction, the three-level privilege check and the
+rejection record into one call -- and :class:`AuthInterceptor`, the thin
+gRPC adapter in front of it that only reads ``handler_call_details`` and
+turns a refusal into the mapped gRPC status code. The HTTP transport's
+middleware (``takler[http]``) drives the same gate.
 
 Everything but the interceptor deliberately depends on nothing outside the
 standard library and :mod:`takler.logging` -- not even on ``grpc`` -- so the
-parsing, the hot-reload behaviour, the privilege lookup and the metadata
-parsing can all be tested without standing up a gRPC server. Only
-:class:`AuthInterceptor` needs ``grpc``, for the base class, the status codes
-and the abort handler it returns.
+parsing, the hot-reload behaviour, the privilege lookup, the metadata parsing
+and the whole decision layer can all be tested without standing up a gRPC
+server. Only :class:`AuthInterceptor` needs ``grpc``, for the base class, the
+status codes and the abort handler it returns.
 
 Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11, 6.12,
 6.13, 7.1, 7.2, 7.3,
@@ -77,7 +81,9 @@ __all__ = [
     "SERVICE_METHOD_PREFIX",
     "STATUS_CODE_BY_REJECTION",
     "TRUNCATION_MARKER",
+    "AuthGate",
     "AuthInterceptor",
+    "AuthOutcome",
     "CallCredentials",
     "CredentialFileContent",
     "CredentialStore",
@@ -1449,48 +1455,58 @@ STATUS_CODE_BY_REJECTION: Dict[RejectionReason, grpc.StatusCode] = {
 }
 
 
-class AuthInterceptor(grpc.aio.ServerInterceptor):
-    """The single place every RPC is authenticated (Requirement 6.2).
+@dataclasses.dataclass(frozen=True)
+class AuthOutcome:
+    """The Auth_Gate's answer for one call.
 
-    One interceptor in front of the whole service, rather than a check inside
-    each handler: a handler that forgets to check is an unauthenticated write
-    path into the Bunch, and there is no way to notice it is missing. Here the
-    check cannot be forgotten, because a method that nobody classified still
-    resolves to :attr:`PrivilegeLevel.OPERATOR` (see
-    :func:`privilege_for_method`).
+    ``rejection`` is ``None`` when the call may proceed; the transport then
+    publishes ``credentials`` with :func:`set_call_credentials` and lets
+    the call through. A ``None`` *credentials* means "publish nothing": the
+    method is :attr:`PrivilegeLevel.PUBLIC`, whose metadata is deliberately
+    never parsed (Requirement 6.8), so there is nothing to publish and the
+    context keeps its empty default.
 
-    What is checked follows from the method's Privilege_Level alone:
+    A non-``None`` ``rejection`` is the classification to report; the
+    transport turns it into its own refusal form (a gRPC abort with the
+    mapped status code, an HTTP 401/403) and reports it through
+    :meth:`AuthGate.refuse` at the point where it knows the caller's address.
+    """
 
-    ==================== =================================================
-    Privilege_Level      Checked when Auth_Mode is ``enabled``
-    ==================== =================================================
-    ``PUBLIC``           nothing, the metadata is not even parsed (6.8)
-    ``CHILD``            ``takler-pass`` is present (6.4, 6.13)
-    ``OPERATOR``         ``takler-secret`` and ``takler-user`` are present,
-                         the secret is in the Operator_Secret_Set and the
-                         user is whitelisted (6.5, 6.6, 6.7)
-    ==================== =================================================
+    credentials: Optional[CallCredentials]
+    rejection: Optional[RejectionReason] = None
 
-    With Auth_Mode ``disabled`` nothing is checked at all and every RPC passes,
-    which is what keeps an M1 deployment working unchanged (Requirement 6.3).
-    The credentials are still parsed and published in that case: the
-    Zombie_Detector's ``Z2`` / ``Z3`` checks and the Audit_Logger's ``user`` /
-    ``peer`` fields do not depend on authentication being on.
+    @property
+    def authorized(self) -> bool:
+        """Whether the call may proceed."""
+        return self.rejection is None
 
-    **A Child_Command's password is only checked for presence, never compared.**
-    The interceptor does not know which node the command targets without
-    deserializing the request, and the Job_Password is per node. More
-    importantly the two failures are different: an absent password means "this
-    caller has no credentials", which is an authentication failure, while a
-    mismatching one means "this caller holds the credentials of an earlier run
-    of this task", which is a zombie and may legitimately be let through
-    depending on the Zombie_Policy. So the comparison belongs to the
-    Zombie_Detector (Requirement 6.13).
+
+class AuthGate:
+    """The transport-neutral half of the per-call authentication check.
+
+    The gate owns everything about the check that does not depend on how the
+    call arrived: parsing the Credential_Metadata out of the transport's
+    key-value metadata (:meth:`authorize`), the three-level privilege decision
+    (a ``PUBLIC`` method passes unlooked-at, a ``CHILD`` method needs
+    ``takler-pass`` present, anything else is an Operator_Command checked
+    against the Credential_Store), the Auth_Mode master switch, and the
+    refusal record (:meth:`refuse`). What it returns is data; turning a
+    refusal into a status code is the transport's business, which is why the
+    gate -- unlike the Auth_Interceptor -- can be unit tested without
+    standing up a server, and why the HTTP middleware of ``takler[http]`` can
+    drive the same instance.
+
+    The gate deliberately does not publish the accepted credentials itself:
+    setting the context variable has to happen in the task that serves the
+    call, and which task that is -- the interceptor's, a middleware's, the
+    endpoint's -- is the transport's knowledge. So :meth:`authorize` hands
+    the credentials back and the transport publishes them.
 
     Attributes:
-        auth_mode: The resolved Auth_Mode. Read once per RPC so that it can be
-            reassigned in a test between calls.
-        credential_store: The store consulted for an ``OPERATOR`` level method.
+        auth_mode: The resolved Auth_Mode. Read once per call so that it can
+            be reassigned in a test between calls.
+        credential_store: The store consulted for an ``OPERATOR`` level
+            method.
     """
 
     def __init__(
@@ -1500,7 +1516,7 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
         audit_logger: Optional[AuditLogger] = None,
         privilege_table: Optional[Mapping[str, PrivilegeLevel]] = None,
     ) -> None:
-        """Build the interceptor.
+        """Build the gate.
 
         Args:
             auth_mode: The resolved Auth_Mode (Requirement 3.5 resolves it, not
@@ -1528,45 +1544,70 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
         self._audit_logger: Optional[AuditLogger] = audit_logger
         self._privilege_table: Optional[Mapping[str, PrivilegeLevel]] = privilege_table
 
-    async def intercept_service(
+    def authorize(
         self,
-        continuation: Callable[[Any], Any],
-        handler_call_details: Any,
-    ) -> Any:
-        """Authenticate one RPC, then either let it through or refuse it.
+        method: str,
+        metadata: Optional[Iterable[Any]] = None,
+        peer: Optional[str] = None,
+    ) -> AuthOutcome:
+        """Decide whether one call of ``method`` may proceed.
+
+        The checks run in the order the privilege table implies:
+
+        * ``PUBLIC``: pass, without parsing the metadata at all -- ``ping`` is
+          what a health check and a monitoring probe call, and it has to keep
+          working on a server whose credential files are broken
+          (Requirement 6.8). The outcome carries no credentials.
+        * Auth_Mode ``disabled``: parse and pass, with no check at all, which
+          is what keeps an M1 deployment working unchanged (Requirement 6.3).
+          The credentials are still returned for publication: the
+          Zombie_Detector's ``Z2`` / ``Z3`` checks and the Audit_Logger's
+          ``user`` / ``peer`` fields do not depend on authentication being on.
+        * ``CHILD``: ``takler-pass`` must be present. Its value is *never*
+          compared here -- the gate does not know which node the command
+          targets without deserializing the request, and a mismatching
+          password means "the credentials of an earlier run of this task",
+          which is the Zombie_Detector's call, not an authentication failure
+          (Requirements 6.4, 6.13).
+        * everything else, including any method not registered in the
+          privilege table: an Operator_Command, decided by
+          :meth:`CredentialStore.authorize_operator` (Requirements 6.2, 6.5,
+          6.6, 6.7).
+
+        Args:
+            method: The method name as the transport addresses it, for
+                example ``"/takler_protocol.TaklerServer/RunCommandInit"``.
+                Unregistered names fail closed as ``OPERATOR``.
+            metadata: The call's metadata as key-value pairs, for example
+                ``handler_call_details.invocation_metadata`` or HTTP headers
+                adapted to the same shape. ``None`` reads as "no credentials
+                carried".
+            peer: The caller's network address as the transport knows it, or
+                ``None`` when the transport can only say later -- the gRPC
+                interceptor learns it from the ``ServicerContext`` at abort
+                time, which is why :meth:`refuse` takes the credentials again
+                rather than remembering them.
 
         Returns:
-            The handler ``continuation`` produced when the call is authorized,
-            or an abort handler that fails the RPC with the mapped status code
-            when it is not. A refused call never reaches ``continuation``, so
-            no handler runs and no node state can change (Requirement 6.9).
+            The :class:`AuthOutcome`: the credentials to publish (or ``None``
+            for a ``PUBLIC`` method) when authorized, the classification to
+            report when refused.
         """
-        method = getattr(handler_call_details, "method", "")
         level = privilege_for_method(method, table=self._privilege_table)
 
-        # PUBLIC first, before the metadata is looked at: ``ping`` is what a
-        # health check and a monitoring probe call, and it has to keep working
-        # on a server whose credential files are broken (Requirement 6.8).
         if level is PrivilegeLevel.PUBLIC:
-            return await continuation(handler_call_details)
+            return AuthOutcome(credentials=None)
 
-        credentials = CallCredentials.from_metadata(
-            getattr(handler_call_details, "invocation_metadata", None)
-        )
+        credentials = CallCredentials.from_metadata(metadata, peer=peer)
 
-        # ``disabled``: publish and pass, with no check at all. The Auth_Mode is
-        # read here rather than in ``__init__`` so a test may flip it between
-        # calls on one interceptor (Requirement 6.3).
         if self.auth_mode is not AuthMode.ENABLED:
-            set_call_credentials(credentials)
-            return await continuation(handler_call_details)
+            return AuthOutcome(credentials=credentials)
 
         reason = self._reject_reason(level, credentials)
         if reason is not None:
-            return self._abort_handler(method, credentials, reason)
+            return AuthOutcome(credentials=credentials, rejection=reason)
 
-        set_call_credentials(credentials)
-        return await continuation(handler_call_details)
+        return AuthOutcome(credentials=credentials)
 
     def _reject_reason(
         self,
@@ -1597,6 +1638,187 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
             credentials.secret, credentials.user
         )
 
+    def refuse(
+        self,
+        method: str,
+        credentials: CallCredentials,
+        reason: RejectionReason,
+    ) -> str:
+        """Record one refusal and return the text to answer it with.
+
+        Two records of the same refusal are written (Requirement 6.10): a
+        WARNING, which is what an operator watching the server sees, and --
+        when an Audit_Logger is configured -- the ``denied`` Audit_Record,
+        which is what a query over the audit trail finds (Requirement 11.3).
+        Exactly one of each per refused call.
+
+        The returned text -- ``"<method> refused: <reason>"`` -- is what the
+        transport puts on the wire (the gRPC abort details, the HTTP response
+        body). It carries only the classification and the method name, never a
+        credential value and never a hint about which check failed on the
+        server's files -- an attacker learning "the secret was right but the
+        user is not whitelisted" learns that the secret they hold is live
+        (Requirements 6.12, 12.1).
+
+        Both caller-controlled fields are sanitized (see
+        :func:`sanitize_echoed_value`): the method name is whatever the caller
+        put on the wire -- an unregistered method is refused rather than
+        dropped, so this string is caller-controlled on exactly this path --
+        and the ``takler-user`` value could otherwise smuggle a credential
+        value or a forged second log line into the record. The peer address is
+        not sanitized: it comes from the transport, not from the caller.
+
+        ``target`` of the record is empty: the request body is never
+        deserialized on this path, so the server does not know which nodes the
+        caller meant to act on -- and must not know, since parsing an
+        unauthenticated request is work an unauthenticated caller could ask
+        for at will.
+
+        Args:
+            method: The method name that was refused, unsanitized.
+            credentials: The credentials the caller presented, for the user
+                name, the peer address and the redaction. No credential value
+                of them is ever logged. Fill in the peer
+                (:meth:`CallCredentials.with_peer`) before calling when the
+                transport only learns the address after :meth:`authorize`.
+            reason: The classification to report.
+
+        Returns:
+            The refusal text for the wire, already sanitized.
+        """
+        safe_method = sanitize_echoed_value(method, credentials)
+        user = sanitize_echoed_value(credentials.audit_user(), credentials)
+        logger.warning(
+            f"refused {safe_method}: {reason.value} "
+            f"(user={user}, peer={credentials.peer})"
+        )
+        if self._audit_logger is not None:
+            self._audit_logger.record(
+                AuditRecord(
+                    timestamp=audit_timestamp(),
+                    event=EVENT_DENIED,
+                    command=audit_command_name(safe_method),
+                    user=user,
+                    peer=audit_peer(credentials.peer),
+                    target=[],
+                    outcome=OUTCOME_DENIED,
+                    error_code=DENIED_ERROR_CODE,
+                )
+            )
+        return f"{safe_method} refused: {reason.value}"
+
+
+class AuthInterceptor(grpc.aio.ServerInterceptor):
+    """The gRPC adapter of the Auth_Gate: the single place every RPC is authenticated (Requirement 6.2).
+
+    One interceptor in front of the whole service, rather than a check inside
+    each handler: a handler that forgets to check is an unauthenticated write
+    path into the Bunch, and there is no way to notice it is missing. Here the
+    check cannot be forgotten, because a method that nobody classified still
+    resolves to :attr:`PrivilegeLevel.OPERATOR` (see
+    :func:`privilege_for_method`).
+
+    Everything the check *decides* -- the credential extraction, the
+    three-level Privilege_Level decision, the refusal record -- lives in the
+    transport-neutral :class:`AuthGate` this interceptor drives; what is left
+    here is the gRPC plumbing: reading the method name and the invocation
+    metadata off the ``handler_call_details``, publishing the accepted
+    credentials into the call's context, and turning a refusal into an abort
+    handler answering the mapped status code.
+
+    Attributes:
+        gate: The :class:`AuthGate` making the decisions. ``auth_mode`` and
+            ``credential_store`` are properties delegating to it, so the
+            long-standing attribute surface -- including reassigning
+            ``auth_mode`` between calls in a test -- keeps working.
+    """
+
+    def __init__(
+        self,
+        auth_mode: AuthMode = DEFAULT_AUTH_MODE,
+        credential_store: Optional[CredentialStore] = None,
+        audit_logger: Optional[AuditLogger] = None,
+        privilege_table: Optional[Mapping[str, PrivilegeLevel]] = None,
+        gate: Optional[AuthGate] = None,
+    ) -> None:
+        """Build the interceptor.
+
+        Args:
+            auth_mode: The resolved Auth_Mode (Requirement 3.5 resolves it, not
+                this class). Defaults to :data:`DEFAULT_AUTH_MODE`, that is
+                ``disabled``. Ignored when ``gate`` is given.
+            credential_store: The :class:`CredentialStore` holding the
+                Operator_Secret_Set and the Operator_Whitelist. ``None`` builds
+                an empty store, which verifies no secret at all: an
+                ``OPERATOR`` method is then always refused with an ERROR naming
+                the missing configuration, never let through
+                (Requirement 7.7). Ignored when ``gate`` is given.
+            audit_logger: The Audit_Logger the rejection path writes its
+                ``denied`` record to (Requirement 11.3). ``None`` skips the
+                record, which is what a test or an in-process server that
+                configures no auditing gets; the WARNING of Requirement 6.10 is
+                emitted either way. Ignored when ``gate`` is given.
+            privilege_table: The method name to Privilege_Level table,
+                defaulting to :data:`PRIVILEGE_BY_METHOD`. Injectable for tests
+                that stand up a service of their own. Ignored when ``gate`` is
+                given.
+            gate: An already built :class:`AuthGate` to share -- the form a
+                server running several transports uses, so the gRPC
+                interceptor and the HTTP middleware make the same decision
+                against the same store. ``None`` builds a gate from the other
+                arguments.
+        """
+        self.gate: AuthGate = (
+            gate
+            if gate is not None
+            else AuthGate(
+                auth_mode=auth_mode,
+                credential_store=credential_store,
+                audit_logger=audit_logger,
+                privilege_table=privilege_table,
+            )
+        )
+
+    @property
+    def auth_mode(self) -> AuthMode:
+        """The resolved Auth_Mode of the gate."""
+        return self.gate.auth_mode
+
+    @auth_mode.setter
+    def auth_mode(self, value: AuthMode) -> None:
+        self.gate.auth_mode = value
+
+    @property
+    def credential_store(self) -> CredentialStore:
+        """The Credential_Store of the gate."""
+        return self.gate.credential_store
+
+    async def intercept_service(
+        self,
+        continuation: Callable[[Any], Any],
+        handler_call_details: Any,
+    ) -> Any:
+        """Authenticate one RPC, then either let it through or refuse it.
+
+        Returns:
+            The handler ``continuation`` produced when the call is authorized,
+            or an abort handler that fails the RPC with the mapped status code
+            when it is not. A refused call never reaches ``continuation``, so
+            no handler runs and no node state can change (Requirement 6.9).
+        """
+        method = getattr(handler_call_details, "method", "")
+        outcome = self.gate.authorize(
+            method,
+            getattr(handler_call_details, "invocation_metadata", None),
+        )
+
+        if outcome.rejection is not None:
+            return self._abort_handler(method, outcome.credentials, outcome.rejection)
+
+        if outcome.credentials is not None:
+            set_call_credentials(outcome.credentials)
+        return await continuation(handler_call_details)
+
     def _abort_handler(
         self,
         method: str,
@@ -1617,11 +1839,12 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
         a future streaming rpc arrives together with a failing test, and this is
         where the matching handler flavour would have to be selected.
 
-        The abort itself happens inside the behaviour rather than here, since
-        aborting needs the ``ServicerContext`` that only exists once the call is
-        dispatched. That context is also where the caller's network address
-        comes from, which is why the rejection is logged there too: an address
-        is most of what makes a refusal record actionable.
+        The refusal is recorded and the abort happens inside the behaviour
+        rather than here, since both need the ``ServicerContext`` that only
+        exists once the call is dispatched. That context is also where the
+        caller's network address comes from, which is why the gate's
+        :meth:`~AuthGate.refuse` is called there: an address is most of what
+        makes a refusal record actionable.
 
         Args:
             method: The fully qualified method name that was refused.
@@ -1634,19 +1857,6 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
             status code :data:`STATUS_CODE_BY_REJECTION` maps ``reason`` to.
         """
         status_code = STATUS_CODE_BY_REJECTION[reason]
-        # Only the classification and the method name, never a credential value
-        # and never a hint about which check failed on the server's files -- an
-        # attacker learning "the secret was right but the user is not
-        # whitelisted" learns that the secret they hold is live
-        # (Requirements 6.12, 12.1).
-        #
-        # The method name is sanitized even though it looks like server-side
-        # data: it is whatever the caller put on the wire, and an unregistered
-        # method is refused rather than dropped, so this string is
-        # caller-controlled on exactly this path (see
-        # :func:`sanitize_echoed_value`).
-        safe_method = sanitize_echoed_value(method, credentials)
-        details = f"{safe_method} refused: {reason.value}"
 
         async def abort(request: Any, context: Any) -> None:
             peer = None
@@ -1657,98 +1867,7 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
                 # refuse the call; the address is diagnostic, not part of the
                 # decision.
                 pass
-            self._log_rejection(safe_method, credentials.with_peer(peer), reason)
+            details = self.gate.refuse(method, credentials.with_peer(peer), reason)
             await context.abort(status_code, details)
 
         return grpc.unary_unary_rpc_method_handler(abort)
-
-    def _log_rejection(
-        self,
-        method: str,
-        credentials: CallCredentials,
-        reason: RejectionReason,
-    ) -> None:
-        """Record one refusal (Requirement 6.10).
-
-        The record carries exactly the four things a refusal has to be
-        actionable from -- the method name, the ``takler-user`` value, the
-        caller's network address and the classification -- and nothing else. In
-        particular it carries no credential value: the user name is taken
-        through :meth:`CallCredentials.audit_user` and
-        :attr:`~CallCredentials.job_password` and
-        :attr:`~CallCredentials.secret` are never read on this path
-        (Requirements 6.10, 12.1).
-
-        **Both caller-controlled fields are sanitized.** The method name and the
-        user name arrive from the wire, and this is the one path where an
-        unregistered method name and an arbitrary user name are echoed rather
-        than dropped. Without the escaping a ``takler-user`` holding a newline
-        would write a forged second line into the log file, which is worse than
-        a missing record because it is indistinguishable from a real one; and
-        without the length bound a refused caller could choose how many bytes
-        each refusal costs the log. See :func:`sanitize_echoed_value`. The
-        method name is sanitized by the caller, which needs the same text for
-        the abort details.
-
-        The peer address is not sanitized: it comes from the gRPC stack, not
-        from the caller.
-
-        Args:
-            method: The already sanitized method name that was refused.
-            credentials: The credentials the caller presented, for the user name
-                and the peer address, and for the redaction.
-            reason: The classification to report.
-        """
-        user = sanitize_echoed_value(credentials.audit_user(), credentials)
-        logger.warning(
-            f"refused {method}: {reason.value} (user={user}, peer={credentials.peer})"
-        )
-        self._audit_rejection(method, user, credentials)
-
-    def _audit_rejection(
-        self,
-        method: str,
-        user: str,
-        credentials: CallCredentials,
-    ) -> None:
-        """Write the ``denied`` Audit_Record of one refusal (Requirement 11.3).
-
-        Exactly one record per refused RPC, alongside the WARNING: the log line
-        is what an operator watching the server sees, the record is what a query
-        over the audit trail finds, and the two report the same refusal.
-
-        ``event`` and ``outcome`` are both fixed -- ``denied`` -- and
-        ``error_code`` is :data:`~takler.server.audit.DENIED_ERROR_CODE`, since
-        a refused call never reaches a handler and therefore has no
-        ``ServiceResponse.flag`` to copy (Requirement 11.7).
-
-        ``target`` is empty: the request body is never deserialized on this path,
-        so the server does not know which nodes the caller meant to act on -- and
-        must not know, since parsing an unauthenticated request is work an
-        unauthenticated caller could ask for at will.
-
-        Both caller-controlled fields are the already sanitized ones, so a
-        ``takler-user`` cannot smuggle a credential value or an unbounded string
-        into the audit trail either (Requirements 6.12, 12.1).
-
-        Args:
-            method: The already sanitized method name that was refused.
-            user: The already sanitized ``takler-user`` value, or the
-                ``unknown`` placeholder (Requirement 11.8).
-            credentials: The credentials the caller presented, for the peer
-                address. No value of them is read here.
-        """
-        if self._audit_logger is None:
-            return
-        self._audit_logger.record(
-            AuditRecord(
-                timestamp=audit_timestamp(),
-                event=EVENT_DENIED,
-                command=audit_command_name(method),
-                user=user,
-                peer=audit_peer(credentials.peer),
-                target=[],
-                outcome=OUTCOME_DENIED,
-                error_code=DENIED_ERROR_CODE,
-            )
-        )

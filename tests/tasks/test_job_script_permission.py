@@ -151,7 +151,7 @@ def _start_and_capture(auth_mode: str, monkeypatch, tmp_path) -> str:
             return None
 
         server.scheduler.start = _noop_async
-        server.network_service.start = _noop_async
+        server.grpc_transport.start = _noop_async
         server.checkpoint_manager.start = _noop_async
         server.checkpoint_manager.restore = lambda: None
 

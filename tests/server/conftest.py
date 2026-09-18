@@ -8,7 +8,7 @@ through fixtures rather than module imports). Two test modules consume them --
 * ``test_handlers_unit.py`` runs each case directly against
   :class:`~takler.server.handlers.CommandHandlers` (DTO in, DTO out), and
 * ``test_handlers_grpc_boundary.py`` runs the same case through the gRPC
-  adapter (:class:`~takler.server.network_service.TaklerService` with a pb2
+  adapter (:class:`~takler.server.grpc_transport.GrpcTransport` with a pb2
   request), proving the adapter preserves the handler's semantics.
 
 The HTTP transport of task 7 adds a third consumer without touching the
@@ -37,7 +37,7 @@ from takler.protocol.commands import (
     Command,
 )
 from takler.server.handlers import METHOD_NAME_BY_COMMAND, CommandHandlers
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.server.scheduler import Scheduler
 
@@ -321,7 +321,7 @@ def run_via_handlers(case: HandlerCase) -> Tuple[Any, Bunch]:
 def run_via_grpc(case: HandlerCase) -> Tuple[Any, Bunch]:
     """Run one case through the gRPC boundary: pb2 in, pb2 out."""
     scheduler = build_scheduler()
-    service = TaklerService(scheduler=scheduler)
+    service = GrpcTransport(scheduler=scheduler)
     method = getattr(service, METHOD_NAME_BY_COMMAND[case.command])
     request = to_pb2(case.command, case.kwargs)
     response = asyncio.run(method(request, mock.MagicMock()))

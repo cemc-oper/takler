@@ -236,7 +236,7 @@ class ServedServer:
 
     @property
     def port(self) -> str:
-        return self.server.network_service.port
+        return self.server.grpc_transport.port
 
     def start(self, timeout: float = 15.0) -> "ServedServer":
         self._thread = threading.Thread(

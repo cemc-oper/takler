@@ -403,7 +403,7 @@ def test_client_cli_exits_three_and_names_the_zombie_classification(served):
             "--host",
             LOCALHOST,
             "--port",
-            str(server.network_service.port),
+            str(server.grpc_transport.port),
         ],
         # What ``head.takler`` exports for the job: the password of the try that
         # has since been requeued. Under ``Auth_Mode=enabled`` the

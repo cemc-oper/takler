@@ -39,8 +39,8 @@ that this module can pre-create it with owner-only permissions first
 and being tightened afterwards through a window in which the file is readable
 by everyone.
 
-The record points themselves live elsewhere: the Network_Service's command
-handler, the Auth_Interceptor and the Zombie_Detector each build an
+The record points themselves live elsewhere: the command
+handler layer, the Auth_Interceptor and the Zombie_Detector each build an
 :class:`AuditRecord` and hand it to one shared :class:`AuditLogger`.
 
 Requirements: 11.5, 11.6, 11.7, 11.8, 11.9, 11.11, 11.14, 11.15, 11.16.

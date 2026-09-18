@@ -4,7 +4,7 @@ Requirement 16.8: a real :class:`~takler.server.TaklerServer` is started in this
 test process and **every** Child_Command, Control_Command and Query_Command is
 driven through a real :class:`~takler.client.service_client.TaklerServiceClient`.
 Nothing here talks to the servicer directly -- each command travels client ->
-gRPC socket -> ``TaklerService`` handler -> ``Scheduler`` -> node tree -- so the
+gRPC socket -> ``GrpcTransport`` handler -> ``Scheduler`` -> node tree -- so the
 test covers exactly the path an operator's ``takler-client-py`` invocation and a
 job script's child command take (Requirement 16.7).
 

@@ -1,7 +1,7 @@
 """Integration tests for the Takler server logging lifecycle (Requirement 10).
 
 These tests exercise how :class:`takler.server.TaklerServer` wires the logging
-subsystem into its start/stop lifecycle and how :class:`TaklerService` logs
+subsystem into its start/stop lifecycle and how :class:`GrpcTransport` logs
 command handling. They are deliberately *hermetic*: the scheduler and network
 service are replaced with ``AsyncMock`` fakes so no real gRPC server is created
 and no port is bound, and console output is captured by redirecting
@@ -57,7 +57,7 @@ import takler.logging
 import takler.server as server_mod
 from takler.core import Bunch, Flow, NodeStatus
 from takler.server import TaklerServer
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.server.scheduler import Scheduler
 from takler.logging.backends.stdlib_backend import (
@@ -105,7 +105,7 @@ def _server_logging_isolation(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]
 def _make_hermetic_server() -> TaklerServer:
     """Build a server whose scheduler/network service are no-op AsyncMocks.
 
-    Construction does not bind any port (``TaklerService`` defers gRPC setup to
+    Construction does not bind any port (``GrpcTransport`` defers gRPC setup to
     its ``start``), and replacing both collaborators with ``AsyncMock`` means
     ``await server.start()`` / ``await server.stop()`` perform no real network
     work -- only the logging behavior under test runs.
@@ -118,7 +118,7 @@ def _make_hermetic_server() -> TaklerServer:
     """
     server = TaklerServer(host="localhost", port=33999)
     server.scheduler = mock.AsyncMock()
-    server.network_service = mock.AsyncMock()
+    server.grpc_transport = mock.AsyncMock()
     server.checkpoint_manager = mock.AsyncMock()
     server.checkpoint_manager.restore = mock.MagicMock(return_value=False)
     return server
@@ -171,7 +171,7 @@ def test_configure_runs_before_first_record_and_start_emits_info() -> None:
 
     # Sanity: the hermetic collaborators were actually started (no real I/O).
     server.scheduler.start.assert_awaited_once()
-    server.network_service.start.assert_awaited_once()
+    server.grpc_transport.start.assert_awaited_once()
 
 
 def test_configuration_failure_allows_startup_with_console_info_and_warning() -> None:
@@ -221,13 +221,13 @@ def test_configuration_failure_allows_startup_with_console_info_and_warning() ->
 
     # Startup still completed end to end.
     server.scheduler.start.assert_awaited_once()
-    server.network_service.start.assert_awaited_once()
+    server.grpc_transport.start.assert_awaited_once()
 
 
 def test_command_handling_emits_info_record() -> None:
     """Req 10.6: handling a command emits an INFO record naming the command.
 
-    A ``TaklerService`` is built over a real scheduler holding one task, and
+    A ``GrpcTransport`` is built over a real scheduler holding one task, and
     its ``RunCommandComplete`` handler invoked with a stub request. Logging is
     configured inside the redirect so the console sink binds to the buffer, and
     the handled command must appear in an INFO record.
@@ -241,7 +241,7 @@ def test_command_handling_emits_info_record() -> None:
     flow.add_task("task1")
     bunch.add_flow(flow)
     scheduler = Scheduler(bunch=bunch)
-    service = TaklerService(scheduler=scheduler, host="[::]", port=33999)
+    service = GrpcTransport(scheduler=scheduler, host="[::]", port=33999)
 
     request = takler_pb2.CompleteCommand(
         child_options=takler_pb2.ChildCommandOptions(node_path="/flow1/task1")
@@ -286,5 +286,5 @@ def test_shutdown_emits_info_record() -> None:
     assert "stop server...done" in output
 
     # The hermetic collaborators were stopped (no real I/O).
-    server.network_service.stop.assert_awaited_once()
+    server.grpc_transport.stop.assert_awaited_once()
     server.scheduler.stop.assert_awaited_once()

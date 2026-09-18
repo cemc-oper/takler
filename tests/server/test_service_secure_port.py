@@ -3,7 +3,7 @@
 Three things are pinned down here, and each of them is a decision that has no
 other visible symptom:
 
-* ``TaklerService.start()`` binds its listen address with the server credentials
+* ``GrpcTransport.start()`` binds its listen address with the server credentials
   when TLS is configured and in plaintext when it is not (Requirements 1.1,
   1.2). A mistake in this branch does not fail: it serves the wrong thing
   successfully, which is exactly why it is asserted on the calls themselves
@@ -40,7 +40,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import takler.server as server_module
-import takler.server.network_service as network_service_module
+import takler.server.grpc_transport as grpc_transport_module
 from takler.server import TaklerServer
 from takler.server.auth import AuthInterceptor
 from takler.server.connect_config import (
@@ -48,7 +48,7 @@ from takler.server.connect_config import (
     ZombiePolicy,
     generate_connect_config,
 )
-from takler.server.network_service import TaklerService
+from takler.server.grpc_transport import GrpcTransport
 from takler.server.scheduler import Scheduler
 from takler.core import Bunch
 
@@ -137,7 +137,7 @@ class FakeGrpcServer:
         self.started = True
 
 
-def _start_service(service: TaklerService) -> Tuple[FakeGrpcServer, List[str]]:
+def _start_service(service: GrpcTransport) -> Tuple[FakeGrpcServer, List[str]]:
     """Run ``service.start()`` against a fake gRPC server.
 
     Returns:
@@ -156,11 +156,11 @@ def _start_service(service: TaklerService) -> Tuple[FakeGrpcServer, List[str]]:
     def record(level):
         return lambda message, *a, **k: records.append(f"{level}:{message}")
 
-    with mock.patch.object(network_service_module.grpc.aio, "server", fake_server):
+    with mock.patch.object(grpc_transport_module.grpc.aio, "server", fake_server):
         with (
-            mock.patch.object(network_service_module.logger, "info", record("INFO")),
+            mock.patch.object(grpc_transport_module.logger, "info", record("INFO")),
             mock.patch.object(
-                network_service_module.logger, "warning", record("WARNING")
+                grpc_transport_module.logger, "warning", record("WARNING")
             ),
         ):
             asyncio.run(service.start())
@@ -168,9 +168,9 @@ def _start_service(service: TaklerService) -> Tuple[FakeGrpcServer, List[str]]:
     return created[0], records
 
 
-def _build_service(**kwargs) -> TaklerService:
+def _build_service(**kwargs) -> GrpcTransport:
     """A service wired to an empty scheduler, which start-up never touches."""
-    return TaklerService(
+    return GrpcTransport(
         scheduler=Scheduler(bunch=Bunch(host="login01", port="33083")),
         host="[::]",
         port=33083,
@@ -256,7 +256,7 @@ def _capture_server_start(server: TaklerServer) -> List[str]:
         return None
 
     server.scheduler.start = _noop_async
-    server.network_service.start = _noop_async
+    server.grpc_transport.start = _noop_async
     server.checkpoint_manager.start = _noop_async
     server.checkpoint_manager.restore = lambda: None
 
@@ -278,7 +278,7 @@ def test_server_hands_its_auth_interceptor_to_the_service():
     server = TaklerServer(host="login01", port=33083)
 
     assert isinstance(server.auth_interceptor, AuthInterceptor)
-    assert server.network_service.interceptors == (server.auth_interceptor,)
+    assert server.grpc_transport.interceptors == (server.auth_interceptor,)
     # The interceptor shares the store the server validates at start-up, so a
     # hot-reloaded secret file is seen by the interceptor without re-wiring.
     assert server.auth_interceptor.credential_store is server.credential_store
@@ -338,9 +338,9 @@ def test_tls_credentials_reach_the_service_during_start(monkeypatch, tls_pair):
 
     # Not built at construction time: reading the pair may abort the start-up,
     # which has to happen where the Server_CLI can turn it into exit code 1.
-    assert server.network_service.server_credentials is None
+    assert server.grpc_transport.server_credentials is None
 
     _capture_server_start(server)
 
-    assert server.network_service.server_credentials is not None
-    assert server.network_service.tls_cert_file == str(cert_file)
+    assert server.grpc_transport.server_credentials is not None
+    assert server.grpc_transport.tls_cert_file == str(cert_file)

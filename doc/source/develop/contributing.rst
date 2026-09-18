@@ -77,8 +77,9 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 败。门槛在 CI （ ``.github/workflows/test.yml`` ）的两个独立步骤里，
 复用 pytest 步骤写出的同一份覆盖率数据：
 
-* ``takler/client/*`` 、 ``server/network_service.py`` 与
-  ``server/protocol/*`` 合计不低于 ``85%`` ；
+* ``takler/client/*`` 、 ``server/transport.py`` 、
+  ``server/grpc_transport.py`` 、 ``server/handlers.py`` 、
+  ``server/protocol/*`` 与 ``takler/protocol/*`` 合计不低于 ``85%`` ；
 * ``server/auth.py`` / ``zombie.py`` / ``audit.py`` / ``tls.py`` **逐
   模块** 不低于 ``85%`` —— 刻意不合并成一次检查：合计值会让高覆盖率
   的小模块把退步的大模块托过线。
@@ -89,7 +90,7 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 
     $ uv run pytest --cov=takler --cov-report=term
     $ uv run coverage report \
-        --include="src/takler/client/*,src/takler/server/network_service.py,src/takler/server/protocol/*" \
+        --include="src/takler/client/*,src/takler/server/transport.py,src/takler/server/grpc_transport.py,src/takler/server/handlers.py,src/takler/server/protocol/*,src/takler/protocol/*" \
         --fail-under=85
 
 版本号
