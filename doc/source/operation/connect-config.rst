@@ -23,8 +23,8 @@
 选项，只认 ``TAKLER_CONNECT_FILE`` ；文件读不到时按客户端的失败契约
 处理（ stderr 一行 ``FileNotFoundError: ...`` ，退出码 ``3`` ，见
 :doc:`/guide/cli` ）。
-TUI (``takler-tui``) 只把该文件用于解析地址，不读取 ``security``
-段，见 :doc:`/guide/tui` 。
+TUI (``takler-tui``) 与 Python 客户端走同一条解析链（ M3 任务 8 起）
+：地址、 ``server.transport`` 与 ``security`` 段都生效。
 
 文件结构
 --------
@@ -50,6 +50,9 @@ server 段
     * - 字段
       - 默认值
       - 说明
+    * - ``server.address``
+      - 无（必填）
+      - gRPC 监听地址小节，服务端与客户端共用的连接地址来源
     * - ``server.address.hostname``
       - 无（必填）
       - 服务主机名。服务端与客户端都以此加 ``port`` 为连接地址；
@@ -81,6 +84,17 @@ server 段
     * - ``server.http.tls_key_file``
       - 回落到 gRPC 证书对
       - 上述证书的私钥；只配置两者之一会终止启动
+    * - ``server.transport``
+      - ``grpc``
+      - **客户端** 使用哪种 transport 连接本服务， ``grpc`` 或
+        ``http`` （ M3 任务 8 ）。客户端侧的取值优先级链：显式参数
+        （ ``TaklerServiceClient(transport_name=...)`` ） > 本字段 >
+        ``TAKLER_TRANSPORT`` 环境变量 > ``grpc`` ；无法识别的名字记一
+        条 WARNING 并落到下一级。选 ``http`` 且 ``server.http`` 小节存
+        在时，客户端地址解析的端口取 ``server.http.port`` （主机名仍取
+        ``address.hostname`` ， ``http.host`` 是监听网卡，不可用于连
+        接）；显式 ``--port`` 仍覆盖。服务端本身忽略本字段——挂不挂
+        HTTP 只由 ``server.http`` 是否存在决定
 
 checkpoint 段
 -------------

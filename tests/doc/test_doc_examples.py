@@ -2277,11 +2277,15 @@ def test_operation_connect_config_documents_every_field():
     from takler.server.connect_config import (
         Address,
         CheckpointSettings,
+        HttpSettings,
         SecuritySettings,
+        Server,
     )
 
     expected = {
+        *(f"server.{f}" for f in Server.model_fields),
         *(f"server.address.{f}" for f in Address.model_fields),
+        *(f"server.http.{f}" for f in HttpSettings.model_fields),
         *(f"checkpoint.{f}" for f in CheckpointSettings.model_fields),
         *(f"security.{f}" for f in SecuritySettings.model_fields),
     }
@@ -4022,6 +4026,6 @@ def test_develop_api_conf_nitpick_allowlist_matches_reality():
     assert "nitpick_ignore_regex" in conf_text
     # autodoc mock list keeps the optional extras buildable on RTD.
     assert (
-        'autodoc_mock_imports = ["textual", "rich", "loguru", "fastapi", "uvicorn"]'
+        'autodoc_mock_imports = ["textual", "rich", "loguru", "fastapi", "uvicorn", "httpx"]'
         in conf_text
     )

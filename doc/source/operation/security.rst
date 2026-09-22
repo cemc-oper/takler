@@ -265,6 +265,10 @@ HTTP 请求头（ HTTP 头不区分大小写），鉴权判定由两种 transpor
 ``PERMISSION_DENIED`` 状态码在 HTTP 下对应为 ``401`` / ``403`` 。
 取值来源也与 gRPC 客户端一致：作业脚本内是注入的 ``TAKLER_PASS`` ，
 运维命令是 ``TAKLER_SECRET_FILE`` 指向的密钥文件与当前 OS 用户名。
+Python 客户端（ M3 任务 8 起）在两种 transport 下由同一个构建器生成
+这三键——gRPC metadata 键名即 HTTP 请求头名，选择 HTTP 不需要任何凭
+据配置上的改动；拒绝在客户端侧映射为同一个
+``PermissionDeniedError`` ，退出码与 gRPC 通道一致。
 
 命令分级：
 

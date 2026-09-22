@@ -1,32 +1,51 @@
 """Thin wrapper around :class:`~takler.client.TaklerServiceClient`.
 
-The CLI service client prints to stdout and creates / closes a gRPC
-channel on every call. The TUI wants the raw payload (for the show
-response) and a single long-lived channel; this module provides both.
+The CLI service client prints to stdout and creates / closes a connection on
+every call. The TUI wants the raw payload (for the show response) and a
+single long-lived connection; this module provides both.
+
+Everything on the wire goes through the client's
+:class:`~takler.client.transport.ClientTransport` abstraction (M3 task 8):
+the TUI never touches a stub, a generated class or a protocol detail, so the
+transport the client was built with -- gRPC by default, HTTP when the
+Connect_Config or ``TAKLER_TRANSPORT`` selects it -- carries its calls
+without the TUI knowing which.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 from takler.client.service_client import TaklerServiceClient
-from takler.server.protocol import takler_pb2
 from takler.logging import get_logger
+from takler.protocol.commands import Command
+from takler.server.connect_config import ConnectConfig
 
 
 logger = get_logger("tui.service")
 
 
 class TaklerTuiService:
-    """A reusable gRPC client that returns structured payloads.
+    """A reusable service client that returns structured payloads.
 
     The connection is opened once on first use and reused until
     ``close()`` is called or the object is garbage collected.
     """
 
-    def __init__(self, host: str, port: Union[int, str]):
-        self._inner = TaklerServiceClient(host=host, port=port)
+    def __init__(
+        self,
+        host: str,
+        port: Union[int, str],
+        transport_name: Optional[str] = None,
+        connect_config: Optional[ConnectConfig] = None,
+    ):
+        self._inner = TaklerServiceClient(
+            host=host,
+            port=port,
+            connect_config=connect_config,
+            transport_name=transport_name,
+        )
         self._connected = False
 
     @property
@@ -72,14 +91,15 @@ class TaklerTuiService:
     ) -> str:
         """Return the raw ``show`` text payload."""
         self._ensure_open()
-        response = self._inner.stub.RunRequestShow(
-            takler_pb2.ShowRequest(
-                show_trigger=show_trigger,
-                show_parameter=show_parameter,
-                show_limit=show_limit,
-                show_event=show_event,
-                show_meter=show_meter,
-            )
+        response = self._inner.transport.call(
+            Command.SHOW,
+            {
+                "show_trigger": show_trigger,
+                "show_parameter": show_parameter,
+                "show_limit": show_limit,
+                "show_event": show_event,
+                "show_meter": show_meter,
+            },
         )
         return response.output
 
@@ -91,7 +111,7 @@ class TaklerTuiService:
         try:
             start = datetime.now()
             self._ensure_open()
-            self._inner.stub.RunRequestPing(takler_pb2.PingRequest())
+            self._inner.transport.call(Command.PING, {})
             elapsed = datetime.now() - start
             return True, f"pong in {elapsed}"
         except Exception as exc:  # pragma: no cover - network errors

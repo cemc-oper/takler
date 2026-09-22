@@ -78,6 +78,12 @@ nitpick_ignore = [
     # fastapi / uvicorn 是 ``http`` extra 的可选依赖，不进 intersphinx；
     # http_transport 模块 docstring 与注解里的引用保持为本地说明性文字。
     ("py:class", "fastapi.FastAPI"),
+    # httpx 同为 ``http`` extra 的可选依赖（M3 任务 8 起客户端侧）。
+    ("py:class", "httpx.Client"),
+    # server/protocol/adapter.py 是 gRPC 编解码内部模块，刻意不上 API 页；
+    # client 侧 grpc_transport 的 docstring 引用保持为本地说明性文字。
+    ("py:func", "takler.server.protocol.adapter.request_to_pb2"),
+    ("py:func", "takler.server.protocol.adapter.response_from_pb2"),
     ("py:class", "pydantic.config.ConfigDict"),
     ("py:class", "rich.text.Text"),
     ("py:class", "textual.geometry.Offset"),
@@ -162,7 +168,7 @@ always_use_bars_union = True
 
 # 可选依赖（tui / log / http extras）在只装 docs 依赖组的环境（如 Read the
 # Docs，见 .readthedocs.yml）里不存在。autodoc 遇到这些导入失败时用 mock 顶
-# 替，使 develop/api 的 tui.rst、logging.rst 与 server.rst（http_transport
-# 一节）在任何环境都能通过严格构建；本地已安装对应库时仍使用真实导入
-# （mock 只是后备）。
-autodoc_mock_imports = ["textual", "rich", "loguru", "fastapi", "uvicorn"]
+# 替，使 develop/api 的 tui.rst、logging.rst、client.rst 与 server.rst
+# （http_transport 一节）在任何环境都能通过严格构建；本地已安装对应库时仍
+# 使用真实导入（mock 只是后备）。
+autodoc_mock_imports = ["textual", "rich", "loguru", "fastapi", "uvicorn", "httpx"]

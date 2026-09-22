@@ -160,10 +160,11 @@ def test_log_extra_installs_loguru(optional_dependencies: dict[str, list[str]]):
 def test_http_extra_installs_fastapi_and_uvicorn(
     optional_dependencies: dict[str, list[str]],
 ):
-    """``pip install takler[http]`` pulls in the HTTP transport stack (M3)."""
+    """``pip install takler[http]`` pulls in the HTTP transport stack (M3):
+    the FastAPI server side and the httpx client side."""
     names = {_distribution_name(req) for req in optional_dependencies["http"]}
 
-    assert {"fastapi", "uvicorn"} <= names
+    assert {"fastapi", "uvicorn", "httpx"} <= names
 
 
 def test_dependency_groups_are_dev_test_and_docs(pyproject: dict):

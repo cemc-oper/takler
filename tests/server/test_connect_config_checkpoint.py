@@ -44,6 +44,8 @@ def _server_section() -> dict:
         },
         # Present since M3 task 7: absent / null means no HTTP listener.
         "http": None,
+        # Present since M3 task 8: absent / null means the client uses gRPC.
+        "transport": None,
     }
 
 

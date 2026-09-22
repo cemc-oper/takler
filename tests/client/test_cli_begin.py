@@ -32,10 +32,18 @@ class FakeClient:
 
     instances: list = []
 
-    def __init__(self, host=None, port=None, connect_config=None, outcome=None):
+    def __init__(
+        self,
+        host=None,
+        port=None,
+        connect_config=None,
+        transport_name=None,
+        outcome=None,
+    ):
         self.host = host
         self.port = port
         self.connect_config = connect_config
+        self.transport_name = transport_name
         self.outcome = outcome
         self.calls = []
         FakeClient.instances.append(self)
@@ -52,11 +60,12 @@ def fake_client(monkeypatch):
     FakeClient.instances = []
     holder = {"outcome": FakeResponse(flag=0)}
 
-    def factory(host=None, port=None, connect_config=None):
+    def factory(host=None, port=None, connect_config=None, transport_name=None):
         return FakeClient(
             host=host,
             port=port,
             connect_config=connect_config,
+            transport_name=transport_name,
             outcome=holder["outcome"],
         )
 

@@ -300,8 +300,26 @@ class HttpSettings(BaseModel):
 
 
 class Server(BaseModel):
+    """The ``server`` section of the :class:`ConnectConfig` file.
+
+    Attributes:
+        address: The address of the gRPC listener, announced to clients and
+            to job scripts.
+        http: The optional HTTP listener subsection; present means the
+            server mounts the HTTP transport next to the gRPC one (M3).
+        transport: Which transport a *client* of this server uses, ``grpc``
+            (the default when unset) or ``http`` (M3 task 8). Read by
+            :func:`takler.client.transport.resolve_transport` as the second
+            precedence level of the client-side selection; the server itself
+            ignores it -- which transports the server mounts is decided by
+            the presence of ``http``, not by this field. With ``http``
+            selected and an ``http`` subsection present, the client dials
+            ``http.port`` instead of ``address.port``.
+    """
+
     address: Address
     http: Optional[HttpSettings] = None
+    transport: Optional[str] = None
 
 
 class CheckpointSettings(BaseModel):

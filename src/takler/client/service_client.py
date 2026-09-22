@@ -39,11 +39,14 @@ from takler.client.credentials import (
 )
 from takler.client.grpc_transport import (
     SSL_TARGET_NAME_OVERRIDE_OPTION,
-    GrpcTransport,
     build_channel_credentials,
 )
 from takler.client.retry import DEFAULT_SINGLE_TIMEOUT
-from takler.client.transport import ClientTransport
+from takler.client.transport import (
+    ClientTransport,
+    build_client_transport,
+    resolve_transport,
+)
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 from takler.core import Bunch
 from takler.exceptions import ServerResponseError
@@ -96,6 +99,7 @@ class TaklerServiceClient:
         secret_file: Optional[str] = None,
         connect_config: Optional[ConnectConfig] = None,
         transport: Optional[ClientTransport] = None,
+        transport_name: Optional[str] = None,
     ):
         """
         Parameters
@@ -142,17 +146,25 @@ class TaklerServiceClient:
             the address, the TLS knobs and the secret file path come from the
             same parse of the same file.
         transport
-            The transport to call through, defaulting to a
-            :class:`~takler.client.grpc_transport.GrpcTransport` built from
-            the arguments above. Injectable so a test can drive the command
-            surface without a wire, and so the HTTP transport of
-            ``takler[http]`` slots in without touching the command methods.
+            The transport to call through. ``None`` builds the transport
+            selected by :func:`~takler.client.transport.resolve_transport`
+            from ``transport_name``, ``connect_config`` and the environment
+            -- a :class:`~takler.client.grpc_transport.GrpcTransport` unless
+            ``http`` is selected (M3 task 8, ``takler[http]``). Injectable so
+            a test can drive the command surface without a wire.
+        transport_name
+            The highest precedence source of the transport selection
+            (``"grpc"`` or ``"http"``); ``None`` falls through to the
+            ``transport`` field of the Connect_Config ``server`` section,
+            then to ``TAKLER_TRANSPORT``, then to gRPC. Ignored when
+            ``transport`` is injected.
         """
         if transport is None:
-            # The resolution reads the environment and the config, neither of
-            # which changes during one command, so it happens once here rather
-            # than per channel or per call.
-            transport = GrpcTransport(
+            # Both resolutions read the environment and the config, neither
+            # of which changes during one command, so they happen once here
+            # rather than per channel or per call.
+            transport = build_client_transport(
+                resolve_transport(transport_name, connect_config),
                 host=host,
                 port=port,
                 single_timeout=single_timeout,

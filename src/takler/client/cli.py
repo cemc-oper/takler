@@ -34,6 +34,7 @@ from takler.client.exit_code import (
     exit_code_for_exception,
 )
 from takler.client.service_client import TaklerServiceClient
+from takler.client.transport import TRANSPORT_HTTP, resolve_transport
 from takler.exceptions import TaklerError
 from takler.logging import get_logger
 from takler.logging.config import resolve_config
@@ -182,18 +183,24 @@ def _create_client(
     host: Optional[str] = None,
     port: Optional[Union[str, int]] = None,
 ) -> TaklerServiceClient:
-    """Resolve the server address and build a client for it.
+    """Resolve the transport and the server address and build a client for it.
 
-    The Connect_Config is parsed once and used for both the address and the
-    ``security`` section, which is the third precedence level of the client's
-    TLS knobs (requirements 2.3, 2.5).
+    The Connect_Config is parsed once and used for the transport selection
+    (its ``server.transport`` field), the address (its ``server.address``
+    and, for an HTTP client, ``server.http.port``) and the ``security``
+    section, which is the third precedence level of the client's TLS knobs
+    (requirements 2.3, 2.5).
     """
     connect_config = _load_connect_config()
-    resolved_host, resolved_port = get_host_and_prot(host, port, connect_config)
+    transport_name = resolve_transport(None, connect_config)
+    resolved_host, resolved_port = get_host_and_prot(
+        host, port, connect_config, transport_name=transport_name
+    )
     return TaklerServiceClient(
         host=resolved_host,
         port=resolved_port,
         connect_config=connect_config,
+        transport_name=transport_name,
     )
 
 
@@ -533,6 +540,7 @@ def get_host_and_prot(
     host: Optional[str] = None,
     port: Optional[Union[str, int]] = None,
     connect_config: Optional[ConnectConfig] = None,
+    transport_name: Optional[str] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
     """
     get host and port.
@@ -550,6 +558,14 @@ def get_host_and_prot(
         An already parsed Connect_Config, so a caller that needs other sections
         of the same file does not have to read it twice. ``None`` keeps the
         previous behaviour of loading it from ``TAKLER_CONNECT_FILE``.
+    transport_name
+        The resolved client transport (``"grpc"`` or ``"http"``, M3 task 8).
+        With ``"http"`` and a Connect_Config carrying a ``server.http``
+        section, the config level of the port resolution answers
+        ``server.http.port`` -- the HTTP listener's port -- instead of the
+        gRPC one in ``server.address.port``. An explicit ``port`` argument
+        still takes its own precedence above the config, so a deployment
+        that publishes the HTTP port by hand is unaffected.
 
     Returns
     -------
@@ -569,6 +585,8 @@ def get_host_and_prot(
     if connect_config is not None:
         result_host = connect_config.server.address.hostname
         result_port = connect_config.server.address.port
+        if transport_name == TRANSPORT_HTTP and connect_config.server.http is not None:
+            result_port = connect_config.server.http.port
 
     if host is not None:
         result_host = host

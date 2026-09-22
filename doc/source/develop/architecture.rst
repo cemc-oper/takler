@@ -26,14 +26,17 @@
         end
         JOB["作业进程<br/>/bin/sh -c 派生"]
 
-        CLI -- "gRPC" --> GRPC
-        TUI -- "gRPC" --> GRPC
+        CLI -- "gRPC / HTTP" --> GRPC
+        CLI -- "gRPC / HTTP" --> HTTP
+        TUI -- "gRPC / HTTP" --> GRPC
+        TUI -- "gRPC / HTTP" --> HTTP
         GO -- "gRPC / HTTP" --> GRPC
         GO -- "gRPC / HTTP" --> HTTP
         GRPC --> SCHED
         HTTP --> SCHED
         SCHED -- "派生子进程" --> JOB
-        JOB -- "child 命令<br/>（gRPC 上报）" --> GRPC
+        JOB -- "child 命令<br/>（gRPC / HTTP 上报）" --> GRPC
+        JOB -- "child 命令<br/>（gRPC / HTTP 上报）" --> HTTP
         CKPT -.->|"读写快照文件"| DISK[("takler.check")]
 
 * **服务端进程** 是唯一持有节点树真源的进程。同一个 ``asyncio`` 事件
@@ -46,7 +49,10 @@
 * **客户端进程** 是无状态的命令行与界面：把运维命令（ ``requeue`` /
   ``suspend`` / ``show`` 等）翻译成 RPC 发出去，打印响应后退出
   （ TUI 则持续轮询 ``show`` ）。三个客户端共享同一份 proto 契约，
-  见 :doc:`/guide/cli` 。
+  见 :doc:`/guide/cli` 。Python 客户端的命令面之下是 transport 抽象
+  （ ``ClientTransport`` ）：默认 gRPC ，选择 ``http`` （
+  ``server.transport`` / ``TAKLER_TRANSPORT`` ）后同一套命令改走
+  HTTP 服务端口，TUI 自身不感知协议（ M3 任务 8 ）。
 * **作业进程** 由服务端用 ``/bin/sh -c`` 派生，是服务端机器上的子进程
   。它与服务端的唯一联系是脚本里 ``head.takler`` / ``tail.takler``
   调用的 child 命令（ ``init`` / ``complete`` / ``abort`` /

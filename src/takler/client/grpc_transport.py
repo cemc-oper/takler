@@ -13,8 +13,9 @@ that speaks gRPC. It owns everything the gRPC wire imposes on a call:
   the pb2 response into the response DTO, both through
   :mod:`takler.server.protocol.adapter`, the one module that knows both
   ``takler_pb2`` and the command model;
-* the Credential_Metadata, built in the same one place
-  (:meth:`GrpcTransport._build_metadata`) from the command's
+* the Credential_Metadata, built in the one place both client transports
+  share (:func:`takler.client.transport.build_credential_pairs`, reached
+  through :meth:`GrpcTransport._build_metadata`) from the command's
   :class:`~takler.client.retry.CommandKind` (m2 requirement 8.1), so no
   command call site carries credential code. Where the credentials come from
   is :mod:`takler.client.credentials`'s business;
@@ -22,7 +23,11 @@ that speaks gRPC. It owns everything the gRPC wire imposes on a call:
   per-attempt deadline so a wedged connection cannot block a job script
   forever (requirement 9.2), backoff retry on transport-level failures until
   the Retry_Window is exhausted (requirements 9.3 - 9.6), and the mapping of
-  gRPC status codes to takler exceptions (requirement 9.8).
+  gRPC status codes to takler exceptions (requirement 9.8). Since M3 task 8
+  the loop itself is the transport-neutral
+  :func:`~takler.client.retry.run_with_retry`; what stays here is the gRPC
+  invocation shape and the status-code classification
+  (:func:`classify_grpc_error`).
 
 Business failures are *not* retried: a response carrying a non-zero ``flag``
 is handed back to the caller unchanged (requirement 9.7), and the CLI turns
@@ -34,7 +39,6 @@ Requirements: 9.1, 9.2, 9.5, 9.6, 9.7, 9.8, 11.4, 11.5, 11.6,
 
 from __future__ import annotations
 
-import os
 import ssl
 import time
 from pathlib import Path
@@ -42,30 +46,21 @@ from typing import Any, Callable, List, Mapping, Optional, Tuple, TypeVar, Union
 
 import grpc
 
-from takler.client.credentials import (
-    ENV_JOB_PASSWORD,
-    METADATA_KEY_JOB_PASSWORD,
-    METADATA_KEY_SECRET,
-    METADATA_KEY_USER,
-    current_user_name,
-    read_first_secret,
-)
 from takler.client.retry import (
     COMMAND_KIND_BY_COMMAND,
     DEFAULT_SINGLE_TIMEOUT,
     NON_RETRYABLE_EXCEPTION_BY_STATUS,
     RETRYABLE_STATUS_CODES,
     CommandKind,
+    FailureCategory,
+    FailureVerdict,
     RetryPolicy,
     resolve_retry_window,
+    run_with_retry,
 )
-from takler.client.transport import ClientTransport
+from takler.client.transport import ClientTransport, build_credential_pairs
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
-from takler.exceptions import (
-    ClientConnectionError,
-    InvalidRequestError,
-    TransportError,
-)
+from takler.exceptions import InvalidRequestError
 from takler.logging import get_logger
 from takler.protocol.commands import Command, ProtocolModel
 from takler.server.protocol import adapter
@@ -205,6 +200,47 @@ def _status_details(exc: grpc.RpcError) -> str:
         return ""
 
 
+def classify_grpc_error(exc: Exception) -> FailureVerdict:
+    """Classify one failed gRPC attempt into a transport-neutral verdict.
+
+    The mapping is the gRPC share of the Call_Wrapper's classification
+    (requirements 9.3, 9.8): the status codes of
+    :data:`~takler.client.retry.NON_RETRYABLE_EXCEPTION_BY_STATUS` answer
+    :attr:`~takler.client.retry.FailureCategory.NON_RETRYABLE` with the
+    exception the client raises, the codes of
+    :data:`~takler.client.retry.RETRYABLE_STATUS_CODES` answer
+    :attr:`~takler.client.retry.FailureCategory.RETRYABLE`, and any other
+    status is :attr:`~takler.client.retry.FailureCategory.FATAL`.
+
+    An exception that is not a :class:`grpc.RpcError` is not classified but
+    re-raised: only a wire failure may enter the retry loop's decision, never
+    a programming error of the caller.
+    """
+    if not isinstance(exc, grpc.RpcError):
+        raise exc
+
+    code = _status_code(exc)
+    status_name = _status_name(code)
+    details = _status_details(exc)
+    failure_name = f"gRPC status {status_name}"
+    log_field = f"status={status_name}"
+
+    exception_type = NON_RETRYABLE_EXCEPTION_BY_STATUS.get(code)
+    if exception_type is not None:
+        return FailureVerdict(
+            FailureCategory.NON_RETRYABLE,
+            failure_name,
+            log_field,
+            details,
+            exception_type,
+        )
+
+    if code not in RETRYABLE_STATUS_CODES:
+        return FailureVerdict(FailureCategory.FATAL, failure_name, log_field, details)
+
+    return FailureVerdict(FailureCategory.RETRYABLE, failure_name, log_field, details)
+
+
 class GrpcTransport(ClientTransport):
     """The gRPC implementation of the client transport.
 
@@ -342,26 +378,13 @@ class GrpcTransport(ClientTransport):
     def _build_metadata(self, kind: CommandKind) -> List[Tuple[str, str]]:
         """Build the Credential_Metadata one logical call of ``kind`` carries.
 
-        A Child_Command carries ``takler-pass`` taken from ``TAKLER_PASS``
-        (requirement 8.2); unset or whitespace-only means the key is left out
-        (requirement 8.3). Every other kind is an Operator_Command, which carries
-        ``takler-user`` (requirement 8.4) and, when a secret file is configured
-        and holds a secret, ``takler-secret`` (requirement 8.5).
-
-        ``CommandKind.CONTROL`` and ``CommandKind.QUERY`` are both Operator, so
-        ``ping`` carries credentials it does not need. The server does not check
-        them on a ``PUBLIC`` method, and the redundancy saves the client a second
-        per-method classification table.
-
-        An absent credential is left out and the call goes ahead, letting the
-        server decide whether to refuse it (requirements 8.3, 8.7, 8.8). Failing
-        here instead would stop a client from talking to a server running with
-        ``Auth_Mode=disabled``, which is the default.
-
-        Nothing on this path logs a value (requirements 8.9, 12.7): the WARNING
-        for an unusable secret file is
-        :func:`~takler.client.credentials.read_first_secret`'s, and it names the
-        path and the reason only.
+        The pairs come from the shared
+        :func:`~takler.client.transport.build_credential_pairs` -- the same
+        builder the HTTP transport turns into request headers (m2 requirement
+        8.1, shared since M3 task 8). They are built once per logical call and
+        handed to every attempt: once per logical call rather than once per
+        attempt because a retry is the same call, and re-reading the secret
+        file mid-retry would let a rotation land halfway through one command.
 
         Parameters
         ----------
@@ -374,25 +397,7 @@ class GrpcTransport(ClientTransport):
         empty. The order matches the documented key order of the
         Cross-Language Contract.
         """
-        if kind is CommandKind.CHILD:
-            password = os.environ.get(ENV_JOB_PASSWORD)
-            if password is not None and password.strip():
-                return [(METADATA_KEY_JOB_PASSWORD, password)]
-            return []
-
-        metadata: List[Tuple[str, str]] = []
-        # A Child_Command never carries an operator credential, and an
-        # Operator_Command never carries the job password: the two credential
-        # sets stay disjoint, so a job script's ``TAKLER_PASS`` cannot leak into
-        # a control call.
-        secret = read_first_secret(self.secret_file)
-        if secret is not None:
-            metadata.append((METADATA_KEY_SECRET, secret))
-
-        user_name = current_user_name()
-        if user_name is not None:
-            metadata.append((METADATA_KEY_USER, user_name))
-        return metadata
+        return build_credential_pairs(kind, self.secret_file)
 
     # Call wrapper -------------------------------------------------------
 
@@ -416,6 +421,13 @@ class GrpcTransport(ClientTransport):
         kind: CommandKind,
     ) -> T:
         """Invoke ``rpc`` with timeout, retry and error mapping.
+
+        The retry loop itself is the transport-neutral
+        :func:`~takler.client.retry.run_with_retry`; what stays gRPC-specific
+        here is the invocation shape (``timeout=`` + ``metadata=`` on every
+        attempt) and the classification of :class:`grpc.RpcError` into a
+        :class:`~takler.client.retry.FailureVerdict`
+        (:func:`classify_grpc_error`).
 
         Parameters
         ----------
@@ -444,52 +456,12 @@ class GrpcTransport(ClientTransport):
         TransportError
             For any other gRPC status code.
         """
-        # Credential_Metadata is built here, once per logical call, and handed
-        # to every attempt (m2 requirement 8.1). Once per logical call rather
-        # than once per attempt because a retry is the same call: re-reading the
-        # secret file mid-retry would let a rotation land halfway through one
-        # command. And here rather than in the RPC methods because that is what
-        # keeps credential handling out of all twenty of them.
         metadata = self._build_metadata(kind)
         policy = self._retry_policy(kind)
-        started = policy.clock()
-        attempt = 0
-
-        while True:
-            attempt += 1
-            try:
-                return rpc(request, timeout=policy.single_timeout, metadata=metadata)
-            except grpc.RpcError as exc:
-                code = _status_code(exc)
-                status_name = _status_name(code)
-                details = _status_details(exc)
-
-                # Non retryable status codes: the request itself is wrong, so
-                # spending the retry window on it only delays the error.
-                exception_type = NON_RETRYABLE_EXCEPTION_BY_STATUS.get(code)
-                if exception_type is not None:
-                    raise exception_type(
-                        f"{operation_name} on server {self.listen_address} "
-                        f"failed with gRPC status {status_name}: {details}"
-                    ) from exc
-
-                if code not in RETRYABLE_STATUS_CODES:
-                    raise TransportError(
-                        f"{operation_name} on server {self.listen_address} "
-                        f"failed with gRPC status {status_name}: {details}"
-                    ) from exc
-
-                elapsed = policy.clock() - started
-                delay = policy.next_delay(attempt, elapsed)
-                if delay is None:
-                    raise ClientConnectionError(
-                        f"server {self.listen_address} is unreachable after "
-                        f"{attempt} attempts, "
-                        f"last gRPC status {status_name}"
-                    ) from exc
-
-                logger.warning(
-                    f"retry {operation_name} to {self.listen_address}: "
-                    f"elapsed={elapsed:.1f}s, status={status_name}"
-                )
-                policy.sleep(delay)
+        return run_with_retry(
+            policy,
+            operation_name,
+            self.listen_address,
+            lambda: rpc(request, timeout=policy.single_timeout, metadata=metadata),
+            classify_grpc_error,
+        )

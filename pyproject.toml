@@ -54,13 +54,15 @@ tui = [
 log = [
     "loguru>=0.7",
 ]
-# HTTP transport (M3): FastAPI server side and, from task 8 on, the httpx
-# client side. The default install stays gRPC-only; the server mounts the
-# HTTP listener only when connect.yaml asks for it, so a deployment without
-# this extra never notices.
+# HTTP transport (M3): FastAPI server side (task 7) and httpx client side
+# (task 8). The default install stays gRPC-only; the server mounts the HTTP
+# listener only when connect.yaml asks for it and the client selects it only
+# through server.transport / TAKLER_TRANSPORT, so a deployment without this
+# extra never notices.
 http = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "httpx>=0.27",
 ]
 
 [project.scripts]

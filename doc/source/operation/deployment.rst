@@ -237,3 +237,33 @@ TLS 有两种配置方式，推荐第一种：
 分大小写）。取值来源与 gRPC 客户端一致：作业脚本内是注入的
 ``TAKLER_PASS`` ，运维命令是 ``TAKLER_SECRET_FILE`` 指向的密钥文件
 与当前 OS 用户名，见 :doc:`/operation/security` 。
+
+客户端经 HTTP 连接
+~~~~~~~~~~~~~~~~~~
+
+Python 客户端（ ``takler-client-py`` 、 ``TaklerServiceClient`` 与
+TUI ）默认仍走 gRPC ；改用 HTTP transport 的取值优先级链为：显式参
+数 ``TaklerServiceClient(transport_name=...)`` > ``connect.yaml``
+的 ``server.transport`` 字段 > ``TAKLER_TRANSPORT`` 环境变量（
+``http`` / ``grpc`` ） > 默认 gRPC 。选择 HTTP 且 ``connect.yaml``
+含 ``server.http`` 小节时，客户端自动改拨 ``server.http.port`` ；不
+含 ``http`` 小节或不用配置文件时，由 ``--port`` / ``TAKLER_PORT``
+给出 HTTP 端口。HTTP transport 随 ``takler[http]`` extra 提供，未安
+装时选择 ``http`` 会在客户端构造时报错并指明安装方式。重试窗口、退
+避与退出码在两种 transport 下语义一致（同一套 transport 无关的失
+败分类与共享重试循环），作业脚本无需感知协议差异。
+
+作业脚本经 HTTP 回调的典型形态：
+
+.. code-block:: bash
+
+    export TAKLER_TRANSPORT=http
+    export TAKLER_PORT=33084        # 服务端 server.http.port
+    takler-client-py init --task-id "$TAKLER_RID"
+
+HTTP 客户端的 TLS 与 gRPC 客户端同规： ``TAKLER_TLS_CA_FILE`` （或
+``security.ca_file`` ）配置 CA 证书后 base URL 切到 ``https`` ，不
+配置则为明文——推荐由前置反向代理终止 TLS 。注意
+``TAKLER_TLS_SERVER_NAME`` 的证书主机名覆盖在 HTTP 下**不生效**
+（ httpx 总是按 URL 主机名校验证书），配置后客户端会记一条
+WARNING ；证书名与连接主机名不一致的场景请使用 gRPC transport 。

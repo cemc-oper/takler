@@ -1783,6 +1783,7 @@ dependencies = [
 [package.optional-dependencies]
 http = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "uvicorn" },
 ]
 log = [
@@ -1829,6 +1830,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.13" },
     { name = "fastapi", marker = "extra == 'http'", specifier = ">=0.115" },
     { name = "grpcio", specifier = ">=1.80" },
+    { name = "httpx", marker = "extra == 'http'", specifier = ">=0.27" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "lark", specifier = ">=1.3" },
     { name = "loguru", marker = "extra == 'log'", specifier = ">=0.7" },
