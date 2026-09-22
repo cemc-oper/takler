@@ -131,7 +131,11 @@ class NodeTree(Tree[str]):
     def __init__(self) -> None:
         super().__init__("bunch", id="node-tree")
         # path -> tree node, for the *real* nodes only (not attribute rows).
-        self._tree_nodes: Dict[str, TreeNode[str]] = {}
+        # Named ``_path_nodes`` rather than ``_tree_nodes``: the ``Tree``
+        # base class already owns a ``_tree_nodes`` id -> node index, and
+        # shadowing it silently broke ``Tree`` internals that rely on it
+        # (caught by the TUI test skeleton).
+        self._path_nodes: Dict[str, TreeNode[str]] = {}
 
     def on_mount(self) -> None:
         self.show_root = False
@@ -149,13 +153,13 @@ class NodeTree(Tree[str]):
         would snap the whole tree back to fully-expanded and drop the
         selection, which is jarring during monitoring.
         """
-        first_build = not self._tree_nodes
-        previous_paths = set(self._tree_nodes)
+        first_build = not self._path_nodes
+        previous_paths = set(self._path_nodes)
         expanded_paths = self._expanded_paths()
         cursor_path = self._cursor_path()
 
         self.clear()
-        self._tree_nodes.clear()
+        self._path_nodes.clear()
 
         for root_path in snapshot.roots:
             self._add_subtree(self.root, snapshot, root_path)
@@ -171,7 +175,7 @@ class NodeTree(Tree[str]):
 
     def _expanded_paths(self) -> set[str]:
         """Paths whose tree node is currently expanded."""
-        return {path for path, node in self._tree_nodes.items() if node.is_expanded}
+        return {path for path, node in self._path_nodes.items() if node.is_expanded}
 
     def _cursor_path(self) -> Optional[str]:
         """Path under the tree cursor, if it maps to a real node."""
@@ -191,7 +195,7 @@ class NodeTree(Tree[str]):
         time. Brand-new nodes (not in ``previous_paths``) keep the
         default-open behaviour.
         """
-        for path, node in self._tree_nodes.items():
+        for path, node in self._path_nodes.items():
             if not node.allow_expand:
                 continue
             was_known = path in previous_paths
@@ -201,7 +205,7 @@ class NodeTree(Tree[str]):
     def _restore_cursor(self, cursor_path: Optional[str]) -> None:
         if cursor_path is None:
             return
-        tree_node = self._tree_nodes.get(cursor_path)
+        tree_node = self._path_nodes.get(cursor_path)
         if tree_node is None:
             return
         line = tree_node.line
@@ -225,7 +229,7 @@ class NodeTree(Tree[str]):
             tree_node = parent.add_leaf(label, data=path)
         else:
             tree_node = parent.add(label, data=path, expand=True)
-        self._tree_nodes[path] = tree_node
+        self._path_nodes[path] = tree_node
 
         # Inline attribute rows come first so they sit visually closer
         # to the owning node. Their ``data`` is the owning node's path,
@@ -266,11 +270,11 @@ class NodeTree(Tree[str]):
         not the node itself; this distinguishes the two.
         """
         data = tree_node.data
-        return isinstance(data, str) and self._tree_nodes.get(data) is tree_node
+        return isinstance(data, str) and self._path_nodes.get(data) is tree_node
 
     def select_path(self, path: str) -> None:
         """Move the cursor to the tree row for ``path`` (if visible)."""
-        tree_node = self._tree_nodes.get(path)
+        tree_node = self._path_nodes.get(path)
         if tree_node is None:
             return
         # ``TreeNode.line`` is the node's displayed line (or -1 when the

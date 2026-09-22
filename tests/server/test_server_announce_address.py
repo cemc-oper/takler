@@ -14,9 +14,7 @@ from takler.server import TaklerServer
 
 
 def _announced(server: TaklerServer) -> dict:
-    return {
-        p.name: p.value for p in server.bunch.server_state.server_parameters
-    }
+    return {p.name: p.value for p in server.bunch.server_state.server_parameters}
 
 
 def test_default_arguments_announce_default_host_and_port():

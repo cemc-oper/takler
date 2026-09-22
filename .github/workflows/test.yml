@@ -106,6 +106,13 @@ jobs:
           echo "statement coverage below 85% for:$failed" >&2
           exit 1
         fi
+    # M3 task 11 gates the TUI package too. The floor is a transitional 60%
+    # (Q4 in doc/2026-09-17-m3-protocol-decoupling/m3-tasks.md): the skeleton
+    # tests already hold the package well above it, and the value is meant to
+    # be raised in steps as the pilot tests deepen, not to be the end state.
+    - name: Coverage gate for the TUI
+      run: |
+        uv run coverage report --include="src/takler/tui/*" --fail-under=60
 
   proto-drift:
 

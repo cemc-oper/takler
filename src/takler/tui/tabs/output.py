@@ -314,32 +314,6 @@ class OutputTab(Vertical):
                 key=str(row.path),
             )
 
-    def _render_log(self, path: Path, *, prefix: Optional[str] = None) -> None:
-        title = f"{prefix}: {path}" if prefix else str(path)
-        self._title.update(f"{title} (last {_TAIL_LINES} lines)")
-        self._log.clear()
-        try:
-            with path.open("r", errors="replace") as fp:
-                lines = fp.readlines()
-        except OSError as exc:
-            self._log.write(Text(f"read error: {exc}", style="bold red"))
-            return
-        for line in lines[-_TAIL_LINES:]:
-            self._log.write(line.rstrip("\n"))
-
-    def _render_log(self, path: Path, *, prefix: Optional[str] = None) -> None:
-        title = f"{prefix}: {path}" if prefix else str(path)
-        self._title.update(f"{title} (last {_TAIL_LINES} lines)")
-        self._log.clear()
-        try:
-            with path.open("r", errors="replace") as fp:
-                lines = fp.readlines()
-        except OSError as exc:
-            self._log.write(Text(f"read error: {exc}", style="bold red"))
-            return
-        for line in lines[-_TAIL_LINES:]:
-            self._log.write(line.rstrip("\n"))
-
     # -- File discovery ---------------------------------------------
 
     @staticmethod
