@@ -87,6 +87,12 @@
         取值记 WARNING 后按命令类默认
       - child 命令 ``86400`` ，其余 ``60``
       - :doc:`/guide/cli`
+    * - ``TAKLER_TRANSPORT``
+      - 客户端使用的 transport ， ``grpc`` / ``http`` ；无法识别的取值
+        记 WARNING 后按 ``grpc`` 。优先级低于显式参数与
+        ``connect.yaml`` 的 ``server.transport``
+      - ``grpc``
+      - :doc:`/operation/deployment`
     * - ``TAKLER_TLS_CA_FILE``
       - 客户端信任的 CA 证书。文件不可用时报错于**请求发出之前**
         （退出码 ``1`` ）
@@ -127,7 +133,8 @@
 
     ``takler-tui`` 的地址解析顺序与 CLI 相反——``connect.yaml`` 的
     优先级**高于** ``--host`` / ``--port`` ，见 :doc:`/guide/tui`
-    。TUI 不读取 ``security`` 段。
+    。TUI 与 Python 客户端走同一条解析链： ``security`` 段与
+    ``server.transport`` 对 TUI 同样生效。
 
 作业脚本变量
 ~~~~~~~~~~~~
@@ -161,6 +168,17 @@ connect.yaml 配置项
     * - ``server.address.port``
       - 无（必填）
       - ``--port`` > 本字段 > ``33083``
+    * - ``server.http.host`` / ``server.http.port``
+      - ``0.0.0.0`` / 无（ ``http`` 小节存在时必填）
+      - 无； ``http`` 小节存在即在独立端口挂 HTTP transport （需
+        ``takler[http]`` ），省略则保持 gRPC-only
+    * - ``server.http.tls_cert_file`` / ``server.http.tls_key_file``
+      - 回落到 gRPC 证书对
+      - 无；成对配置，只配置其一终止启动
+    * - ``server.transport``
+      - ``grpc``
+      - **客户端** 侧： 显式参数 > 本字段 > ``TAKLER_TRANSPORT`` >
+        ``grpc`` ；服务端忽略本字段
     * - ``checkpoint.interval``
       - ``120`` 秒
       - ``--checkpoint-interval`` > 本字段（小于 ``10`` 回退 ``120`` ）
