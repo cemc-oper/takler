@@ -24,6 +24,7 @@ sink / swim 状态传播、依赖解析入口、触发器表达式管线与序�
 
    architecture
    core-design
+   definition
    protocol
    contributing
    extending
