@@ -1207,6 +1207,26 @@ class Node(ABC):
 
         return None
 
+    def validate_limit_references(self) -> List[str]:
+        """Validate this subtree after construction; return all missing references.
+
+        Builders and begin callers can report these diagnostics before mutation.
+        This does not test capacity or reserve tokens.
+        """
+        errors = self.in_limit_manager.validate_references()
+        for child in self.children:
+            errors.extend(child.validate_limit_references())
+        return errors
+
+    def unresolved_limits_up(self) -> List[str]:
+        """Return missing references required by this node and its ancestors."""
+        errors = []
+        node = self
+        while node is not None:
+            errors.extend(node.in_limit_manager.validate_references())
+            node = node.parent
+        return errors
+
     def check_in_limit_up(self) -> bool:
         """
         Check if all ``InLimit`` have enough tokens up along the tree.
@@ -1236,6 +1256,9 @@ class Node(ABC):
         limit_set
             A set to save changed ``Limit``, to make sure one Limit is incremented only once.
         """
+        # Preflight the entire ancestry before changing any token counter.
+        if self.unresolved_limits_up():
+            return
         node_path = self.node_path
         self.in_limit_manager.increment_in_limit(limit_set, node_path)
 

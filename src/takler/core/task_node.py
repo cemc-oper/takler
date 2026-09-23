@@ -96,6 +96,9 @@ class Task(Node):
         if self.parent:
             self.parent.swim_status_change_only()
 
+    def sink_status_change(self, node_status: NodeStatus):
+        self.set_node_status(node_status)
+
     def handle_status_change(self):
         self.update_limits()
 
@@ -115,11 +118,8 @@ class Task(Node):
             self.decrement_in_limit(limit_set)
         elif status == NodeStatus.aborted:
             self.decrement_in_limit(limit_set)
-        elif status == NodeStatus.submitted:
+        elif status in (NodeStatus.submitted, NodeStatus.active):
             self.increment_in_limit(limit_set)
-        elif status == NodeStatus.active:
-            # TODO: When submitted is absent, active should increment limit
-            pass
         else:
             self.decrement_in_limit(limit_set)
 
@@ -143,6 +143,10 @@ class Task(Node):
         if node_status == NodeStatus.aborted:
             return False
 
+        missing_limits = self.unresolved_limits_up()
+        if missing_limits:
+            logger.debug("limit dependency blocked: " + "; ".join(missing_limits))
+            return False
         if not self.check_in_limit_up():
             return False
 

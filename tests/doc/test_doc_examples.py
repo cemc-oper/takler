@@ -1827,7 +1827,7 @@ def test_guide_attributes_in_limit_reference_resolution():
     """guide/attributes/limit.rst 引用解析 section: with ``node_path=None`` the limit is
     looked up along the parent chain (nearest wins); with an explicit
     ``node_path`` only that node is searched; an unresolvable in-limit marker
-    is silently ignored and does not block the task.
+    blocks the task until its reference can be resolved.
     """
     from takler.core import Flow
 
@@ -1845,13 +1845,13 @@ def test_guide_attributes_in_limit_reference_resolution():
     # Explicit node_path searches only that node: /test/t2 has no limit.
     task2 = group1.add_task("t2")
     task2.add_in_limit("outer", node_path="/test/g/t2")
-    assert task2.in_limit_manager.in_limit() is True
+    assert task2.in_limit_manager.in_limit() is False
     assert task2.in_limit_manager.in_limit_list[0].limit is None
 
-    # A marker naming a limit that exists nowhere is ignored, not blocking.
+    # A missing limit blocks dependency checks.
     task3 = group1.add_task("t3")
     task3.add_in_limit("no_such_limit")
-    assert task3.check_in_limit_up() is True
+    assert task3.check_in_limit_up() is False
 
 
 def test_guide_attributes_limit_tokens_lifecycle():

@@ -173,3 +173,25 @@ Shell 提交失败回调
 run_id 或请求去重。进程重启不会恢复本地回调；在途口令仍按 checkpoint
 的独立映射恢复。提交与失败日志会隐藏该次作业口令的原文，不保证识别
 任意外部命令中的其他机密或经过编码的口令。
+
+Limit reference validation
+--------------------------
+
+Every required limit reference must resolve before a task can pass dependency
+checks. A missing reference blocks scheduling even when other limits have free
+tokens. Debug diagnostics include the node declaring the reference, the limit
+name and the reference path. Absolute paths can refer to another flow in the
+same bunch; relative paths follow the usual sibling-relative node lookup rules.
+
+After assembling a definition, call ``flow.validate_limit_references()`` (or
+``bunch.validate_limit_references()``) to collect all unresolved references.
+An empty list means that references resolve; it does not guarantee available
+capacity. This explicit validation does not reserve tokens or reject intermediate
+``add_*`` operations. Begin does not automatically reject missing references;
+builders and callers can use the validation result before beginning a flow.
+
+Token reservation preflights all references on the task and its ancestors, so
+an unresolved reference cannot produce a partial reservation. Direct entry into
+active state, including force and adopted init, reserves tokens once. Recursive
+force also updates descendant task accounting. Force may exceed capacity; it
+remains an operator override. Missing references still prevent reservation.

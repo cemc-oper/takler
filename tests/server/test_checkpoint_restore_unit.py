@@ -190,8 +190,9 @@ def test_restore_keeps_event_meter_limit_and_repeat_values(tmp_path):
     assert task1.find_event("done").value is True
     assert task1.find_meter("progress").value == 42
     limit = manager.bunch.find_flow("flow1").find_limit("disk")
-    assert limit.value == 2
-    assert limit.node_paths == {"/flow1/container1/task2"}
+    # Both direct-active task1 and submitted task2 occupy two tokens.
+    assert limit.value == 4
+    assert limit.node_paths == {"/flow1/container1/task1", "/flow1/container1/task2"}
 
 
 def test_restore_keeps_task_id_try_no_and_aborted_reason(tmp_path):

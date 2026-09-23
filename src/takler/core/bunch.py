@@ -98,6 +98,12 @@ class Bunch(NodeContainer):
         flow.bunch = self
         return flow
 
+    def validate_limit_references(self) -> List[str]:
+        errors = super().validate_limit_references()
+        for flow in self.flows.values():
+            errors.extend(flow.validate_limit_references())
+        return errors
+
     def find_flow(self, name: str) -> Optional[Flow]:
         return self.flows.get(name, None)
 

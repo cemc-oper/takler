@@ -39,6 +39,16 @@ class NodeContainer(Node):
         #     return
 
         self.sink_status_change_only(node_status)
+        # Recursive force changes all statuses first; update task accounting
+        # before computing aggregate state (which may advance repeats).
+        from .task_node import Task
+
+        pending = list(self.children)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, Task):
+                node.update_limits()
+            pending.extend(node.children)
         self.handle_status_change()
 
     def handle_status_change(self):

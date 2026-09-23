@@ -298,17 +298,20 @@ class InLimitManager:
 
         self.resolve_in_limit_references()
 
-        valid_in_limit_count = 0
-        fitted_in_limit_count = 0
-        for item in self.in_limit_list:
-            if item.limit is None:
-                continue
+        return all(
+            item.limit is not None and item.limit.in_limit(item.tokens)
+            for item in self.in_limit_list
+        )
 
-            valid_in_limit_count += 1
-            if item.limit.in_limit(item.tokens):
-                fitted_in_limit_count += 1
-
-        return valid_in_limit_count == fitted_in_limit_count
+    def validate_references(self) -> List[str]:
+        """Return unresolved reference diagnostics without reserving tokens."""
+        self.resolve_in_limit_references()
+        return [
+            f"{self.node.node_path}: unresolved limit {item.limit_name!r} "
+            f"(reference: {item.node_path if item.node_path is not None else 'self/ancestors'})"
+            for item in self.in_limit_list
+            if item.limit is None
+        ]
 
     # Change ------------------------------------------
 
@@ -328,13 +331,14 @@ class InLimitManager:
         if len(self.in_limit_list) == 0:
             return
 
-        self.resolve_in_limit_references()
+        if self.validate_references():
+            return
 
         for item in self.in_limit_list:
             current_limit = item.limit
             if current_limit is None:
                 continue
-            if current_limit in limit_set:
+            if any(limit is current_limit for limit in limit_set):
                 continue
 
             limit_set.add(current_limit)
@@ -362,7 +366,7 @@ class InLimitManager:
             current_limit = item.limit
             if current_limit is None:
                 continue
-            if current_limit in limit_set:
+            if any(limit is current_limit for limit in limit_set):
                 continue
 
             limit_set.add(current_limit)
@@ -391,7 +395,13 @@ class InLimitManager:
                 in_limit.set_limit(limit)
             return
         else:
-            reference_node = self.node.find_node(in_limit.node_path)
+            bunch = self.node.get_bunch()
+            if in_limit.node_path.startswith("/") and bunch is not None:
+                reference_node = bunch.find_node(in_limit.node_path)
+            elif in_limit.node_path == "/":
+                reference_node = None
+            else:
+                reference_node = self.node.find_node(in_limit.node_path)
             if reference_node is None:
                 return
 
