@@ -557,7 +557,6 @@ def test_step13_begin_starts_calendar_and_rejects_second_begin():
     is refused; ``--force`` begins it again.
     """
     from takler.core import Bunch, NodeStatus
-    from takler.exceptions import FlowStateError
     from takler.protocol.commands import BeginCommand
     from takler.server.scheduler import Scheduler
 
@@ -572,8 +571,9 @@ def test_step13_begin_starts_calendar_and_rejects_second_begin():
     assert flow.begun is True
     assert flow.state.node_status == NodeStatus.queued
 
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_begin(BeginCommand(flow_name="test"))
+    response = scheduler.run_command_begin(BeginCommand(flow_name="test"))
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
     # ``--force`` begins an already begun flow again.
     scheduler.run_command_begin(BeginCommand(flow_name="test", force=True))
@@ -586,7 +586,6 @@ def test_step13_control_commands_require_a_begun_flow():
     before its first ``begin``) rejects these commands with a flow-state error.
     """
     from takler.core import Bunch
-    from takler.exceptions import FlowStateError
     from takler.protocol.commands import (
         ForceCommand,
         FreeDepCommand,
@@ -599,16 +598,22 @@ def test_step13_control_commands_require_a_begun_flow():
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     scheduler.bunch.add_flow(module.create_flow())
 
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_requeue(RequeueCommand(node_paths=["/test"]))
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_run(RunCommand(node_paths=["/test/t1"]))
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_force(ForceCommand(paths=["/test/t1"], state="complete"))
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_free_dep(
-            FreeDepCommand(paths=["/test/t3"], dep_type="time")
-        )
+    response = scheduler.run_command_requeue(RequeueCommand(node_paths=["/test"]))
+    assert response.flag == 16
+    assert response.results[0].flag == 14
+    response = scheduler.run_command_run(RunCommand(node_paths=["/test/t1"]))
+    assert response.flag == 16
+    assert response.results[0].flag == 14
+    response = scheduler.run_command_force(
+        ForceCommand(paths=["/test/t1"], state="complete")
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
+    response = scheduler.run_command_free_dep(
+        FreeDepCommand(paths=["/test/t3"], dep_type="time")
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
 
 def test_step13_suspending_a_flow_blocks_its_whole_subtree():

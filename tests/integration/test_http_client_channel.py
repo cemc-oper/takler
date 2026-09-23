@@ -363,7 +363,8 @@ def test_http_client_auth_is_refused_and_accepted_like_grpc(
     try:
         refused = operator.run_command_begin(flow_name=FLOW_NAME)
         assert refused.flag != 0
-        assert "NodeNotFoundError" in refused.message
+        assert refused.flag == 16
+        assert refused.results[0].flag == 10
 
         flow_file = _write_flow_definition(tmp_path)
         assert operator.run_command_load(flow_file_path=str(flow_file)).flag == 0

@@ -256,6 +256,8 @@ class AuditRecord:
     target: List[str]
     outcome: str
     error_code: int
+    reason: Optional[str] = None
+    results: Optional[List[dict]] = None
 
     def to_json_line(self) -> str:
         """Serialize to a single-line JSON object (Requirement 11.5).
@@ -274,7 +276,10 @@ class AuditRecord:
             One line of JSON, with no trailing newline. Emitting the line is
             the logging backend's job.
         """
-        line = json.dumps(dataclasses.asdict(self), ensure_ascii=False)
+        line = json.dumps(
+            {k: v for k, v in dataclasses.asdict(self).items() if v is not None},
+            ensure_ascii=False,
+        )
         for char in _EXTRA_LINE_BOUNDARIES:
             if char in line:
                 line = line.replace(char, f"\\u{ord(char):04x}")

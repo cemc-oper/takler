@@ -383,7 +383,8 @@ def test_control_command_success_writes_exactly_one_record(
     assert record["error_code"] == 0
     assert record["target"] == expected_target
     assert record["peer"] == PEER
-    assert set(record) == {
+    extra = {"reason", "results"} if method != "RunCommandLoad" else set()
+    assert set(record) - extra == {
         "timestamp",
         "event",
         "command",

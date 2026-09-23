@@ -99,7 +99,21 @@ class RecordingStub:
             self.invocations.append((name, request))
             # One namespace shaped like every response message, so the
             # response decoding of any command finds its fields.
-            return SimpleNamespace(flag=0, message="", output="", coroutines=[])
+            targets = list(getattr(request, "node_path", getattr(request, "path", [])))
+            if hasattr(request, "flow_name") and request.flow_name:
+                targets = ["/" + request.flow_name]
+            return SimpleNamespace(
+                flag=0,
+                message="",
+                output="",
+                coroutines=[],
+                results=[
+                    SimpleNamespace(
+                        index=i, target=t, flag=0, message="", effect="applied"
+                    )
+                    for i, t in enumerate(targets)
+                ],
+            )
 
         return rpc
 

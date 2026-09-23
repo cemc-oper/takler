@@ -46,6 +46,8 @@ from typing import Any, Callable, List, Mapping, Optional, Tuple, TypeVar, Union
 
 import grpc
 
+from takler.protocol.commands import BATCH_COMMANDS
+from takler.protocol.batch import validate_batch_response
 from takler.client.retry import (
     COMMAND_KIND_BY_COMMAND,
     DEFAULT_SINGLE_TIMEOUT,
@@ -371,7 +373,12 @@ class GrpcTransport(ClientTransport):
         request = adapter.request_to_pb2(command, payload)
         rpc = getattr(self.stub, adapter.GRPC_METHOD_BY_COMMAND[command])
         response = self._call(command.value, rpc, request, kind)
-        return adapter.response_from_pb2(command, response)
+        decoded = adapter.response_from_pb2(command, response)
+        return (
+            validate_batch_response(command, payload, decoded)
+            if command in BATCH_COMMANDS
+            else decoded
+        )
 
     # Credential metadata -----------------------------------------------
 
@@ -458,6 +465,8 @@ class GrpcTransport(ClientTransport):
         """
         metadata = self._build_metadata(kind)
         policy = self._retry_policy(kind)
+        if operation_name in {command.value for command in BATCH_COMMANDS}:
+            policy.retry_window = 0
         return run_with_retry(
             policy,
             operation_name,

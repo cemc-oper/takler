@@ -65,6 +65,7 @@ EXIT_CODE_BY_ERROR_CODE: Dict[int, int] = {
     12: EXIT_REQUEST_ERROR,  # node_type
     13: EXIT_REQUEST_ERROR,  # unsupported_value
     14: EXIT_REQUEST_ERROR,  # flow_state
+    16: EXIT_REQUEST_ERROR,  # batch_failed
     15: EXIT_REQUEST_ERROR,  # invalid_request
     20: EXIT_REQUEST_ERROR,  # expression_syntax
     30: EXIT_SERVER_ERROR,  # job_submission

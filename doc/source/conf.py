@@ -66,6 +66,8 @@ nitpicky = True
 # SerializationType / Calendar / NodeStatus 成员与三个异常条目已全部可从
 # API 页解析，不再出现。新增条目时注明原因，而不是关闭 nitpicky。
 nitpick_ignore = [
+    # Batch DTOs expose Pydantic model types; third-party API is not indexed here.
+    ("py:class", "pydantic.main.BaseModel"),
     # typing 中的容器/别名类型不在本项目文档范围内。
     ("py:class", "typing.Any"),
     # 可选第三方库（gRPC、textual、loguru 等）的类型不进 intersphinx，

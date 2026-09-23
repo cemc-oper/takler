@@ -9,7 +9,6 @@ import json
 import pytest
 
 from takler.core import Bunch, Flow, NodeStatus
-from takler.exceptions import FlowStateError, NodeNotFoundError
 from takler.protocol.commands import BeginCommand, LoadCommand
 from takler.server.scheduler import Scheduler
 
@@ -46,10 +45,9 @@ def test_begin_unknown_flow_raises_node_not_found(scheduler):
     """Requirement 8.13: an unknown flow name is a NodeNotFoundError."""
     scheduler.bunch.add_flow(build_flow("flow1"))
 
-    with pytest.raises(NodeNotFoundError) as exc_info:
-        scheduler.run_command_begin(BeginCommand(flow_name="no_such_flow"))
-
-    assert exc_info.value.node_path == "/no_such_flow"
+    response = scheduler.run_command_begin(BeginCommand(flow_name="no_such_flow"))
+    assert response.flag == 16
+    assert response.results[0].flag == 10
 
 
 def test_begin_already_begun_flow_rejected(scheduler):
@@ -59,10 +57,10 @@ def test_begin_already_begun_flow_rejected(scheduler):
     initial_time = flow.calendar.initial_time
     flow.find_node("/flow1/task1").set_node_status(NodeStatus.complete)
 
-    with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
+    response = scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
-    assert "flow1" in str(exc_info.value)
     assert flow.calendar.initial_time == initial_time
     assert flow.find_node("/flow1/task1").state.node_status is NodeStatus.complete
 
@@ -100,18 +98,18 @@ def test_begin_all_flows(scheduler, flow_name):
         assert flow.calendar.initial_time is not None
 
 
-def test_begin_all_flows_is_all_or_nothing(scheduler):
+def test_begin_all_flows_continues_after_failure(scheduler):
     """One already begun flow fails the whole command without touching the others."""
     scheduler.bunch.add_flow(build_flow("flow1"))
     flow2 = scheduler.bunch.add_flow(build_flow("flow2"))
     scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
 
-    with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_begin(BeginCommand())
+    response = scheduler.run_command_begin(BeginCommand())
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
-    assert "flow1" in str(exc_info.value)
-    assert flow2.begun is False
-    assert flow2.calendar.initial_time is None
+    assert flow2.begun is True
+    assert flow2.calendar.initial_time is not None
 
 
 def test_begin_all_flows_with_force(scheduler):

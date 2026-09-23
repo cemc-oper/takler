@@ -43,6 +43,8 @@ from typing import Callable, Dict, List, Optional, Sequence, Union
 from takler.logging import get_logger
 from takler.protocol.commands import (
     Command,
+    BATCH_COMMANDS,
+    BatchResponse,
     Coroutine,
     CoroutineResponse,
     PingResponse,
@@ -50,6 +52,7 @@ from takler.protocol.commands import (
     ServiceResponse,
     ShowResponse,
 )
+from pydantic import ValidationError
 from takler.protocol.error_code import SUCCESS, error_code_for_exception
 from takler.server.audit import (
     EVENT_CONTROL,
@@ -306,9 +309,19 @@ class CommandHandlers:
             method_name,
             request_info,
             op,
-            error_response=_ERROR_RESPONSE_BY_COMMAND.get(
-                command, command_error_response
-            ),
+            error_response=(
+                lambda exc: BatchResponse(
+                    flag=15
+                    if isinstance(exc, ValidationError)
+                    else error_code_for_exception(exc),
+                    message="invalid request"
+                    if isinstance(exc, ValidationError)
+                    else "command failed",
+                    results=[],
+                )
+            )
+            if command in BATCH_COMMANDS
+            else _ERROR_RESPONSE_BY_COMMAND.get(command, command_error_response),
             audit_target=audit_target,
             peer=peer,
         )
@@ -388,8 +401,8 @@ class CommandHandlers:
         return ServiceResponse()
 
     def _service(self, operation, request) -> ServiceResponse:
-        operation(request)
-        return ServiceResponse()
+        response = operation(request)
+        return response if isinstance(response, BatchResponse) else ServiceResponse()
 
     def _coroutine(self) -> CoroutineResponse:
         loop = asyncio.get_running_loop()
@@ -485,6 +498,12 @@ class CommandHandlers:
             if inspect.isawaitable(result):
                 result = await result
             self._audit_control(operation_name, _resolve(audit_target), result, peer)
+            if (
+                isinstance(result, BatchResponse)
+                and result._had_exception
+                and self.exception_policy is ExceptionPolicy.FAIL_FAST
+            ):
+                self._trigger_fatal_shutdown()
             return result
         except Exception as exc:  # noqa: BLE001 - boundary is intentional
             info = request_info() if callable(request_info) else request_info
@@ -559,6 +578,12 @@ class CommandHandlers:
                     target=list(audit_target) if audit_target else [],
                     outcome=OUTCOME_SUCCESS if flag == SUCCESS else OUTCOME_ERROR,
                     error_code=flag,
+                    reason=response.message
+                    if isinstance(response, BatchResponse)
+                    else None,
+                    results=[item.model_dump() for item in response.results]
+                    if isinstance(response, BatchResponse)
+                    else None,
                 )
             )
         except Exception as exc:  # noqa: BLE001 - auditing is never fatal

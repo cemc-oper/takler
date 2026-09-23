@@ -67,6 +67,9 @@ from typing import Any, Callable, Dict, Mapping, Optional, Union
 
 import httpx
 
+from takler.exceptions import ServerResponseError
+from takler.protocol.commands import BATCH_COMMANDS
+from takler.protocol.batch import validate_batch_response
 from takler.client.retry import (
     COMMAND_KIND_BY_COMMAND,
     DEFAULT_SINGLE_TIMEOUT,
@@ -455,7 +458,18 @@ class HttpTransport(ClientTransport):
         kind = COMMAND_KIND_BY_COMMAND[command]
         envelope = Envelope(command=command, payload=_json_payload(payload))
         response = self._call(command.value, envelope, kind)
-        return response.parse_response()
+        if command in BATCH_COMMANDS and (
+            response.command != command
+            or response.trace_id != envelope.trace_id
+            or response.version != envelope.version
+        ):
+            raise ServerResponseError("batch response does not match request envelope")
+        decoded = response.parse_response()
+        return (
+            validate_batch_response(command, payload, decoded)
+            if command in BATCH_COMMANDS
+            else decoded
+        )
 
     def _retry_policy(self, kind: CommandKind) -> RetryPolicy:
         """Build the policy for one logical call of ``kind``."""
@@ -517,6 +531,8 @@ class HttpTransport(ClientTransport):
         """
         headers = dict(build_credential_pairs(kind, self.secret_file))
         policy = self._retry_policy(kind)
+        if operation_name in {command.value for command in BATCH_COMMANDS}:
+            policy.retry_window = 0
         body = envelope.model_dump(mode="json")
         url = f"{COMMAND_URL_PREFIX}{operation_name}"
 

@@ -48,9 +48,9 @@ gets the value an operator typing the CLI without that flag would get.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Type
+from typing import Dict, List, Type, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr, StrictInt, StrictStr, Field
 
 __all__ = [
     "Command",
@@ -76,6 +76,9 @@ __all__ = [
     "PingRequest",
     "CoroutineRequest",
     "ServiceResponse",
+    "BatchResponse",
+    "BatchItemResult",
+    "BATCH_COMMANDS",
     "ShowResponse",
     "PingResponse",
     "Coroutine",
@@ -338,6 +341,38 @@ class ServiceResponse(ProtocolModel):
     message: str = ""
 
 
+class BatchItemResult(ProtocolModel):
+    """One ordered control target outcome."""
+
+    index: StrictInt = Field(ge=0, le=4294967295)
+    target: StrictStr
+    flag: StrictInt
+    message: StrictStr
+    effect: Literal["none", "applied", "partial", "unknown"]
+
+
+class BatchResponse(ProtocolModel):
+    """Complete results of a best-effort control request."""
+
+    flag: StrictInt
+    message: StrictStr
+    results: List[BatchItemResult]
+    _had_exception: bool = PrivateAttr(default=False)
+
+
+BATCH_COMMANDS = frozenset(
+    {
+        Command.REQUEUE,
+        Command.SUSPEND,
+        Command.RESUME,
+        Command.RUN,
+        Command.FORCE,
+        Command.FREE_DEP,
+        Command.BEGIN,
+    }
+)
+
+
 class ShowResponse(ProtocolModel):
     """``show`` response: the serialized bunch in ``output``."""
 
@@ -392,14 +427,14 @@ RESPONSE_TYPE_BY_COMMAND: Dict[Command, Type[ProtocolModel]] = {
     Command.ABORT: ServiceResponse,
     Command.EVENT: ServiceResponse,
     Command.METER: ServiceResponse,
-    Command.REQUEUE: ServiceResponse,
-    Command.SUSPEND: ServiceResponse,
-    Command.RESUME: ServiceResponse,
-    Command.RUN: ServiceResponse,
-    Command.FORCE: ServiceResponse,
-    Command.FREE_DEP: ServiceResponse,
+    Command.REQUEUE: BatchResponse,
+    Command.SUSPEND: BatchResponse,
+    Command.RESUME: BatchResponse,
+    Command.RUN: BatchResponse,
+    Command.FORCE: BatchResponse,
+    Command.FREE_DEP: BatchResponse,
     Command.LOAD: ServiceResponse,
-    Command.BEGIN: ServiceResponse,
+    Command.BEGIN: BatchResponse,
     Command.SHOW: ShowResponse,
     Command.PING: PingResponse,
     Command.COROUTINE: CoroutineResponse,

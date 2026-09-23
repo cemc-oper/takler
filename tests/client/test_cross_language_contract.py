@@ -59,6 +59,7 @@ CONTRACT_ERROR_NAME_BY_CODE = {
     13: "unsupported_value",
     14: "flow_state",
     15: "invalid_request",
+    16: "batch_failed",
     20: "expression_syntax",
     30: "job_submission",
     31: "zombie",
@@ -81,6 +82,7 @@ CONTRACT_EXIT_CODE_BY_ERROR_CODE = {
     13: 1,
     14: 1,
     15: 1,
+    16: 1,
     20: 1,
     30: 3,
     31: 3,
@@ -97,7 +99,7 @@ CONTRACT_EXIT_CODE_BY_ERROR_CODE = {
 CONTRACT_UNREGISTERED_CODES = [
     2,
     9,
-    16,
+    17,
     19,
     21,
     29,
@@ -182,14 +184,14 @@ CONTRACT_RPC_SURFACE = {
     "RunCommandAbort": ("AbortCommand", "ServiceResponse"),
     "RunCommandEvent": ("EventCommand", "ServiceResponse"),
     "RunCommandMeter": ("MeterCommand", "ServiceResponse"),
-    "RunCommandRequeue": ("RequeueCommand", "ServiceResponse"),
-    "RunCommandSuspend": ("SuspendCommand", "ServiceResponse"),
-    "RunCommandResume": ("ResumeCommand", "ServiceResponse"),
-    "RunCommandRun": ("RunCommand", "ServiceResponse"),
-    "RunCommandForce": ("ForceCommand", "ServiceResponse"),
-    "RunCommandFreeDep": ("FreeDepCommand", "ServiceResponse"),
+    "RunCommandRequeue": ("RequeueCommand", "BatchResponse"),
+    "RunCommandSuspend": ("SuspendCommand", "BatchResponse"),
+    "RunCommandResume": ("ResumeCommand", "BatchResponse"),
+    "RunCommandRun": ("RunCommand", "BatchResponse"),
+    "RunCommandForce": ("ForceCommand", "BatchResponse"),
+    "RunCommandFreeDep": ("FreeDepCommand", "BatchResponse"),
     "RunCommandLoad": ("LoadCommand", "ServiceResponse"),
-    "RunCommandBegin": ("BeginCommand", "ServiceResponse"),
+    "RunCommandBegin": ("BeginCommand", "BatchResponse"),
     "RunRequestShow": ("ShowRequest", "ShowResponse"),
     "RunRequestPing": ("PingRequest", "PingResponse"),
     "QueryCoroutine": ("CoroutineRequest", "CoroutineResponse"),
@@ -238,7 +240,7 @@ def test_error_name_by_code_matches_contract(code, name):
 def test_error_name_by_code_has_no_key_outside_the_contract():
     """And nothing else: the key sets must be equal in both directions."""
     assert set(ERROR_NAME_BY_CODE) == set(CONTRACT_ERROR_NAME_BY_CODE)
-    assert len(ERROR_NAME_BY_CODE) == 16
+    assert len(ERROR_NAME_BY_CODE) == 17
 
 
 # Feature: m2-security, Property 9: 跨语言常量一致性
@@ -257,7 +259,7 @@ def test_exit_code_by_error_code_matches_contract(code, exit_code):
 # Validates: Requirements 14.14, 15.6, 16.17
 def test_exit_code_by_error_code_has_no_key_outside_the_contract():
     assert set(EXIT_CODE_BY_ERROR_CODE) == set(CONTRACT_EXIT_CODE_BY_ERROR_CODE)
-    assert len(EXIT_CODE_BY_ERROR_CODE) == 16
+    assert len(EXIT_CODE_BY_ERROR_CODE) == 17
 
 
 # Feature: m2-security, Property 9: 跨语言常量一致性

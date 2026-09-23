@@ -54,6 +54,8 @@ from takler.protocol.commands import (
     CoroutineResponse,
     PingResponse,
     ServiceResponse,
+    BatchResponse,
+    BATCH_COMMANDS,
     ShowResponse,
     Command,
 )
@@ -105,6 +107,21 @@ def _response_dto(command: Command):
         return PingResponse()
     if command is Command.COROUTINE:
         return CoroutineResponse(coroutines=[])
+    if command in BATCH_COMMANDS:
+        payload = PAYLOAD_BY_COMMAND[command]
+        targets = (
+            ["/" + payload["flow_name"]]
+            if command == Command.BEGIN
+            else payload.get("node_paths", payload.get("paths"))
+        )
+        return BatchResponse(
+            flag=0,
+            message="",
+            results=[
+                dict(index=i, target=t, flag=0, message="", effect="applied")
+                for i, t in enumerate(targets)
+            ],
+        )
     return ServiceResponse(flag=0, message="")
 
 
@@ -133,6 +150,10 @@ class Wire:
         answer = self.answers[index]
         if isinstance(answer, BaseException):
             raise answer
+        if answer.status_code == 200:
+            body = answer.json()
+            body["trace_id"] = json.loads(request.content)["trace_id"]
+            return httpx.Response(200, json=body)
         return answer
 
     def bind(self, transport: HttpTransport) -> None:

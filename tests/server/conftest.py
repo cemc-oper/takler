@@ -235,15 +235,15 @@ HANDLER_CASES: List[HandlerCase] = [
         "begin-an-unknown-flow",
         Command.BEGIN,
         {"flow_name": "no_such_flow"},
-        expected_flag=CODE_NODE_NOT_FOUND,
-        message_part="NodeNotFoundError",
+        expected_flag=16,
+        message_part="failed=1",
     ),
     HandlerCase(
         "begin-an-already-begun-flow",
         Command.BEGIN,
         {"flow_name": FLOW1},
-        expected_flag=CODE_FLOW_STATE,
-        message_part="FlowStateError",
+        expected_flag=16,
+        message_part="failed=1",
     ),
     # -- query commands --------------------------------------------------
     HandlerCase(

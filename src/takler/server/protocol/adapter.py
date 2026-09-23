@@ -225,6 +225,8 @@ def request_from_pb2(command: Command, message) -> ProtocolModel:
 
 def response_to_pb2(response: ProtocolModel):
     """Convert a response DTO into the pb2 message of its RPC."""
+    if isinstance(response, commands.BatchResponse):
+        return takler_pb2.BatchResponse(**response.model_dump())
     if isinstance(response, commands.ServiceResponse):
         return takler_pb2.ServiceResponse(flag=response.flag, message=response.message)
     if isinstance(response, commands.ShowResponse):
@@ -406,6 +408,21 @@ def response_from_pb2(command: Command, message) -> ProtocolModel:
         KeyError: If ``command`` is not one of the sixteen.
     """
     response_type = commands.RESPONSE_TYPE_BY_COMMAND[command]
+    if response_type is commands.BatchResponse:
+        return commands.BatchResponse(
+            flag=message.flag,
+            message=message.message,
+            results=[
+                commands.BatchItemResult(
+                    index=r.index,
+                    target=r.target,
+                    flag=r.flag,
+                    message=r.message,
+                    effect=r.effect,
+                )
+                for r in message.results
+            ],
+        )
     if response_type is commands.ServiceResponse:
         return commands.ServiceResponse(flag=message.flag, message=message.message)
     if response_type is commands.ShowResponse:

@@ -42,6 +42,8 @@ from takler.protocol import (
     ResumeCommand,
     RunCommand,
     ServiceResponse,
+    BatchResponse,
+    BATCH_COMMANDS,
     ShowRequest,
     ShowResponse,
     SuspendCommand,
@@ -121,6 +123,8 @@ def test_thirteen_commands_answer_service_response():
     for command, response_type in RESPONSE_TYPE_BY_COMMAND.items():
         if command in queries:
             assert response_type is not ServiceResponse
+        elif command in BATCH_COMMANDS:
+            assert response_type is BatchResponse
         else:
             assert response_type is ServiceResponse
 

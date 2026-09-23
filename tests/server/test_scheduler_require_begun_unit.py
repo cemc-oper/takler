@@ -9,7 +9,6 @@ import pytest
 from pydantic import ValidationError
 
 from takler.core import Bunch, Flow, NodeContainer, NodeStatus
-from takler.exceptions import FlowStateError, TaklerError
 from takler.protocol.commands import (
     AbortCommand,
     BeginCommand,
@@ -65,12 +64,10 @@ def test_requeue_rejected_on_not_begun_flow(scheduler, flow, node_path):
     node = scheduler.bunch.find_node(node_path)
     before = status_map(node)
 
-    with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_requeue(RequeueCommand(node_paths=[node_path]))
+    response = scheduler.run_command_requeue(RequeueCommand(node_paths=[node_path]))
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
-    assert isinstance(exc_info.value, TaklerError)
-    assert "flow1" in str(exc_info.value)
-    assert exc_info.value.flow_name == "flow1"
     assert status_map(node) == before
 
 
@@ -78,25 +75,29 @@ def test_run_rejected_on_not_begun_flow(scheduler, flow):
     task1 = scheduler.bunch.find_node("/flow1/container1/task1")
     before = status_map(task1)
 
-    with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_run(RunCommand(node_paths=["/flow1/container1/task1"]))
+    response = scheduler.run_command_run(
+        RunCommand(node_paths=["/flow1/container1/task1"])
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
-    assert "flow1" in str(exc_info.value)
     assert status_map(task1) == before
 
 
 def test_run_force_rejected_on_not_begun_flow(scheduler, flow):
     """Even ``run --force`` is guarded: the flow gate comes first."""
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_run(
-            RunCommand(node_paths=["/flow1/container1/task1"], force=True)
-        )
+    response = scheduler.run_command_run(
+        RunCommand(node_paths=["/flow1/container1/task1"], force=True)
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
 
 def test_run_on_non_task_rejected_before_type_check(scheduler, flow):
     """The guard runs before the "not a Task" branch."""
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_run(RunCommand(node_paths=["/flow1/container1"]))
+    response = scheduler.run_command_run(RunCommand(node_paths=["/flow1/container1"]))
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
 
 @pytest.mark.parametrize("recursive", [False, True])
@@ -104,16 +105,16 @@ def test_force_node_rejected_on_not_begun_flow(scheduler, flow, recursive):
     container1 = scheduler.bunch.find_node("/flow1/container1")
     before = status_map(container1)
 
-    with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_force(
-            ForceCommand(
-                paths=["/flow1/container1"],
-                state=NodeStatus.complete.name,
-                recursive=recursive,
-            )
+    response = scheduler.run_command_force(
+        ForceCommand(
+            paths=["/flow1/container1"],
+            state=NodeStatus.complete.name,
+            recursive=recursive,
         )
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
-    assert "flow1" in str(exc_info.value)
     assert status_map(container1) == before
 
 
@@ -122,12 +123,12 @@ def test_force_event_rejected_on_not_begun_flow(scheduler, flow):
     task1 = scheduler.bunch.find_node("/flow1/container1/task1")
     event1 = task1.find_variable("event1")
 
-    with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_force(
-            ForceCommand(paths=["/flow1/container1/task1:event1"], state="set")
-        )
+    response = scheduler.run_command_force(
+        ForceCommand(paths=["/flow1/container1/task1:event1"], state="set")
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
-    assert "flow1" in str(exc_info.value)
     assert event1.value is False
 
 
@@ -136,10 +137,11 @@ def test_force_meter_rejected_on_not_begun_flow(scheduler, flow):
     meter1 = task1.find_variable("meter1")
     value_before = meter1.value
 
-    with pytest.raises(FlowStateError):
-        scheduler.run_command_force(
-            ForceCommand(paths=["/flow1/container1/task1:meter1"], state="set")
-        )
+    response = scheduler.run_command_force(
+        ForceCommand(paths=["/flow1/container1/task1:meter1"], state="set")
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
     assert meter1.value == value_before
 
@@ -161,12 +163,12 @@ def test_free_dep_rejected_on_not_begun_flow(scheduler, flow, dep_type):
     task1 = scheduler.bunch.find_node("/flow1/container1/task1")
     before = status_map(task1)
 
-    with pytest.raises(FlowStateError) as exc_info:
-        scheduler.run_command_free_dep(
-            FreeDepCommand(paths=["/flow1/container1/task1"], dep_type=dep_type)
-        )
+    response = scheduler.run_command_free_dep(
+        FreeDepCommand(paths=["/flow1/container1/task1"], dep_type=dep_type)
+    )
+    assert response.flag == 16
+    assert response.results[0].flag == 14
 
-    assert "flow1" in str(exc_info.value)
     assert status_map(task1) == before
 
 

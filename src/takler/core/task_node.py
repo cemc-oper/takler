@@ -218,9 +218,10 @@ class Task(Node):
         self.before_run()
 
         if not self.do_run():
-            return
+            return False
 
         self.after_run()
+        return True
 
     def requeue(self, reset_repeat: bool = True):
         self.task_id = None
@@ -326,12 +327,14 @@ def task(name: str):
                     super(RunTask, self).__init__(name=name)
 
                 def run(self):
-                    Task.run(self)
+                    if not Task.run(self):
+                        return False
 
                     self.init()
                     kwargs.update(self=self)
                     func(*args, **kwargs)
                     self.complete()
+                    return True
 
             return RunTask()
 

@@ -41,6 +41,7 @@ from takler.client.grpc_transport import (
     SSL_TARGET_NAME_OVERRIDE_OPTION,
     build_channel_credentials,
 )
+from takler.protocol.commands import BatchResponse
 from takler.client.retry import DEFAULT_SINGLE_TIMEOUT
 from takler.client.transport import (
     ClientTransport,
@@ -307,6 +308,12 @@ class TaklerServiceClient:
         nothing; the classification name is readable both for humans and for
         scripts that grep the output.
         """
+        if isinstance(response, BatchResponse):
+            for item in response.results:
+                print(
+                    f"[{item.index}] {item.target} {error_name_for_code(item.flag)} effect={item.effect}: {item.message}"
+                )
+            print(response.message)
         print(f"received: {error_name_for_code(response.flag)}")
 
     # Child command -------------------------------------------------

@@ -79,7 +79,7 @@ def test_exit_code_for_registered_error_code(code, expected):
     assert exit_code_for_error_code(code) == expected
 
 
-@pytest.mark.parametrize("code", [2, 9, 16, 19, 50, 100, -1, 2**63])
+@pytest.mark.parametrize("code", [2, 9, 17, 19, 50, 100, -1, 2**63])
 def test_unregistered_non_zero_code_is_treated_as_server_error(code):
     """Requirement 3.9 leaves unregistered codes valid; we take them as 3."""
     assert code not in ERROR_NAME_BY_CODE

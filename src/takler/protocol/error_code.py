@@ -86,6 +86,7 @@ ERROR_NAME_BY_CODE: Dict[int, str] = {
     13: "unsupported_value",
     14: "flow_state",
     15: "invalid_request",
+    16: "batch_failed",
     20: "expression_syntax",
     30: "job_submission",
     31: "zombie",

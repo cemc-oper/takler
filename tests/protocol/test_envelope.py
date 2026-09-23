@@ -20,6 +20,7 @@ from takler.protocol import (
     LoadCommand,
     MeterCommand,
     ServiceResponse,
+    BatchResponse,
     ShowResponse,
 )
 
@@ -94,7 +95,7 @@ def test_for_response_echoes_the_trace_id():
     )
     response_envelope = Envelope.for_response(
         Command.BEGIN,
-        ServiceResponse(flag=0, message=""),
+        BatchResponse(flag=0, message="", results=[]),
         trace_id=request_envelope.trace_id,
     )
     assert response_envelope.trace_id == request_envelope.trace_id

@@ -61,23 +61,23 @@ gRPC 编码的唯一权威来源仍是
       - 更新标尺； ``meter_value`` 线上是 **字符串**
     * - ``requeue``
       - ``RunCommandRequeue``
-      - ``RequeueCommand`` → ``ServiceResponse``
+      - ``RequeueCommand`` → ``BatchResponse``
       - 重排队
     * - ``suspend`` / ``resume``
       - ``RunCommandSuspend`` / ``RunCommandResume``
-      - ``SuspendCommand`` / ``ResumeCommand`` → ``ServiceResponse``
+      - ``SuspendCommand`` / ``ResumeCommand`` → ``BatchResponse``
       - 挂起 / 恢复（ M3 起各有独立的消息类型，不再共用）
     * - ``run``
       - ``RunCommandRun``
-      - ``RunCommand`` → ``ServiceResponse``
+      - ``RunCommand`` → ``BatchResponse``
       - 手动提交任务； ``force`` 跳过状态检查
     * - ``force``
       - ``RunCommandForce``
-      - ``ForceCommand`` → ``ServiceResponse``
+      - ``ForceCommand`` → ``BatchResponse``
       - 强制置节点状态或置 / 清事件
     * - ``free-dep``
       - ``RunCommandFreeDep``
-      - ``FreeDepCommand`` → ``ServiceResponse``
+      - ``FreeDepCommand`` → ``BatchResponse``
       - 手动释放依赖
     * - ``load``
       - ``RunCommandLoad``
@@ -85,7 +85,7 @@ gRPC 编码的唯一权威来源仍是
       - 载入 flow 定义
     * - ``begin``
       - ``RunCommandBegin``
-      - ``BeginCommand`` → ``ServiceResponse``
+      - ``BeginCommand`` → ``BatchResponse``
       - 启动日历
     * - ``show``
       - ``RunRequestShow``
@@ -214,8 +214,9 @@ HTTP 服务（ FastAPI + uvicorn ， ``takler[http]`` extra ）只有一个端
 ``ServiceResponse`` 与 error_code
 ---------------------------------
 
-除三个查询命令外，所有命令的应答都是
-``ServiceResponse{flag, message}`` ：
+child 与 load 命令返回 ``ServiceResponse{flag, message}``；七种批量控制
+命令返回 ``BatchResponse{flag, message, results}``。两者的 flag 都使用
+下述错误码表：
 
 * ``flag`` 是错误分类码（ Error_Code ）： ``0`` 表示成功，非 ``0``
   表示失败并标识分类。 ``message`` 形如 ``{异常类名}: {异常消息}``
@@ -325,6 +326,8 @@ HTTP 的请求头名（ HTTP 头不区分大小写），都是全小写、不带
 以下常量同属跨语言契约，两个客户端在两种 transport 下都必须一致：
 
 * 单次尝试超时 ``10`` 秒；
+* 批量控制命令 requeue/suspend/resume/run/force/free-dep/begin 固定只尝试一次，
+  不受重试窗口配置覆盖；下述窗口仅适用于其余命令。
 * 重试窗口： child 命令 ``86400`` 秒（一天，作业可以比服务活得久），
   控制与查询命令 ``60`` 秒；环境变量 ``TAKLER_TIMEOUT`` 覆盖窗口（见
   :doc:`/operation/reference` ）；
@@ -367,7 +370,7 @@ proto 的 ``go_package`` 选项已指向该仓库。
 常量契约靠一对「漂移哨兵」测试维持： Python 半是
 ``tests/client/test_cross_language_contract.py`` ， Go 半是
 ``takler-client`` 仓库的 ``common/errorcode_test.go`` 。两边各自 **手
-抄** 同一份期望值 —— error_code 十六行、退出码映射、重试常量、状态码
+抄** 同一份期望值 —— error_code 十七行、退出码映射、重试常量、状态码
 集合（ gRPC 状态码与 HTTP 状态码各一份） —— 刻意不从生产代码的表里
 推导：读着自己要监督的表的测试永远发现不了那张表被改错。任何一侧改了
 常量而另一侧没跟上，失败的是测试而不是线上协议。
@@ -420,3 +423,13 @@ transport 下一致（含 ``meter "abc"`` 过线后得 ``internal_error`` 这
 
 协议本身的错误形态（退出码、stderr 契约、重试表现）以
 :doc:`/guide/cli` 与 :doc:`/operation/reference` 为准。
+
+批量控制响应
+------------
+
+requeue/suspend/resume/run/force/free-dep/begin 返回 BatchResponse：
+flag、message、results。每项包含 index、target、flag、message、effect
+（none/applied/partial/unknown）。按输入顺序逐项执行，失败后继续，成功不回滚。
+任一失败时整体为 ``16`` / ``batch_failed``，CLI 退出 1；全成功为 0。
+空目标列表拒绝（15）；begin-all 空 Bunch 成功，已 begun 项失败不阻止其余 flow。
+两客户端逐项显示结果及汇总，HTTP/gRPC 均不自动重试这七种命令。

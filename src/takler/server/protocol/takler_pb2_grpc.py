@@ -64,32 +64,32 @@ class TaklerServerStub:
         self.RunCommandRequeue = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandRequeue',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.RequeueCommand.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
         self.RunCommandSuspend = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandSuspend',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.SuspendCommand.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
         self.RunCommandResume = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandResume',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ResumeCommand.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
         self.RunCommandRun = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandRun',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.RunCommand.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
         self.RunCommandForce = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandForce',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ForceCommand.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
         self.RunCommandFreeDep = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandFreeDep',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.FreeDepCommand.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
         self.RunCommandLoad = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandLoad',
@@ -99,7 +99,7 @@ class TaklerServerStub:
         self.RunCommandBegin = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandBegin',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BeginCommand.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
         self.RunRequestShow = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunRequestShow',
@@ -255,32 +255,32 @@ def add_TaklerServerServicer_to_server(servicer, server):
             'RunCommandRequeue': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandRequeue,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.RequeueCommand.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
             ),
             'RunCommandSuspend': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandSuspend,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.SuspendCommand.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
             ),
             'RunCommandResume': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandResume,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ResumeCommand.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
             ),
             'RunCommandRun': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandRun,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.RunCommand.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
             ),
             'RunCommandForce': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandForce,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ForceCommand.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
             ),
             'RunCommandFreeDep': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandFreeDep,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.FreeDepCommand.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
             ),
             'RunCommandLoad': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandLoad,
@@ -290,7 +290,7 @@ def add_TaklerServerServicer_to_server(servicer, server):
             'RunCommandBegin': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandBegin,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BeginCommand.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
             ),
             'RunRequestShow': grpc.unary_unary_rpc_method_handler(
                     servicer.RunRequestShow,
@@ -471,7 +471,7 @@ class TaklerServer:
             target,
             '/takler_protocol.TaklerServer/RunCommandRequeue',
             takler_dot_server_dot_protocol_dot_takler__pb2.RequeueCommand.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -498,7 +498,7 @@ class TaklerServer:
             target,
             '/takler_protocol.TaklerServer/RunCommandSuspend',
             takler_dot_server_dot_protocol_dot_takler__pb2.SuspendCommand.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -525,7 +525,7 @@ class TaklerServer:
             target,
             '/takler_protocol.TaklerServer/RunCommandResume',
             takler_dot_server_dot_protocol_dot_takler__pb2.ResumeCommand.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -552,7 +552,7 @@ class TaklerServer:
             target,
             '/takler_protocol.TaklerServer/RunCommandRun',
             takler_dot_server_dot_protocol_dot_takler__pb2.RunCommand.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -579,7 +579,7 @@ class TaklerServer:
             target,
             '/takler_protocol.TaklerServer/RunCommandForce',
             takler_dot_server_dot_protocol_dot_takler__pb2.ForceCommand.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -606,7 +606,7 @@ class TaklerServer:
             target,
             '/takler_protocol.TaklerServer/RunCommandFreeDep',
             takler_dot_server_dot_protocol_dot_takler__pb2.FreeDepCommand.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -660,7 +660,7 @@ class TaklerServer:
             target,
             '/takler_protocol.TaklerServer/RunCommandBegin',
             takler_dot_server_dot_protocol_dot_takler__pb2.BeginCommand.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
             options,
             channel_credentials,
             insecure,

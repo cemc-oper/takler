@@ -329,13 +329,17 @@ def test_valid_command_sequence_always_returns_success(task_names, commands):
         else:  # pragma: no cover - guarded by the strategy
             raise AssertionError(f"unexpected command {command!r}")
 
-        assert isinstance(response, takler_pb2.ServiceResponse)
+        assert isinstance(
+            response, (takler_pb2.ServiceResponse, takler_pb2.BatchResponse)
+        )
         assert response.flag == 0, (
             f"valid {command} on {node_path} returned flag={response.flag!r}"
         )
-        assert response.message == "", (
-            f"valid {command} on {node_path} returned message={response.message!r}"
-        )
+        assert response.message == (
+            "processed=1 succeeded=1 failed=0"
+            if isinstance(response, takler_pb2.BatchResponse)
+            else ""
+        ), f"valid {command} on {node_path} returned message={response.message!r}"
 
 
 @settings(max_examples=40, deadline=None)
@@ -369,7 +373,7 @@ def test_valid_meter_value_executes_and_returns_success(data):
 
     response = asyncio.run(service.RunCommandMeter(request, context))
 
-    assert isinstance(response, takler_pb2.ServiceResponse)
+    assert isinstance(response, (takler_pb2.ServiceResponse, takler_pb2.BatchResponse))
     assert response.flag == 0
     assert response.message == ""
     assert task.find_meter("m").value == meter_value, (

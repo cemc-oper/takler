@@ -89,6 +89,17 @@ class SpyRpc:
 
     def __call__(self, request, timeout=None, metadata=None):
         self.metadata_calls.append(metadata)
+        if hasattr(request, "node_path"):
+            self.response.results = [
+                SimpleNamespace(
+                    index=i,
+                    target=t,
+                    flag=self.response.flag,
+                    message="",
+                    effect="applied",
+                )
+                for i, t in enumerate(request.node_path)
+            ]
         return self.response
 
 

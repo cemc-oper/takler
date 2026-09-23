@@ -9,6 +9,7 @@ from takler.core import Bunch, Task, NodeStatus, Event, Flow, SerializationType
 from takler.core.node import Node
 from takler.exceptions import (
     FlowStateError,
+    JobSubmissionError,
     InvalidRequestError,
     NodeNotFoundError,
     NodeTypeError,
@@ -32,6 +33,7 @@ from takler.protocol.commands import (
     SuspendCommand,
 )
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
+from takler.server.batch import batch_targets
 from takler.server.zombie import ChildAction, ZombieDetector
 
 
@@ -491,6 +493,7 @@ class Scheduler:
 
     # Control -------------------------------------------------
 
+    @batch_targets("node_paths")
     def run_command_requeue(self, command: RequeueCommand):
         """
         Requeue the nodes.
@@ -513,6 +516,7 @@ class Scheduler:
             self._require_begun(node)
             node.requeue()
 
+    @batch_targets("node_paths")
     def run_command_suspend(self, command: SuspendCommand):
         """
         Suspend the nodes.
@@ -532,6 +536,7 @@ class Scheduler:
             node = self._find_node_or_raise(node_path)
             node.suspend()
 
+    @batch_targets("node_paths")
     def run_command_resume(self, command: ResumeCommand):
         """
         Resume the nodes from suspended status.
@@ -551,6 +556,7 @@ class Scheduler:
             node = self._find_node_or_raise(node_path)
             node.resume()
 
+    @batch_targets("node_paths")
     def run_command_run(self, command: RunCommand):
         """
         Run each ``Task`` node of the command.
@@ -587,17 +593,17 @@ class Scheduler:
         self._require_begun(node)
 
         if not isinstance(node, Task):
-            logger.warning(f"node path is not a Task: {node_path}")
-            return False
+            raise NodeTypeError("run requires a Task", node_path=node_path)
         if not force:
             status = node.state.node_status
             if status in (NodeStatus.submitted, NodeStatus.active):
-                # don't run
-                return False
+                raise FlowStateError("task is already submitted or active")
 
-        node.run()
+        if node.run() is False:
+            raise JobSubmissionError("synchronous task submission failed")
         return True
 
+    @batch_targets("paths")
     def run_command_force(self, command: ForceCommand):
         """
         Force each target of the command to the command's state.
@@ -673,8 +679,9 @@ class Scheduler:
                     f"state {state} is not supported for Event", value=state
                 )
             return True
-        return True
+        raise NodeTypeError("force requires a Node or Event", node_path=variable_path)
 
+    @batch_targets("paths")
     def run_command_free_dep(self, command: FreeDepCommand):
         """
         Free dependencies of the nodes.
@@ -739,6 +746,7 @@ class Scheduler:
                 value=command.flow_type,
             )
 
+    @batch_targets("flow_name")
     def run_command_begin(self, command: BeginCommand):
         """
         Begin one flow, or all flows in bunch.
@@ -762,15 +770,6 @@ class Scheduler:
             If any target flow has already begun and ``force`` is not set
             (Requirement 8.11).
 
-        Notes
-        -----
-        The "all flows" form is all-or-nothing: every target flow is checked
-        before any of them is begun, so a single already-begun flow makes the
-        whole command fail without changing any node status (Requirement 8.11
-        requires the node status of the offending flow to be unchanged, and
-        failing atomically avoids leaving the bunch half begun). Use ``force``
-        to (re)begin flows regardless of their current begun state
-        (Requirement 8.12).
         """
         logger.info(f"Begin: {command.flow_name} force={command.force}")
         if command.flow_name:

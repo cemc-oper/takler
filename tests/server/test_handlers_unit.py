@@ -18,7 +18,7 @@ from takler.protocol.commands import (
     PingRequest,
     PingResponse,
     RequeueCommand,
-    ServiceResponse,
+    BatchResponse,
     ShowRequest,
 )
 from takler.server import handlers
@@ -82,7 +82,7 @@ def test_handle_accepts_an_already_parsed_request(build_scenario_scheduler):
         command_handlers.handle(Command.REQUEUE, RequeueCommand(node_paths=["/flow1"]))
     )
 
-    assert isinstance(response, ServiceResponse)
+    assert isinstance(response, BatchResponse)
     assert response.flag == 0
 
 
@@ -168,7 +168,8 @@ def test_failed_control_command_is_audited_with_its_error(
                 Command.REQUEUE, RequeueCommand(node_paths=["/flow1/no_such"])
             )
         )
-        assert response.flag == 10  # node_not_found
+        assert response.flag == 16
+        assert response.results[0].flag == 10
 
     _run_with_audit(action, audit_file)
 
@@ -177,4 +178,5 @@ def test_failed_control_command_is_audited_with_its_error(
     record = json.loads(lines[0])
     assert record["command"] == "requeue"
     assert record["outcome"] == "error"
-    assert record["error_code"] == 10
+    assert record["error_code"] == 16
+    assert record["results"][0]["flag"] == 10

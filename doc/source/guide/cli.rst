@@ -295,3 +295,17 @@ TLS / 鉴权选项      全部子命令接受 ``--tls-ca`` /        无命令行
 
 协议语义、地址解析、退出码、 ``TAKLER_NAME`` / ``TAKLER_PASS`` /
 ``NO_TAKLER`` 约定在两者间完全一致，作业脚本写成哪种都能运行。
+
+批量控制结果
+------------
+
+requeue、suspend、resume、run、force、free-dep 按输入顺序逐项解析执行，
+重复路径和父子重叠不合并。无效目标或执行异常不会阻止后续目标，成功项不回滚。
+begin 不指定名称时，按调用开始时的 flow 名称快照逐项执行。
+
+两客户端在 stdout 输出每项 index、target、错误分类及 effect，然后输出汇总。
+任一项失败，整体返回 batch_failed（16），stderr 输出错误摘要，退出码为 1。
+none 表示无变更，applied 表示同步操作成功，partial 表示已知部分变更，
+unknown 表示无法可靠判断副作用。run 成功不承诺外部作业最终成功。
+这七种命令在 HTTP/gRPC 上均不自动重试；连接中断时结果可能未知，
+重新执行可能重复提交或重置状态。

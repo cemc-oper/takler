@@ -50,9 +50,9 @@ def test_begin_named_flow_returns_success(service):
 
     response = run_begin(service, "flow1")
 
-    assert isinstance(response, takler_pb2.ServiceResponse)
+    assert isinstance(response, takler_pb2.BatchResponse)
     assert response.flag == SUCCESS
-    assert response.message == ""
+    assert response.message == "processed=1 succeeded=1 failed=0"
     assert flow.begun is True
 
 
@@ -83,9 +83,10 @@ def test_begin_unknown_flow_maps_node_not_found_code(service):
     """An unknown flow name fails with the node-not-found Error_Code."""
     response = run_begin(service, "no_such_flow")
 
-    assert response.flag == ERROR_CODE_BY_TYPE[NodeNotFoundError]
+    assert response.flag == 16
+    assert response.results[0].flag == ERROR_CODE_BY_TYPE[NodeNotFoundError]
     assert response.flag != SUCCESS
-    assert response.message == "NodeNotFoundError: flow is not found: no_such_flow"
+    assert response.results[0].target == "/no_such_flow"
 
 
 def test_begin_already_begun_flow_maps_flow_state_code(service):
@@ -95,7 +96,8 @@ def test_begin_already_begun_flow_maps_flow_state_code(service):
 
     response = run_begin(service, "flow1")
 
-    assert response.flag == ERROR_CODE_BY_TYPE[FlowStateError]
+    assert response.flag == 16
+    assert response.results[0].flag == ERROR_CODE_BY_TYPE[FlowStateError]
     assert response.flag != SUCCESS
-    assert "flow1" in response.message
+    assert response.results[0].target == "/flow1"
     assert flow.begun is True

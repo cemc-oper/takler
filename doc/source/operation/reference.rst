@@ -274,6 +274,11 @@ error_code 分类表
       - ``InvalidRequestError``
       - 其他请求内容错误
       - ``1``
+    * - ``16``
+      - ``batch_failed``
+      - 无对应异常（聚合结果）
+      - 批量操作中至少一项失败，逐项结果保留具体错误
+      - ``1``
     * - ``20``
       - ``expression_syntax``
       - ``ExpressionSyntaxError``

@@ -344,7 +344,8 @@ def test_operator_command_with_valid_credentials_passes(
     )
 
     assert response.status_code == 200
-    assert response.json()["payload"]["flag"] == 10  # /flow1 does not exist here
+    assert response.json()["payload"]["flag"] == 16
+    assert response.json()["payload"]["results"][0]["flag"] == 10
     assert len(audit_logger.records) == 1
     record = audit_logger.records[0]
     assert record.event == "control"

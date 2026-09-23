@@ -165,20 +165,20 @@ service TaklerServer {
 
   // control command
 
-  rpc RunCommandRequeue(RequeueCommand) returns (ServiceResponse){}
+  rpc RunCommandRequeue(RequeueCommand) returns (BatchResponse){}
 
-  rpc RunCommandSuspend(SuspendCommand) returns (ServiceResponse){}
-  rpc RunCommandResume(ResumeCommand) returns (ServiceResponse){}
+  rpc RunCommandSuspend(SuspendCommand) returns (BatchResponse){}
+  rpc RunCommandResume(ResumeCommand) returns (BatchResponse){}
 
-  rpc RunCommandRun(RunCommand) returns (ServiceResponse) {}
+  rpc RunCommandRun(RunCommand) returns (BatchResponse) {}
 
-  rpc RunCommandForce(ForceCommand) returns (ServiceResponse) {}
+  rpc RunCommandForce(ForceCommand) returns (BatchResponse) {}
 
-  rpc RunCommandFreeDep(FreeDepCommand) returns (ServiceResponse) {}
+  rpc RunCommandFreeDep(FreeDepCommand) returns (BatchResponse) {}
 
   rpc RunCommandLoad(LoadCommand) returns (ServiceResponse) {}
 
-  rpc RunCommandBegin(BeginCommand) returns (ServiceResponse) {}
+  rpc RunCommandBegin(BeginCommand) returns (BatchResponse) {}
 
 
   // query command
@@ -188,4 +188,16 @@ service TaklerServer {
   rpc RunRequestPing(PingRequest) returns (PingResponse){}
 
   rpc QueryCoroutine(CoroutineRequest) returns (CoroutineResponse){}
+}
+message BatchItemResult {
+  uint32 index = 1;
+  string target = 2;
+  int32 flag = 3;
+  string message = 4;
+  string effect = 5;
+}
+message BatchResponse {
+  int32 flag = 1;
+  string message = 2;
+  repeated BatchItemResult results = 3;
 }
