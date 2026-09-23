@@ -7,7 +7,11 @@ from pathlib import PurePosixPath
 from collections import defaultdict
 from abc import ABC
 
-from takler.exceptions import NodeNotFoundError, UnsupportedValueError
+from takler.exceptions import (
+    InvalidRequestError,
+    NodeNotFoundError,
+    UnsupportedValueError,
+)
 
 from .state import State, NodeStatus
 from .parameter import Parameter
@@ -178,8 +182,12 @@ class Node(ABC):
             ]
         if self.trigger_expression is not None:
             result["trigger"] = self.trigger_expression.expression_str
+            if self.trigger_expression.free:
+                result["trigger_free"] = True
         if self.complete_trigger_expression is not None:
             result["complete_trigger"] = self.complete_trigger_expression.expression_str
+            if self.complete_trigger_expression.free:
+                result["complete_trigger_free"] = True
         if self.is_complete_triggered:
             result["is_complete_triggered"] = self.is_complete_triggered
         if len(self.events) != 0:
@@ -254,7 +262,7 @@ class Node(ABC):
         if "user_parameters" in d:
             user_parameters = d["user_parameters"]
             for param in user_parameters:
-                node.add_parameter(param["name"], param["value"])
+                node.add_parameter(Parameter.from_dict(param, method=method))
 
         if "trigger" in d:
             trigger = d["trigger"]
@@ -265,6 +273,17 @@ class Node(ABC):
             node.add_complete_trigger(trigger, parse=False)
 
         if method == SerializationType.Status:
+            for key, expression in (
+                ("trigger_free", node.trigger_expression),
+                ("complete_trigger_free", node.complete_trigger_expression),
+            ):
+                free = d.get(key, False)
+                if not isinstance(free, bool):
+                    raise InvalidRequestError(f"{key} must be a boolean")
+                if free and expression is None:
+                    raise InvalidRequestError(f"{key} requires an expression")
+                if expression is not None:
+                    expression.free = free
             # the complete trigger latch is a runtime state, and it is not recomputed after restoring.
             node.is_complete_triggered = d.get("is_complete_triggered", False)
 

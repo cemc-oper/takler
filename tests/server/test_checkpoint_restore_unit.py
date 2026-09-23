@@ -361,7 +361,7 @@ def test_a_snapshot_without_a_bunch_key_is_unusable(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_a_snapshot_without_a_format_version_is_still_restored(tmp_path):
+def test_a_snapshot_without_a_format_version_is_refused(tmp_path):
     path = _write_source_snapshot(tmp_path)
     snapshot = json.loads(path.read_text(encoding="utf-8"))
     del snapshot["format_version"]
@@ -370,9 +370,9 @@ def test_a_snapshot_without_a_format_version_is_still_restored(tmp_path):
 
     result, captured = _capturing_stderr(manager.restore)
 
-    assert result is True
-    assert sorted(manager.bunch.flows) == ["flow1", "flow2"]
-    assert _lines(captured, "ERROR") == []
+    assert result is False
+    assert manager.bunch.flows == {}
+    assert "unsupported format version" in captured
 
 
 def test_a_newer_format_version_is_refused_and_falls_back(tmp_path):

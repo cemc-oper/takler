@@ -99,10 +99,9 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 回退链为 **检查点文件 → 备份文件 → 空 bunch** ：
 
 * 文件不存在：记一条 INFO，进入下一级
-* 文件不可读、不是 JSON、缺 ``bunch`` 键、 ``format_version`` 比当前
-  版本新：记一条含路径与原因的 ERROR，进入下一级
-* 快照没有 ``format_version`` 键：按最旧的版本 ``1`` 读取（兼容该
-  字段引入之前写出的快照）
+* 文件不可读、不是 JSON、缺 ``bunch`` 键，或 ``format_version`` 不是当前
+  整数版本 ``1``：记一条含路径与原因的 ERROR，进入下一级。缺少版本、
+  null、布尔值、浮点数以及旧/未知版本均拒绝；不提供历史格式兼容
 * 两级都不可用：记一条 ERROR，以空 bunch 启动
 
 成功恢复时记一条 INFO，报告恢复的 flow 数与节点数；单个 flow 反序列化
@@ -110,6 +109,21 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 一条 INFO 报告还原条数：映射整体缺失（旧格式快照）按空映射处理；映射
 中指向不存在的路径、或指向非 task 节点的条目各记一条 WARNING 并跳过，
 不影响其他条目。
+
+根级属性恢复
+~~~~~~~~~~~~
+
+恢复保留原 Bunch 对象，恢复根名称、用户参数（含 null）、状态、默认状态、
+触发器、事件、标尺、limit/in-limit、repeat 和 time 的已存储值。
+根参数仍由 flow 和子节点继承；这些存储字段的往返不代表根调度属性能控制全部 flow。
+``trigger_free`` / ``complete_trigger_free`` 保存 free-dep 的运行效果，
+当前格式省略这两个可选字段时按 false 读取；Tree 模式不恢复它们。
+
+checkpoint 恢复保留当前 ``server_state`` 对象及部署配置，不使用快照旧值替换
+host/port、服务器参数或当前 TLS/auth 等配置。快照中根或子节点的用户参数
+``TAKLER_HOST`` / ``TAKLER_PORT`` 覆盖项被移除并记录不含值的冲突警告，
+使继承得到当前服务地址；显式用户 ``TAKLER_HOME`` 和其他业务参数保持原值。
+独立 ``Bunch.from_dict`` 没有在线部署上下文，仍恢复其字典中的 server_state。
 
 恢复之后还有两项自检，都只记日志、不阻止启动：
 

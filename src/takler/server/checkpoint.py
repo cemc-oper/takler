@@ -33,6 +33,7 @@ import takler
 from takler.core.bunch import Bunch
 from takler.core.flow import Flow
 from takler.core.node import Node
+from takler.core.parameter import TAKLER_HOST, TAKLER_PORT
 from takler.core.state import NodeStatus
 from takler.core.task_node import Task
 from takler.core.util import SerializationType
@@ -60,8 +61,8 @@ logger = get_logger("server.checkpoint")
 #: (requirement 6.14).
 CHECKPOINT_FORMAT_VERSION: int = 1
 
-#: Oldest format version this implementation can read. A snapshot without a
-#: ``format_version`` key is treated as this version (requirement 6.15).
+#: Oldest readable version; currently only the exact current integer version
+#: is accepted. Missing versions are rejected (R0, no historical compatibility).
 EARLIEST_SUPPORTED_FORMAT_VERSION: int = 1
 
 #: Snapshot period used when nothing is configured, in seconds
@@ -876,13 +877,9 @@ class CheckpointManager:
         and "too new" identically and simply move on to the next level of the
         fallback chain (requirement 6.7).
 
-        Version handling (requirements 6.14, 6.15): a missing ``format_version``
-        is treated as :data:`EARLIEST_SUPPORTED_FORMAT_VERSION` and the file is
-        used, because that is what a snapshot written before the field existed
-        is; a version above :data:`CHECKPOINT_FORMAT_VERSION` is refused, since
-        a newer takler may have written keys whose meaning this version cannot
-        guess -- silently ignoring them would restore a subtly wrong state,
-        which is worse than falling back.
+        Only the current integer format version is accepted. Missing versions,
+        older/newer formats, booleans and floats are unusable; R0 does not
+        provide historical format migration.
 
         Args:
             path: The file to read, either the Checkpoint_File or the
@@ -913,33 +910,17 @@ class CheckpointManager:
             return None
 
         version = snapshot.get("format_version")
-        if version is None:
-            # Requirement 6.15: no version field means the oldest format this
-            # implementation can read.
-            version = EARLIEST_SUPPORTED_FORMAT_VERSION
-            logger.info(
-                f"checkpoint file {path} carries no format version; reading it "
-                f"as version {EARLIEST_SUPPORTED_FORMAT_VERSION}."
-            )
-        if isinstance(version, bool) or not isinstance(version, (int, float)):
+        if type(version) is not int or version != CHECKPOINT_FORMAT_VERSION:
             logger.error(
-                f"failed to parse checkpoint file {path}: format version "
-                f"{version!r} is not a number."
-            )
-            return None
-
-        if version > CHECKPOINT_FORMAT_VERSION:
-            logger.error(  # requirement 6.14
-                f"checkpoint file {path} has format version {version}, which "
-                f"is newer than the supported version "
-                f"{CHECKPOINT_FORMAT_VERSION}; this file cannot be used."
+                f"checkpoint file {path} has unsupported format version {version!r}; "
+                f"expected integer {CHECKPOINT_FORMAT_VERSION}; this file cannot be used."
             )
             return None
 
         return snapshot
 
     def _restore_into_bunch(self, snapshot: dict) -> Tuple[int, int]:
-        """Restore every flow of ``snapshot`` into the live bunch.
+        """Restore root storage attributes and every flow into the live bunch.
 
         Deserializes with :attr:`SerializationType.Status` so that node status,
         ``suspended``, event and meter values, limit ``value`` / ``node_paths``,
@@ -969,6 +950,7 @@ class CheckpointManager:
             ``(flow_count, node_count)`` of what was actually restored, with
             ``node_count`` including the flow nodes themselves.
         """
+        self.bunch.restore_root_attributes(snapshot["bunch"])
         flow_dicts = snapshot["bunch"].get("flows") or []
 
         flow_count = 0
@@ -987,6 +969,20 @@ class CheckpointManager:
             self.bunch.add_flow(flow)
             flow_count += 1
             node_count += _count_nodes(flow)
+
+        # A user parameter takes precedence over generated server parameters.
+        # Remove stale address overrides at every level, not just the root.
+        nodes = [self.bunch, *self.bunch.flows.values()]
+        while nodes:
+            node = nodes.pop()
+            nodes.extend(node.children)
+            for key in (TAKLER_HOST, TAKLER_PORT):
+                if key in node.user_parameters:
+                    del node.user_parameters[key]
+                    logger.warning(
+                        f"checkpoint deployment parameter conflict at "
+                        f"{node.node_path or '/'}: ignored {key}; using current deployment."
+                    )
 
         return flow_count, node_count
 

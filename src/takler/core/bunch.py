@@ -10,6 +10,7 @@ from .node_container import NodeContainer
 from .flow import Flow
 from .node import Node
 from .state import NodeStatus
+from .util import SerializationType
 from .event import Event
 from .meter import Meter
 from .parameter import Parameter, TAKLER_HOST, TAKLER_PORT, TAKLER_HOME
@@ -40,6 +41,7 @@ class Bunch(NodeContainer):
         class_module = importlib.import_module(class_module)
         class_object = getattr(class_module, class_name)
         bunch = class_object(name=d["name"])
+        bunch.restore_root_attributes(d)
         bunch.server_state = ServerState.from_dict(d["server_state"])
         for flow in d["flows"]:
             flow = Flow.from_dict(flow)
@@ -49,6 +51,26 @@ class Bunch(NodeContainer):
             # (``TAKLER_HOST`` / ``TAKLER_PORT``).
             bunch.add_flow(flow)
         return bunch
+
+    def restore_root_attributes(self, d: Dict) -> None:
+        """Restore stored Node attributes without replacing flows or deployment.
+
+        Decode into a fresh node first: missing optional fields reset to their
+        defaults, repeated restores do not append attributes, and an invalid
+        root leaves the live bunch untouched. This only preserves storage; it
+        does not give root scheduling attributes global scheduling semantics.
+        """
+        root = NodeContainer(name=d["name"])
+        Node.fill_from_dict(d, root, method=SerializationType.Status)
+        # Only Node state is copied; the temporary container has neither
+        # server_state nor flows. Decode uses parse=False, so no AST retains
+        # a reference to the temporary root.
+        self.__dict__.update(vars(root))
+        self.in_limit_manager.node = self
+        for limit in self.limits:
+            limit.node = self
+        for child in self.children:
+            child.parent = self
 
     # Attr ------------------------------------------------
 

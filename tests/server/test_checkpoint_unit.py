@@ -5,7 +5,7 @@ four checkpoint boundary behaviours an operator notices first, each from the
 angle of the requirement rather than of the method that implements it:
 
 * a snapshot write that takes longer than the configured period (5.10),
-* a snapshot file without a ``format_version`` (6.15),
+* refusal of a snapshot without an explicit current ``format_version`` (R0),
 * a first start with no snapshot file on disk (6.9),
 * a clean shutdown writing the last snapshot (5.9).
 
@@ -190,14 +190,11 @@ def test_a_slow_write_does_not_stop_the_snapshots(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# A snapshot without a format version (Requirement 6.15)
+# A snapshot without a format version (R0: no historical compatibility)
 # ---------------------------------------------------------------------------
 
 
-def test_a_snapshot_without_a_format_version_is_read_as_the_earliest_version(
-    tmp_path,
-):
-    """Requirement 6.15: the missing field means "the oldest format we read"."""
+def test_a_snapshot_without_a_format_version_is_rejected(tmp_path):
     path = _write_snapshot(tmp_path, "takler.check")
     snapshot = json.loads(path.read_text(encoding="utf-8"))
     del snapshot["format_version"]
@@ -206,43 +203,13 @@ def test_a_snapshot_without_a_format_version_is_read_as_the_earliest_version(
 
     result, captured = _capturing_stderr(manager.restore)
 
-    assert result is True
-    assert list(manager.bunch.flows) == ["flow1"]
-    assert "ERROR" not in captured
-    # The version the file was read as is named, so the operator can tell this
-    # apart from a snapshot that really carried version 1.
-    version_info = [
-        line for line in _lines(captured, "INFO") if "format version" in line
-    ]
-    assert len(version_info) == 1
-    assert str(path) in version_info[0]
-    assert str(EARLIEST_SUPPORTED_FORMAT_VERSION) in version_info[0]
-
-
-def test_a_versionless_snapshot_restores_exactly_as_the_earliest_version_does(
-    tmp_path,
-):
-    """ "按最早支持版本处理" means the same restore, not merely a restore."""
-    source = _write_snapshot(tmp_path, "takler.check")
-    snapshot = json.loads(source.read_text(encoding="utf-8"))
-
-    without_version = dict(snapshot)
-    del without_version["format_version"]
-    earliest = dict(snapshot)
-    earliest["format_version"] = EARLIEST_SUPPORTED_FORMAT_VERSION
-
-    restored = []
-    for payload in (without_version, earliest):
-        source.write_text(json.dumps(payload), encoding="utf-8")
-        manager = _restoring_manager(tmp_path)
-        assert manager.restore() is True
-        restored.append([flow.to_dict() for _, flow in manager.bunch.flows.items()])
-
-    assert restored[0] == restored[1]
+    assert result is False
+    assert manager.bunch.flows == {}
+    assert "unsupported format version" in captured
 
 
 def test_the_earliest_supported_version_is_not_above_what_is_written(tmp_path):
-    """A versionless snapshot can only be usable while this holds."""
+    """R0 currently accepts only the version it writes."""
     assert EARLIEST_SUPPORTED_FORMAT_VERSION <= CHECKPOINT_FORMAT_VERSION
 
 
