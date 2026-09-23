@@ -104,6 +104,10 @@ nitpick_ignore = [
     # ``set_call_credentials`` / ``reset_call_credentials`` 的注解建引用，
     # 而私有模块不进 Python 官方文档，intersphinx 解析不到。
     ("py:class", "_contextvars.Token"),
+    # Python 3.11 上 ``asyncio.Task.__module__`` 是私有模块 ``_asyncio``；
+    # autodoc 为 shell_runner.py 的任务类型注解按这个真实模块路径建引用，
+    # 而 asyncio 的公开文档不提供 ``_asyncio.Task`` 目标。
+    ("py:class", "_asyncio.Task"),
 ]
 
 # 系统性的允许缺失模式（re.fullmatch 匹配）。本项目 docstring 的约定是：

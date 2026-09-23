@@ -133,4 +133,4 @@ jobs:
     #      事实来源逐字节一致（Go 端落后时本 job 变红）。takler-client 的副本经
     #      raw.githubusercontent.com 拉取；takler-client 侧 CI 跑的是镜像检查。
     - name: Proto drift and freshness check
-      run: ./scripts/check_proto.sh
+      run: bash ./scripts/check_proto.sh
