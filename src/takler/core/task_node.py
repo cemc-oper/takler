@@ -66,12 +66,14 @@ class Task(Node):
     ) -> "Task":
         Node.fill_from_dict(d=d, node=node, method=method)
 
-        task_id = d["task_id"]
-        aborted_reason = d["aborted_reason"]
-        try_no = d["try_no"]
-        node.task_id = task_id
-        node.aborted_reason = aborted_reason
-        node.try_no = try_no
+        # Tree builds a fresh definition: do not even read old run identity.
+        # Status requires these fields so incomplete runtime is not silently
+        # replaced by definition defaults. Passwords are restored separately
+        # by CheckpointManager, never from the node dictionary in either mode.
+        if method == SerializationType.Status:
+            node.task_id = d["task_id"]
+            node.aborted_reason = d["aborted_reason"]
+            node.try_no = d["try_no"]
 
         return node
 

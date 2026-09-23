@@ -99,6 +99,18 @@ Bunch 与多 flow
   事件与标尺取值、 ``try_no`` 、日历、 begun 标记等）。服务端的
   checkpoint 用这种模式（见 :doc:`/tutorial/advanced-topics/restart` ）
 
+Tree 模式在调用 ``begin`` 之前已经完成运行字段隔离，不依赖 begin/requeue
+清理旧数据。Task 和 ShellScriptTask 的 ``task_id`` / ``aborted_reason``
+为 None， ``try_no`` 为 0， ``job_password`` 为 None；旧运行字段可以省略，
+出现时也不读取。事件恢复为定义的 ``initial_value`` （可以为 true），
+标尺恢复为 ``min_value`` （不一定是 0），repeat 回到起点，limit 占用清空，
+trigger/complete-trigger free、完成触发锁存及 time free 均为 false。
+``default_node_status`` 保留定义值，当前状态仍是 unknown。
+
+Status 仍读取完整运行字段；作业口令不从节点字典读取，而由 checkpoint
+的独立 ``job_passwords`` 映射恢复。当前 Tree 仅是现有反序列化入口的模式，
+不等于已建立安全的纯定义格式或受信任类型注册边界。
+
 ``Bunch.to_dict()`` 把整个 :py:class:`~takler.core.Bunch`
 （所有 flow 加上服务参数）序列化为一个 dict ，是 checkpoint 文件的
 内容来源。
