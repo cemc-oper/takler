@@ -14,7 +14,7 @@ from takler.visitor import pre_order_travel, NodeVisitor
 
 from .constant import TAKLER_SCRIPT, TAKLER_JOB, TAKLER_JOBOUT, JOB_SCRIPT_EXTENSION
 from .shell_render import ShellRender
-from .shell_runner import ShellRunner
+from .shell_runner import ShellRunner, redact_job_password
 
 
 logger = get_logger("tasks.shell")
@@ -35,6 +35,8 @@ class ShellScriptTask(Task):
         super(ShellScriptTask, self).__init__(name)
 
         self.script_path = script_path
+        # Process-local identity, never serialized or reused after a submission.
+        self._submission_token: Optional[object] = None
 
         self.shell_generated_parameters = ShellScriptTaskGeneratedParameters(node=self)
 
@@ -100,10 +102,23 @@ class ShellScriptTask(Task):
         try:
             self.submit()
         except JobSubmissionError as exc:
-            logger.error(f"job submission failed: {self.node_path}: {exc}")
-            self.abort(f"JobSubmissionError: {exc}")
+            reason = redact_job_password(
+                f"JobSubmissionError: {exc}", self.job_password
+            )
+            logger.error(f"job submission failed: {self.node_path}: {reason}")
+            self.abort(reason)
             return False
         return True
+
+    def requeue(self, reset_repeat: bool = True):
+        self._submission_token = None
+        super().requeue(reset_repeat=reset_repeat)
+
+    def set_node_status_only(self, node_status: NodeStatus):
+        # Includes child completion/abort and forced terminal/queued states.
+        if node_status not in (NodeStatus.submitted, NodeStatus.active):
+            self._submission_token = None
+        super().set_node_status_only(node_status)
 
     # Task specific ------------------------------------------------------------
 
@@ -117,14 +132,29 @@ class ShellScriptTask(Task):
             When the job script cannot be rendered, or the job process cannot
             be spawned.
         """
-        run_command = self.create_job_script()
+        token = self._submission_token = object()
+        flow, bunch, node_path = self.get_flow(), self.get_bunch(), self.node_path
 
-        # run command
-        shell_runner = ShellRunner()
+        def on_failure(exc: BaseException) -> None:
+            # All checks and abort run synchronously on the same event loop.
+            # A detached flow can still retain its old bunch back-reference.
+            current = self._submission_token is token
+            current = current and self.get_flow() is flow and self.get_bunch() is bunch
+            if current and bunch is not None:
+                current = bunch.find_node(node_path) is self
+            elif current and flow is not None:
+                current = flow.find_node(node_path) is self
+            if not current:
+                logger.info(f"skip stale job failure: {node_path}")
+                return
+            self.on_job_failure(exc)
+
+        run_command = self.create_job_script()
+        shell_runner = ShellRunner(job_password=self.job_password)
         shell_runner.spawn(
             command=run_command,
-            node_path=self.node_path,
-            on_failure=self.on_job_failure,
+            node_path=node_path,
+            on_failure=on_failure,
         )
         return True
 
@@ -148,7 +178,9 @@ class ShellScriptTask(Task):
             )
             return
 
-        self.abort(f"{type(exc).__name__}: {exc}")
+        self.abort(
+            redact_job_password(f"{type(exc).__name__}: {exc}", self.job_password)
+        )
 
     def create_job_script(self) -> str:
         """
@@ -193,12 +225,19 @@ class ShellScriptTask(Task):
 
             # get run command
             run_command = shell_script.render_job_command()
-            logger.info(f"Render run command success: {run_command}")
+            logger.info(
+                redact_job_password(
+                    f"Render run command success: {run_command}", self.job_password
+                )
+            )
         except JobSubmissionError:
             raise
         except Exception as exc:
             raise JobSubmissionError(
-                f"render job script failed for {self.node_path}: {exc}"
+                redact_job_password(
+                    f"render job script failed for {self.node_path}: {exc}",
+                    self.job_password,
+                )
             ) from exc
         return run_command
 

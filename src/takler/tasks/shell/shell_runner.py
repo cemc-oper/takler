@@ -26,10 +26,16 @@ logger = get_logger("tasks.shell")
 OnFailure = Callable[[BaseException], None]
 
 
+def redact_job_password(message: str, password: Optional[str]) -> str:
+    """Remove this submission's exact credential from diagnostics."""
+    return message.replace(password, "<redacted>") if password else message
+
+
 class ShellRunner:
     """Run job commands in subprocesses derived from the running event loop."""
 
-    def __init__(self):
+    def __init__(self, job_password: Optional[str] = None):
+        self._job_password = job_password
         # Strong references to the in-flight job tasks. Without this set the
         # event loop only keeps a weak reference, and a task may be collected
         # before it completes.
@@ -84,7 +90,9 @@ class ShellRunner:
             task = loop.create_task(run_shell_command())
         except (RuntimeError, OSError) as exc:
             raise JobSubmissionError(
-                f"spawn job failed: command={command!r}: {exc}"
+                redact_job_password(
+                    f"spawn job failed: command={command!r}: {exc}", self._job_password
+                )
             ) from exc
 
         self._job_tasks.add(task)
@@ -146,15 +154,16 @@ class ShellRunner:
             return
 
         if isinstance(exc, CalledProcessError):
-            logger.error(
+            message = (
                 f"job failed: node={node_path}, command={command!r}, "
                 f"returncode={exc.returncode}"
             )
         else:
-            logger.error(
+            message = (
                 f"job failed: node={node_path}, command={command!r}, "
                 f"{type(exc).__name__}: {exc}"
             )
+        logger.error(redact_job_password(message, self._job_password))
 
         if on_failure is not None:
             on_failure(exc)

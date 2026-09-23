@@ -88,7 +88,10 @@ def test_submit_passes_node_path_and_on_failure(tmp_path, scripts_directory):
     assert mock_spawn.call_count == 1
     kwargs = mock_spawn.call_args.kwargs
     assert kwargs["node_path"] == "/flow1/task1"
-    assert kwargs["on_failure"] == task1.on_job_failure
+    assert callable(kwargs["on_failure"])
+    task1.set_node_status(NodeStatus.submitted)
+    kwargs["on_failure"](RuntimeError("wrapper failed"))
+    assert task1.state.node_status is NodeStatus.aborted
     assert kwargs["command"]
 
 
