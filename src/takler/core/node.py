@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import importlib
 from typing import Union, List, Optional, Dict, TYPE_CHECKING, Set, Literal
 from pathlib import PurePosixPath
 from collections import defaultdict
@@ -167,11 +166,16 @@ class Node(ABC):
     # Serialization -----------------------------------------------------
 
     def to_dict(self) -> Dict:
+        from takler.serialization.registry import get_registry, export_definition_data
+
+        entry = get_registry().by_type(type(self))
         result = dict(
             name=self.name,
             state=self.state.to_dict(),
-            class_type=dict(module=self.__module__, name=self.__class__.__name__),
+            type_id=entry.type_id,
         )
+        if not entry.type_id.startswith("takler."):
+            result["type_data"] = export_definition_data(entry, self)
         if self.default_node_status != NodeStatus.queued:
             result["default_node_status"] = self.default_node_status.value
         if len(self.children) != 0:
@@ -210,7 +214,7 @@ class Node(ABC):
         cls, d: Dict, method: SerializationType = SerializationType.Status
     ) -> "Node":
         """
-        Create ``Node`` based object from dictionary. Use ``d["class_type"]`` to determine which class is to be created.
+        Create ``Node`` based object from dictionary. Resolve ``type_id`` only through the trusted registry.
 
         Parameters
         ----------
@@ -222,14 +226,9 @@ class Node(ABC):
         Node
             A ``Node`` based object created from dictionary.
         """
-        class_type = d["class_type"]
-        class_module = class_type["module"]
-        class_name = class_type["name"]
-        class_module = importlib.import_module(class_module)
-        class_object = getattr(class_module, class_name)
-        node = class_object(name=d["name"])
-        node = class_object.fill_from_dict(d, node, method=method)
-        return node
+        from takler.serialization.runtime import restore_node
+
+        return restore_node(d, method)
 
     @classmethod
     def fill_from_dict(

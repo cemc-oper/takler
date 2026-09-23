@@ -227,13 +227,17 @@ class RepeatDate(RepeatBase):
     # Serialization ---------------------------------------
 
     def to_dict(self) -> Dict:
+        from takler.schema import DefinitionError
+
+        if type(self) is not RepeatDate:
+            raise DefinitionError("unregistered_type")
         result = dict(
             name=self.name,
             start_date=self.start_date.strftime(self.DATE_FORMAT),
             end_date=self.end_date.strftime(self.DATE_FORMAT),
             step=self.step,
             value=self.value,
-            class_type=self.__class__.__name__,
+            type_id="takler.repeat.date",
         )
         return result
 
@@ -359,11 +363,11 @@ class Repeat:
         cls, d: Dict, method: SerializationType = SerializationType.Status
     ) -> "Repeat":
         r = d["r"]
-        class_name = r["class_type"]
+        class_name = r["type_id"]
         class_type = REPEAT_ATTR_MAP[class_name]
         repeat_r = class_type.from_dict(d=r, method=method)
         repeat = Repeat(r=repeat_r)
         return repeat
 
 
-REPEAT_ATTR_MAP = dict(RepeatDate=RepeatDate)
+REPEAT_ATTR_MAP = {"takler.repeat.date": RepeatDate}

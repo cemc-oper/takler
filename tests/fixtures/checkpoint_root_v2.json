@@ -1,0 +1,148 @@
+{
+  "format_version": 2,
+  "takler_version": "r0-fixture",
+  "written_at": "2026-09-23T00:00:00",
+  "job_passwords": {
+    "/f/t": "FIXED_TEST_PASSWORD_NOT_A_SECRET"
+  },
+  "bunch": {
+    "name": "root",
+    "state": {
+      "status": 6,
+      "suspended": true
+    },
+    "default_node_status": 2,
+    "user_parameters": [
+      {
+        "name": "ROOT_SETTING",
+        "value": "inherited"
+      },
+      {
+        "name": "NULL_SETTING",
+        "value": null
+      },
+      {
+        "name": "TAKLER_HOME",
+        "value": "/jobs"
+      }
+    ],
+    "trigger": "/f/t == complete",
+    "trigger_free": true,
+    "complete_trigger": "/f/t == aborted",
+    "complete_trigger_free": true,
+    "is_complete_triggered": true,
+    "events": [
+      {
+        "name": "ready",
+        "initial_value": true,
+        "value": false
+      }
+    ],
+    "meters": [
+      {
+        "name": "progress",
+        "min_value": 10,
+        "max_value": 100,
+        "value": 42
+      }
+    ],
+    "limits": [
+      {
+        "name": "slots",
+        "limit": 5,
+        "value": 0,
+        "node_paths": []
+      }
+    ],
+    "in_limit_manager": {
+      "in_limit_list": [
+        {
+          "limit_name": "slots",
+          "node_path": null,
+          "tokens": 2
+        }
+      ]
+    },
+    "repeat": {
+      "r": {
+        "name": "ROOT_DATE",
+        "start_date": "20260901",
+        "end_date": "20260930",
+        "step": 1,
+        "value": 20260903,
+        "type_id": "takler.repeat.date"
+      }
+    },
+    "times": [
+      {
+        "time": "06:00",
+        "free": true
+      }
+    ],
+    "server_state": {
+      "host": "old.invalid",
+      "port": "33083",
+      "parameters": [
+        {
+          "name": "TAKLER_HOST",
+          "value": "old.invalid"
+        },
+        {
+          "name": "TAKLER_PORT",
+          "value": "33083"
+        },
+        {
+          "name": "TAKLER_HOME",
+          "value": "."
+        }
+      ]
+    },
+    "flows": [
+      {
+        "name": "f",
+        "state": {
+          "status": 5,
+          "suspended": false
+        },
+        "begun": true,
+        "calendar": {
+          "initial_time": "2026-09-23T00:00:00",
+          "flow_time": "2026-09-23T00:00:00",
+          "duration": 0.0,
+          "increment": 0.0,
+          "initial_real_time": "2026-09-23T00:00:00",
+          "last_real_time": "2026-09-23T00:00:00"
+        },
+        "children": [
+          {
+            "name": "t",
+            "state": {
+              "status": 5,
+              "suspended": true
+            },
+            "task_id": "123",
+            "try_no": 2,
+            "aborted_reason": null,
+            "trigger": "/f/t == complete",
+            "trigger_free": true,
+            "complete_trigger": "/f/t == complete",
+            "complete_trigger_free": true,
+            "user_parameters": [
+              {
+                "name": "CHILD_NULL",
+                "value": null
+              }
+            ],
+            "type_id": "takler.task",
+            "is_complete_triggered": false
+          }
+        ],
+        "type_id": "takler.flow",
+        "trigger_free": false,
+        "complete_trigger_free": false,
+        "is_complete_triggered": false
+      }
+    ],
+    "type_id": "takler.bunch"
+  }
+}

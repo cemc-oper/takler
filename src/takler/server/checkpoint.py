@@ -27,16 +27,17 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import takler
 from takler.core.bunch import Bunch
-from takler.core.flow import Flow
 from takler.core.node import Node
 from takler.core.parameter import TAKLER_HOST, TAKLER_PORT
 from takler.core.state import NodeStatus
 from takler.core.task_node import Task
-from takler.core.util import SerializationType
+from takler.serialization.runtime import export_runtime, restore_runtime
+from takler.serialization.builder import walk
+from takler.schema.definition import DefinitionError, _decode_json
 from takler.logging import get_logger
 from takler.server.connect_config import AuthMode, ConnectConfig, resolve_auth_mode
 
@@ -59,11 +60,11 @@ logger = get_logger("server.checkpoint")
 
 #: Format version stamped into every snapshot this implementation writes
 #: (requirement 6.14).
-CHECKPOINT_FORMAT_VERSION: int = 1
+CHECKPOINT_FORMAT_VERSION: int = 2
 
 #: Oldest readable version; currently only the exact current integer version
 #: is accepted. Missing versions are rejected (R0, no historical compatibility).
-EARLIEST_SUPPORTED_FORMAT_VERSION: int = 1
+EARLIEST_SUPPORTED_FORMAT_VERSION: int = 2
 
 #: Snapshot period used when nothing is configured, in seconds
 #: (requirement 7.2). Also the fallback for a rejected period
@@ -95,8 +96,8 @@ CHECKPOINT_FILE_MODE: int = 0o600
 
 #: Top level key of the snapshot's "node path -> Job_Password" mapping, a
 #: sibling of ``bunch`` rather than a node field (requirement 5.1). ``show``
-#: and the snapshot share one :meth:`~takler.core.Bunch.to_dict`, so anything put inside the
-#: node tree would also be handed to every caller of ``show``.
+#: snapshot keep credentials separate from node fields. The runtime exporter
+#: never places them in the mixed node tree used by status consumers.
 JOB_PASSWORDS_KEY: str = "job_passwords"
 
 #: The only node statuses whose Job_Password is worth persisting
@@ -328,19 +329,17 @@ class CheckpointManager:
 
         Layout (requirements 5.11, 6.14): ``format_version`` /
         ``takler_version`` / ``written_at`` at the top level plus a ``bunch``
-        subtree that is exactly :meth:`~takler.core.Bunch.to_dict`, so no second snapshot
-        format is introduced. ``takler_version`` and ``written_at`` are
+        mixed definition/runtime subtree with registered type IDs and explicit
+        required runtime fields. This remains the R0 mixed tree, not S2. ``takler_version`` and ``written_at`` are
         diagnostic only and take no part in restoring.
 
         The :data:`JOB_PASSWORDS_KEY` mapping is a sibling of ``bunch``
         (requirement 5.1) and is collected here, at the same instant as
-        ``Bunch.to_dict``, so the passwords and the node statuses they were
+        runtime export, so the passwords and the node statuses they were
         selected by are one consistent view.
 
-        ``format_version`` stays at 1 even though a top level key is added
-        (requirement 5.7): loading only validates ``format_version`` and
-        ``bunch`` and ignores unknown top level keys, so the new key is
-        compatible in both directions and needs no migration.
+        Format version 2 uses registered type IDs and explicit required runtime
+        fields. No version 1 aliases or migration are provided.
 
         Returns:
             The snapshot as a JSON string.
@@ -354,7 +353,7 @@ class CheckpointManager:
             "format_version": CHECKPOINT_FORMAT_VERSION,
             "takler_version": _takler_version(),
             "written_at": datetime.datetime.now().isoformat(),
-            "bunch": self.bunch.to_dict(),
+            "bunch": export_runtime(self.bunch),
             JOB_PASSWORDS_KEY: self._collect_job_passwords(),
         }
         return json.dumps(snapshot)
@@ -851,7 +850,6 @@ class CheckpointManager:
                 f"restored {flow_count} flow(s) and {node_count} node(s) "
                 f"from checkpoint file {path}."
             )
-            self._restore_job_passwords(snapshot.get(JOB_PASSWORDS_KEY))
             self._verify_server_address(snapshot)
             return True
 
@@ -859,12 +857,12 @@ class CheckpointManager:
             logger.error(  # requirement 6.8
                 f"could not restore from the checkpoint file "
                 f"{self.checkpoint_file} nor from the backup file "
-                f"{self.backup_file}; starting with an empty bunch."
+                f"{self.backup_file}; keeping the current bunch."
             )
         else:
             logger.info(  # requirement 6.9
                 f"no checkpoint to restore from ({self.checkpoint_file}, "
-                f"{self.backup_file}); starting with an empty bunch."
+                f"{self.backup_file}); keeping the current bunch."
             )
         return False
 
@@ -890,7 +888,7 @@ class CheckpointManager:
             used.
         """
         try:
-            snapshot = json.loads(path.read_text(encoding="utf-8"))
+            snapshot = _decode_json(path.read_text(encoding="utf-8"))
         except Exception as exc:  # noqa: BLE001 - boundary is intentional
             logger.error(f"failed to parse checkpoint file {path}: {exc!r}")
             return None
@@ -912,7 +910,8 @@ class CheckpointManager:
         version = snapshot.get("format_version")
         if type(version) is not int or version != CHECKPOINT_FORMAT_VERSION:
             logger.error(
-                f"checkpoint file {path} has unsupported format version {version!r}; "
+                f"checkpoint file {path} has unsupported format version "
+                f"{version if type(version) is int else type(version).__name__}; "
                 f"expected integer {CHECKPOINT_FORMAT_VERSION}; this file cannot be used."
             )
             return None
@@ -920,182 +919,62 @@ class CheckpointManager:
         return snapshot
 
     def _restore_into_bunch(self, snapshot: dict) -> Tuple[int, int]:
-        """Restore root storage attributes and every flow into the live bunch.
+        """Validate an entire temporary tree and credentials, then publish once.
 
-        Deserializes with :attr:`SerializationType.Status` so that node status,
-        ``suspended``, event and meter values, limit ``value`` / ``node_paths``,
-        repeat counters, the time-attribute ``free`` latch, ``task_id`` /
-        ``try_no`` / ``aborted_reason`` and the flow's ``begun`` flag plus its
-        calendar all come back as they were (requirements 6.2, 6.3, 6.11, 6.13).
-
-        Nothing here requeues or otherwise touches status: submitted and active
-        tasks stay exactly where they are (requirement 6.4), which is the only
-        thing that keeps a restart from submitting their jobs a second time.
-
-        Flows are added through ``Bunch.add_flow``, which sets the flow's back
-        reference to *this* bunch. The bunch object itself is never replaced --
-        ``Scheduler`` and ``GrpcTransport`` hold the same reference -- and the
-        snapshot's ``server_state`` is deliberately dropped, so ``TAKLER_HOST``
-        and ``TAKLER_PORT`` keep announcing the current process rather than the
-        process that wrote the snapshot (requirements 6.5, 6.22).
-
-        One flow that fails to deserialize is skipped with an ERROR naming it,
-        and the remaining flows are still restored: losing one flow out of ten
-        is bad, losing all ten because of it would be worse.
-
-        Args:
-            snapshot: A snapshot dictionary from :meth:`_load_snapshot`.
-
-        Returns:
-            ``(flow_count, node_count)`` of what was actually restored, with
-            ``node_count`` including the flow nodes themselves.
+        Unknown types or invalid runtime reject the complete snapshot, allowing
+        restore() to try the backup without any changes to the live tree.
         """
-        self.bunch.restore_root_attributes(snapshot["bunch"])
-        flow_dicts = snapshot["bunch"].get("flows") or []
-
-        flow_count = 0
-        node_count = 0
-        for flow_dict in flow_dicts:
-            name = flow_dict.get("name") if isinstance(flow_dict, dict) else None
-            try:
-                flow = Flow.from_dict(flow_dict, method=SerializationType.Status)
-            except Exception as exc:  # noqa: BLE001 - boundary is intentional
-                logger.error(
-                    f"failed to restore flow {name!r} from checkpoint file "
-                    f"{self.checkpoint_file}: {exc!r}; skipping this flow."
-                )
-                continue
-
-            self.bunch.add_flow(flow)
-            flow_count += 1
-            node_count += _count_nodes(flow)
-
-        # A user parameter takes precedence over generated server parameters.
-        # Remove stale address overrides at every level, not just the root.
-        nodes = [self.bunch, *self.bunch.flows.values()]
-        while nodes:
-            node = nodes.pop()
-            nodes.extend(node.children)
+        candidate = restore_runtime(snapshot["bunch"])
+        if not isinstance(candidate, Bunch):
+            raise DefinitionError("invalid_structure")
+        mapping = snapshot.get(JOB_PASSWORDS_KEY)
+        if not isinstance(mapping, dict):
+            raise DefinitionError("incomplete_checkpoint")
+        tasks = {
+            node.node_path: node for node in walk(candidate) if isinstance(node, Task)
+        }
+        for path, password in mapping.items():
+            if (
+                path not in tasks
+                or not isinstance(password, str)
+                or not password
+                or tasks[path].state.node_status not in _PERSISTED_STATUSES
+            ):
+                raise DefinitionError("invalid_runtime")
+        for path, node in tasks.items():
+            if node.state.node_status in _PERSISTED_STATUSES:
+                if path not in mapping:
+                    raise DefinitionError("incomplete_checkpoint")
+                node.job_password = mapping[path]
+        for node in walk(candidate):
             for key in (TAKLER_HOST, TAKLER_PORT):
                 if key in node.user_parameters:
                     del node.user_parameters[key]
                     logger.warning(
-                        f"checkpoint deployment parameter conflict at "
-                        f"{node.node_path or '/'}: ignored {key}; using current deployment."
+                        "checkpoint deployment parameter conflict: using current deployment."
                     )
-
-        return flow_count, node_count
-
-    def _restore_job_passwords(self, mapping: Optional[Dict[str, str]]) -> int:
-        """Write the snapshot's Job_Passwords back onto the restored tasks.
-
-        Must run after :meth:`_restore_into_bunch` has added every flow
-        (requirement 5.4): before that, the tasks the mapping names do not exist
-        yet.
-
-        The tree is walked exactly once and the joined parent prefix is passed
-        down, exactly as in :meth:`_collect_job_passwords`; each visited path is
-        looked up in ``mapping`` rather than the other way round. Calling
-        ``Bunch.find_node`` per entry is ruled out by requirement 5.11 and
-        measured 725ms at 50k tasks against 187ms for a single walk. The
-        requirement 5.9 self-check rides along in the same walk for the same
-        reason -- a second traversal would double the cost to establish
-        something the first one already had in hand.
-
-        Fault tolerance (requirements 5.6, 5.8): a missing mapping (``None``,
-        i.e. a pre-M2 snapshot with no :data:`JOB_PASSWORDS_KEY` at all) is an
-        empty mapping and a normal restore, and an entry whose path is not in
-        the tree or is not a Task is one WARNING naming that path plus a skip.
-        Neither aborts the restore -- losing the whole bunch state over one
-        stale path would be far worse than losing one password.
-
-        Args:
-            mapping: The snapshot's ``{node path: Job_Password}`` mapping, or
-                ``None`` when the snapshot carries none.
-
-        Returns:
-            The number of tasks whose Job_Password was restored, which is also
-            what the requirement 5.10 INFO reports: the operator compares it
-            against how many jobs they believe were in flight.
-        """
-        if mapping is None:
-            mapping = {}
-        elif not isinstance(mapping, dict):
-            # A snapshot whose mapping key holds something other than an object
-            # is corrupt in that key only; the node tree it came with is already
-            # restored, so this degrades to "no passwords" like a pre-M2 file.
-            logger.warning(
-                f"the {JOB_PASSWORDS_KEY!r} key of checkpoint file "
-                f"{self.checkpoint_file} is not an object but a "
-                f"{type(mapping).__name__}; no job password is restored."
-            )
-            mapping = {}
-
-        # Paths of ``mapping`` that were found in the tree, whether or not they
-        # turned out to be a Task. What is left over afterwards is exactly the
-        # set of paths that do not exist, without a second lookup per entry.
-        visited: Set[str] = set()
-        restored = 0
-
-        # Requirement 5.9 only asks for the self-check under Auth_Mode
-        # ``enabled``: with authentication off, an empty Job_Password never
-        # makes a Child_Command a zombie, so the WARNING would be pure noise.
-        check_unprotected = self._auth_mode is AuthMode.ENABLED
-        unprotected: List[str] = []
-
-        def walk(node: Node, prefix: str) -> None:
-            nonlocal restored
-            path = f"{prefix}/{node.name}"
-
-            if path in mapping:
-                visited.add(path)
-                if isinstance(node, Task):
-                    node.job_password = mapping[path]
-                    restored += 1
-                else:
-                    logger.warning(  # requirement 5.8
-                        f"checkpoint file {self.checkpoint_file} holds a job "
-                        f"password for node path {path}, which is not a task "
-                        f"but a {type(node).__name__}; skipping this entry."
-                    )
-
-            if (
-                check_unprotected
-                and isinstance(node, Task)
-                and not node.job_password
-                and node.state.node_status in _PERSISTED_STATUSES
-            ):
-                unprotected.append(path)
-
-            for child in node.children:
-                walk(child, path)
-
+        deployment = self.bunch.server_state
+        self.bunch.__dict__.update(vars(candidate))
+        self.bunch.server_state = deployment
+        self.bunch.in_limit_manager.node = self.bunch
+        for limit in self.bunch.limits:
+            limit.node = self.bunch
+        for child in self.bunch.children:
+            child.parent = self.bunch
+        for expression in (
+            self.bunch.trigger_expression,
+            self.bunch.complete_trigger_expression,
+        ):
+            if expression is not None:
+                expression.ast.set_parent_node(self.bunch)
         for flow in self.bunch.flows.values():
-            walk(flow, "")
-
-        for path in mapping:
-            if path not in visited:
-                logger.warning(  # requirement 5.8
-                    f"checkpoint file {self.checkpoint_file} holds a job "
-                    f"password for node path {path}, which does not exist in "
-                    f"the restored node tree; skipping this entry."
-                )
-
-        logger.info(  # requirement 5.10
-            f"recovered the job password of {restored} task(s) from checkpoint "
-            f"file {self.checkpoint_file}."
+            flow.bunch = self.bunch
+        logger.info(
+            f"recovered the job password of {len(mapping)} task(s) from checkpoint file {self.checkpoint_file}."
         )
-
-        if unprotected:
-            logger.warning(  # requirement 5.9
-                f"{len(unprotected)} submitted/active task(s) have no job "
-                f"password after restoring from checkpoint file "
-                f"{self.checkpoint_file}; with authentication enabled their "
-                f"child commands hit zombie condition Z1 and are handled by "
-                f"the zombie policy: {', '.join(unprotected)}"
-            )
-
-        return restored
+        return len(self.bunch.flows), sum(
+            _count_nodes(flow) for flow in self.bunch.flows.values()
+        )
 
     def _iter_restored_tasks(self) -> Iterator[Task]:
         """Yield every Task_Node of the restored node tree.
@@ -1104,7 +983,7 @@ class CheckpointManager:
         add a flow, so every flow the bunch holds at this point is one
         :meth:`_restore_into_bunch` has just added; walking the bunch is
         therefore the same as walking what was restored, and it stays correct
-        for the flow that had to be skipped as broken.
+        after the complete temporary tree has been committed.
 
         Yields:
             Each :class:`~takler.core.task_node.Task` in the tree, containers

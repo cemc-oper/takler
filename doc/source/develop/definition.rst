@@ -28,7 +28,7 @@
 ``takler.container``、``takler.task``、``takler.shell``。
 导出按精确 Python 类型匹配；未知子类和未经注册的 ``@task`` 局部类型
 明确失败，不会被降成普通 Task。内建 ``type_data`` 只能为空对象。
-受信任扩展注册及统一 builder 属于后续 R0-11。
+受信任扩展注册通过 ``NodeRegistration`` 完成，见 :doc:`extending`。
 
 定义保留用户参数（包括 null）、默认 queued/complete 状态、触发器文本、
 事件 initial_value、meter 上下界、limit 容量、in-limit 引用与 tokens、
@@ -48,6 +48,11 @@ Bunch 只导出 name、user_parameters、flows；根上配置未支持的调度�
 记录；错误文本不包含原始参数值。直接使用 Pydantic 校验接口的调用方
 不要记录完整 ValidationError 或输入对象。
 
-字段模型只校验纯数据；表达式语法、limit 引用解析及隔离构建留给 builder。
-现有 ``to_dict``、checkpoint、show 和网络 load 尚未切换到此新入口；
-R0-11/12 将分别接入构建与 load。新定义格式不提供旧混合格式转换。
+字段模型只校验纯数据。``build_definition(document, registry=..., existing_bunch=...)``
+构造隔离树，校验触发器语法与引用、limit 引用及容量；返回未 begin 的 Flow/Bunch。
+``existing_bunch`` 只作为跨 flow 引用的只读上下文，不把候选 Flow 加入在线树，
+也不更改在线缓存或占用。构造失败不会替换在线节点。
+
+现有 ``to_dict`` / ``from_dict`` 改用受信任 ``type_id``；checkpoint 格式为 2，
+完整校验后才恢复。网络 load 的纯定义切换留给 R0-12；查询只读化留给 R0-15。
+不提供旧 module/class 别名或历史格式转换器。

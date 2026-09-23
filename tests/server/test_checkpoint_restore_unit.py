@@ -69,6 +69,7 @@ def _source_bunch() -> Bunch:
     flow1.begin()
 
     task1 = flow1.find_node("/flow1/container1/task1")
+    task1.increment_try_no()
     task1.init(task_id="12345")
     task1.find_event("done").value = True
     task1.find_meter("progress").value = 42
@@ -337,7 +338,7 @@ def test_both_files_unparsable_starts_with_an_empty_bunch(tmp_path):
     # One ERROR per unusable file plus the summary naming both paths.
     errors = _lines(captured, "ERROR")
     assert len(errors) == 3
-    summary = [line for line in errors if "empty bunch" in line]
+    summary = [line for line in errors if "keeping the current bunch" in line]
     assert len(summary) == 1
     assert str(manager.checkpoint_file) in summary[0]
     assert str(manager.backup_file) in summary[0]
@@ -401,24 +402,17 @@ def test_a_newer_format_version_is_refused_and_falls_back(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_a_broken_flow_is_skipped_and_the_rest_is_restored(tmp_path):
+def test_a_broken_flow_rejects_the_entire_snapshot(tmp_path):
     path = _write_source_snapshot(tmp_path)
     snapshot = json.loads(path.read_text(encoding="utf-8"))
-    for flow_dict in snapshot["bunch"]["flows"]:
-        if flow_dict["name"] == "flow1":
-            flow_dict["class_type"]["name"] = "NoSuchFlowClass"
+    snapshot["bunch"]["flows"][0]["type_id"] = "unknown.flow"
     path.write_text(json.dumps(snapshot), encoding="utf-8")
     manager = _target_manager(tmp_path)
-
+    original = manager.bunch.add_flow("existing")
     result, captured = _capturing_stderr(manager.restore)
-
-    assert result is True
-    assert list(manager.bunch.flows) == ["flow2"]
-    errors = _lines(captured, "ERROR")
-    assert len(errors) == 1
-    assert "flow1" in errors[0]
-    info = [line for line in _lines(captured, "INFO") if "restored" in line]
-    assert "1 flow(s)" in info[0]
+    assert result is False
+    assert manager.bunch.flows == {"existing": original}
+    assert "unknown_type" in captured
 
 
 def test_restore_never_raises_on_a_directory_in_place_of_the_snapshot(tmp_path):

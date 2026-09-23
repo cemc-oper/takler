@@ -66,7 +66,9 @@
 包分层
 ------
 
-代码按依赖方向分层，上层可以 import 下层，下层不知道上层的存在：
+代码按职责分层；网络和调度逻辑不进入 core。节点序列化入口局部委托给
+``takler.serialization`` 注册表/codec，后者负责组装 core 与内建任务类型；
+``takler.schema`` 不导入执行对象：
 
 .. mermaid::
 
@@ -109,9 +111,8 @@
       - ``Task`` 的具体实现，目前只有
         :py:class:`~takler.tasks.shell.ShellScriptTask` ：把
         「运行任务」落实为渲染脚本、写作业文件、派生 ``/bin/sh -c``
-        子进程。 **服务端不 import 这个包** —— ``ShellScriptTask``
-        经由 ``class_type`` 反射在反序列化时进入服务端进程（见
-        :doc:`core-design` 的序列化一节）。
+        子进程。受信任的内建注册表显式导入 ``ShellScriptTask``，
+        文档中的类型 ID 不触发模块导入（见 :doc:`core-design`）。
     * - ``takler.server``
       - 服务端的一切： ``TaklerServer`` 组装与生命周期、 ``Scheduler``
         主循环与全部 ``run_command_*`` 操作、 ``GrpcTransport`` 的

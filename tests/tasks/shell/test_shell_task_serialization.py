@@ -11,10 +11,7 @@ def test_to_dict_with_str_script_path():
     task = ShellScriptTask("task1", "/home/johndoe/flow1/task1.takler")
     d = task.to_dict()
     assert d["script_path"] == "/home/johndoe/flow1/task1.takler"
-    assert d["class_type"] == dict(
-        module="takler.tasks.shell.shell_script_task",
-        name="ShellScriptTask",
-    )
+    assert d["type_id"] == "takler.shell"
     # Task fields are still written out
     assert d["task_id"] is None
     assert d["try_no"] == 0

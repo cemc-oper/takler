@@ -113,14 +113,12 @@ class NodeDefinition(DefinitionModel):
     repeat: RepeatDateDefinition | None = None
     times: list[TimeDefinition] = Field(default_factory=list)
     # Builtins have no extra definition data. R0-11 supplies registered schemas.
-    type_data: dict[str, object] = Field(default_factory=dict)
+    type_data: dict[str, object] = Field(default_factory=dict, max_length=0)
 
     @model_validator(mode="after")
     def invariants(self):
         if self.name in {".", ".."} or any(c in self.name for c in "/:\0"):
             raise ValueError("invalid node name")
-        if self.type_data:
-            raise ValueError("builtin type_data must be empty")
         for values in (self.user_parameters, self.events, self.meters, self.limits):
             unique([item.name for item in values])
         unique([(item.node_path, item.limit_name) for item in self.in_limits])
@@ -223,7 +221,9 @@ def _decode_json(data):
         raise DefinitionError("invalid_document") from None
 
 
-def parse_definition(data: str | bytes | dict) -> DefinitionDocument:
+def parse_definition(
+    data: str | bytes | dict, *, model=DefinitionDocument
+) -> DefinitionDocument:
     """Validate a definition with diagnostics safe for logs and wire responses.
 
     Expression syntax and resolved references are checked by the builder, not
@@ -232,7 +232,7 @@ def parse_definition(data: str | bytes | dict) -> DefinitionDocument:
     try:
         if isinstance(data, (str, bytes)):
             data = _decode_json(data)
-        return DefinitionDocument.model_validate(data)
+        return model.model_validate(data)
     except ValidationError as exc:
         error = exc.errors(include_input=False, include_context=False)[0]
         code = error["type"]

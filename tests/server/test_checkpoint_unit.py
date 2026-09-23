@@ -232,7 +232,9 @@ def test_a_first_start_without_any_snapshot_is_an_info_and_an_empty_bunch(
     assert manager.bunch.flows == {}
     assert "ERROR" not in captured
     assert "WARNING" not in captured
-    empty_bunch = [line for line in _lines(captured, "INFO") if "empty bunch" in line]
+    empty_bunch = [
+        line for line in _lines(captured, "INFO") if "keeping the current bunch" in line
+    ]
     assert len(empty_bunch) == 1
     assert str(manager.checkpoint_file) in empty_bunch[0]
     # Every path that was looked for is named, so the operator can check

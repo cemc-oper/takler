@@ -114,11 +114,22 @@ def _bunches_with_job_passwords(draw: st.DrawFn) -> Bunch:
     ignored on both.
     """
     bunch = draw(bunches())
+    # The generic strategy draws deliberately arbitrary limit counters and
+    # unresolved references for low-level codec tests. This property isolates
+    # password persistence; occupancy validity has its own strict regressions.
+    from takler.serialization.builder import walk
+
+    for node in walk(bunch):
+        node.in_limit_manager.in_limit_list.clear()
+        for limit in node.limits:
+            limit.reset()
     for task in _tasks_of(bunch):
         if draw(st.booleans()):
             task.set_node_status_only(draw(st.sampled_from(_IN_FLIGHT_STATUSES)))
             # An in-flight task has run at least once, so keep ``try_no``
             # consistent with the status before the password is assigned.
+            task.try_no = max(task.try_no, 1)
+        if task.state.node_status in _IN_FLIGHT_STATUSES:
             task.try_no = max(task.try_no, 1)
         if task.try_no != 0:
             task.job_password = secrets.token_urlsafe(PASSWORD_NBYTES)

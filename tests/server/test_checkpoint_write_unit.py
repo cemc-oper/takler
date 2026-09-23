@@ -100,14 +100,16 @@ def test_build_payload_returns_a_json_string_with_the_expected_top_level():
     assert isinstance(snapshot["written_at"], str)
 
 
-def test_build_payload_bunch_subtree_equals_bunch_to_dict():
-    """No second snapshot format: the ``bunch`` key is ``Bunch.to_dict()``."""
+def test_build_payload_contains_complete_runtime():
+    """The mixed tree contains every required runtime field."""
     bunch = _make_bunch()
     manager = CheckpointManager(bunch=bunch)
 
     snapshot = json.loads(manager.build_payload())
 
-    assert snapshot["bunch"] == json.loads(json.dumps(bunch.to_dict()))
+    from takler.serialization.runtime import export_runtime
+
+    assert snapshot["bunch"] == json.loads(json.dumps(export_runtime(bunch)))
 
 
 def test_build_payload_reflects_later_bunch_changes():
@@ -362,7 +364,7 @@ def test_unserializable_bunch_is_reported_not_raised(tmp_path):
     def broken():
         raise TypeError("not serializable")
 
-    manager.bunch.to_dict = broken
+    manager.build_payload = broken
     result, captured = _capturing_stderr(manager.write_checkpoint)
 
     assert result is False

@@ -87,8 +87,8 @@ def _capturing_stderr(func):
 
 
 def test_constants():
-    assert CHECKPOINT_FORMAT_VERSION == 1
-    assert EARLIEST_SUPPORTED_FORMAT_VERSION == 1
+    assert CHECKPOINT_FORMAT_VERSION == 2
+    assert EARLIEST_SUPPORTED_FORMAT_VERSION == 2
     assert DEFAULT_CHECKPOINT_INTERVAL == 120.0
     assert MIN_CHECKPOINT_INTERVAL == 10.0
     assert DEFAULT_CHECKPOINT_FILE == "takler.check"

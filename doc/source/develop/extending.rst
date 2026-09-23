@@ -47,7 +47,7 @@
 
     from pathlib import Path
 
-    from takler.core import SerializationType, Task
+    from takler.core import Task
 
 
     class MarkerTask(Task):
@@ -63,41 +63,47 @@
             Path(self.marker_path).write_text(self.node_path + "\n")
             self.complete() # -> complete
 
-        # --- 序列化义务 ------------------------------------------------
-        def to_dict(self):
-            d = super().to_dict()
-            d["marker_path"] = (
-                None if self.marker_path is None else str(self.marker_path)
-            )
-            return d
+受信任注册与独立 codec
+~~~~~~~~~~~~~~~~~~~~~~
 
-        @classmethod
-        def fill_from_dict(cls, d, node, method=SerializationType.Status):
-            Task.fill_from_dict(d=d, node=node, method=method)
-            node.marker_path = d.get("marker_path")
-            return node
+在服务启动代码中显式注册类型。上传定义只能引用已经注册的稳定 ID，
+不能指定模块路径、函数源码或自动发现入口。构造器由注册项提供，
+可以接收定义参数；构建阶段不得读取文件或执行任务。
 
-序列化与 class_type 反射（硬约束）
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. code-block:: python
 
-自定义任务类型能被 checkpoint 恢复，必须同时满足三条，否则重启后恢复
-失败（机制见 :doc:`core-design` 的序列化一节，排错见
-:doc:`/operation/checkpoint` ）：
+    from takler.schema.definition import DefinitionModel
+    from takler.serialization import NodeRegistration, get_registry
 
-#. **模块可被按路径导入** ： ``Node.from_dict`` 用
-   ``importlib.import_module(class_type["module"])`` 找类，所以类必须
-   定义在一个已安装、可导入的模块顶层 —— 定义在 ``__main__`` 或
-   REPL 里的类恢复不了；
-#. **构造器只收 ``name``** ：反射用 ``class_object(name=...)`` 构造，
-   其余字段必须有默认值，由 ``fill_from_dict`` 事后填充；
-#. ** ``to_dict`` / ``fill_from_dict`` 成对** ：先调父类实现再往
-   dict 里加自己的字段（定义字段在 Tree 与 Status 两种模式下都要恢
-   复，参考 ``ShellScriptTask.script_path`` 的写法）。
+    class MarkerDefinition(DefinitionModel):
+        marker_path: str
 
-``job_password`` 刻意不进 ``to_dict`` （它会同时喂给 ``show`` 响应与
-快照文件）；自定义类型只要不给它开新的序列化通道，快照里独立的
-``job_passwords`` 映射会让在途作业在重启后仍能上报（见
-:doc:`/tutorial/advanced-topics/restart` ）。
+    class MarkerRuntime(DefinitionModel):
+        pass
+
+    get_registry().register(NodeRegistration(
+        type_id="example.marker",
+        python_type=MarkerTask,
+        kind="task",
+        definition_schema=MarkerDefinition,
+        export_definition=lambda node: {"marker_path": str(node.marker_path)},
+        construct=lambda name, data: MarkerTask(name, data.marker_path),
+        runtime_schema=MarkerRuntime,
+        export_runtime=lambda node: {},
+        restore_runtime=lambda node, data: None,
+        query=lambda node: {"marker_path": str(node.marker_path)},
+    ))
+
+定义字段位于 ``type_data``，运行扩展字段位于 checkpoint 的
+``runtime_data``。schema 必须 strict 且 extra=forbid；禁止重复 ID、
+重复精确 Python 类型或覆盖内建 ``takler.*`` 命名空间。缺少某个入口
+需要的 codec 会报 ``missing_codec``，未知类型报 ``unknown_type`` /
+``unregistered_type``。查询投影接口供后续只读查询接入，必须剔除
+``secret_fields``，不能返回执行对象。
+
+注册是受信任 Python 代码，codec 不是沙箱。不要在定义 schema 中声明
+运行身份、口令或认证字段；业务机密也不能进入查询投影。
+``job_password`` 只由 checkpoint 独立的在途口令映射保存。
 
 生成变量
 ~~~~~~~~
@@ -116,7 +122,8 @@
 ``takler.core.task(name)`` 把一个函数变成内联任务： 调用被装饰函数即
 得到一个 ``Task`` 子类实例，其 ``run()`` 按上面「进程内即时完成」模
 式执行 —— ``init()`` → 函数体（ ``self`` 注入为关键字参数） →
-``complete()`` 。适合示例、冒烟测试与秒级任务。
+``complete()`` 。适合本地示例、冒烟测试与秒级任务。生成的局部类型没有稳定身份，
+未经显式注册可重建工厂和 codec 不得导出或恢复。
 
 ``async_task`` **目前不可用于自动调度** ： 它生成的 ``run`` 是协程函
 数，而调度器同步调用 ``run()`` ，函数体永远不会执行。该限制已在
@@ -154,7 +161,7 @@ API —— 要装自己的实现，只能在首次 ``get_logger`` 之前替换
 #. 单元测试： ``run()`` 模板顺序（ ``before_run`` → ``do_run`` →
    ``after_run`` ）、 ``do_run`` 返回 ``False`` 不进
    ``submitted`` ；
-#. ``class_type`` 往返： ``to_dict`` → JSON → ``from_dict`` 还原出原
-   类型与自定义字段；
+#. 定义与 runtime 分别往返，确认 type_id 还原原类型与自定义字段，
+   并验证未注册/缺 codec 时明确失败；
 #. 重启恢复： 把 flow 载入服务、快照、重启，确认恢复成功且在途状态
    正确（步骤参考 :doc:`/tutorial/advanced-topics/restart` ）。

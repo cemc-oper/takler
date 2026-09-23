@@ -1,6 +1,6 @@
 """Read-only, allowlisted projection of builtins into a pure definition."""
 
-from takler.core import Bunch, Flow, NodeContainer, Task, NodeStatus
+from takler.core import Bunch, Flow, NodeStatus
 from takler.core.repeat import RepeatDate
 from takler.tasks.shell.shell_script_task import ShellScriptTask
 from takler.schema.definition import (
@@ -10,19 +10,19 @@ from takler.schema.definition import (
 )
 
 
-_BUILTIN_TYPES = {
-    Bunch: "takler.bunch",
-    Flow: "takler.flow",
-    NodeContainer: "takler.container",
-    Task: "takler.task",
-    ShellScriptTask: "takler.shell",
-}
+from .registry import (
+    get_registry,
+    using_registry,
+    require_codec,
+    safe_codec,
+    validate_definition_data,
+)
 
 
 def _project(node, path):
-    type_id = _BUILTIN_TYPES.get(type(node))
-    if type_id is None:
-        raise DefinitionError("unregistered_type", path)
+    entry = get_registry().by_type(type(node))
+    type_id = entry.type_id
+    require_codec(entry, "definition_schema", "export_definition")
     result = dict(
         type_id=type_id,
         name=node.name,
@@ -30,7 +30,12 @@ def _project(node, path):
             dict(name=p.name, value=p.value) for p in node.user_parameters.values()
         ],
     )
-    if type(node) is Bunch:
+    if not type_id.startswith("takler."):
+        result["type_data"] = entry.definition_schema.model_validate(
+            entry.export_definition(node)
+        ).model_dump(mode="json")
+        validate_definition_data(result["type_data"], entry.secret_fields)
+    if entry.kind == "bunch":
         if (
             node.children
             or node.trigger_expression is not None
@@ -96,16 +101,23 @@ def _project(node, path):
     return result
 
 
-def export_definition(root: Bunch | Flow) -> DefinitionDocument:
+@safe_codec
+def export_definition(root: Bunch | Flow, *, registry=None) -> DefinitionDocument:
     """Return a validated document without reading files or changing runtime.
 
     Serialize with ``model_dump(mode="json")`` or ``model_dump_json()``.
     Unknown subclasses are rejected, never downgraded to a builtin task.
     """
-    if isinstance(root, (Bunch, Flow)) and type(root) not in _BUILTIN_TYPES:
-        raise DefinitionError("unregistered_type")
-    if type(root) not in (Bunch, Flow):
-        raise DefinitionError("invalid_structure")
-    return parse_definition(
-        dict(kind="takler.definition", schema_version=1, root=_project(root, "$.root"))
-    )
+    registry = registry or get_registry()
+    with using_registry(registry):
+        entry = registry.by_type(type(root))
+        if entry.kind not in ("bunch", "flow"):
+            raise DefinitionError("invalid_structure")
+        return parse_definition(
+            dict(
+                kind="takler.definition",
+                schema_version=1,
+                root=_project(root, "$.root"),
+            ),
+            model=registry.document_model(),
+        )

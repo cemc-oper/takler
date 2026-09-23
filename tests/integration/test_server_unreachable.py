@@ -180,6 +180,8 @@ def test_child_command_survives_a_five_minute_outage(
         first.bunch.add_flow(flow)
         await first.start()
         first.scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
+        # Simulate an already submitted job with its run identity and password.
+        first.bunch.find_node(NODE_PATH).increment_try_no()
         first.scheduler.run_command_force(
             ForceCommand(paths=[NODE_PATH], state="submitted", recursive=False)
         )

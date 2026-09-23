@@ -483,6 +483,10 @@ def test_stop_shuts_down_cleanly_without_raising(flow_names, tmp_path):
     # default Checkpoint_File path is ``takler.check`` relative to the current
     # working directory -- point it at ``tmp_path`` so the suite does not drop
     # snapshots into the source tree.
+    # Hypothesis reuses tmp_path across examples. Do not restore a prior
+    # example's complete tree over the fresh task instances asserted below.
+    (tmp_path / "takler.check").unlink(missing_ok=True)
+    (tmp_path / "takler.check.b").unlink(missing_ok=True)
     server = TaklerServer(
         host="localhost",
         port=_free_port(),

@@ -5,16 +5,17 @@ from pathlib import Path
 
 import pytest
 
+from takler.serialization.runtime import export_runtime
 from takler.core import Bunch, SerializationType, Task
 from takler.exceptions import InvalidRequestError
 
-FIXTURE = Path(__file__).parents[3] / "fixtures" / "checkpoint_root_v1.json"
+FIXTURE = Path(__file__).parents[3] / "fixtures" / "checkpoint_root_v2.json"
 
 
 def test_bunch_restores_all_stored_root_attributes_and_references():
     source = json.loads(FIXTURE.read_text())["bunch"]
     restored = Bunch.from_dict(source)
-    assert restored.to_dict() == source
+    assert export_runtime(restored) == source
     task = restored.find_node("/f/t")
     assert task.get_bunch() is restored
     assert task.find_parent_parameter("ROOT_SETTING").value == "inherited"

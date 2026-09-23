@@ -11,7 +11,7 @@ def test_repeat_date_to_dict():
         end_date="20221110",
         step=1,
         value=20221101,
-        class_type="RepeatDate",
+        type_id="takler.repeat.date",
     )
 
     repeat_date.increment()
@@ -22,7 +22,7 @@ def test_repeat_date_to_dict():
         end_date="20221110",
         step=1,
         value=20221102,
-        class_type="RepeatDate",
+        type_id="takler.repeat.date",
     )
 
 
@@ -32,7 +32,7 @@ def test_repeat_date_from_dict():
         start_date="20221101",
         end_date="20221110",
         step=1,
-        class_type="RepeatDate",
+        type_id="takler.repeat.date",
     )
 
     assert RepeatDate.from_dict(d, method=SerializationType.Tree) == RepeatDate(
@@ -49,7 +49,7 @@ def test_repeat_date_from_dict():
         start_date="20221101",
         end_date="20221110",
         step=1,
-        class_type="RepeatDate",
+        type_id="takler.repeat.date",
         value=20221105,
     )
     repeat_date = RepeatDate("TAKLER_DATE", "20221101", "20221110")
@@ -73,7 +73,7 @@ def test_repeat_to_dict():
             end_date="20221110",
             step=1,
             value=20221101,
-            class_type="RepeatDate",
+            type_id="takler.repeat.date",
         )
     )
 
@@ -85,7 +85,7 @@ def test_repeat_from_dict():
             start_date="20221101",
             end_date="20221110",
             step=1,
-            class_type="RepeatDate",
+            type_id="takler.repeat.date",
         )
     )
 
@@ -104,7 +104,7 @@ def test_repeat_from_dict():
             start_date="20221101",
             end_date="20221110",
             step=1,
-            class_type="RepeatDate",
+            type_id="takler.repeat.date",
             value=20221105,
         )
     )

@@ -14,7 +14,7 @@ from takler.tasks import ShellScriptTask
 def flow_data(request):
     # Independent saved data, never produced by the reader/writer under test.
     source = json.loads(
-        (Path(__file__).parents[3] / "fixtures" / "checkpoint_root_v1.json").read_text()
+        (Path(__file__).parents[3] / "fixtures" / "checkpoint_root_v2.json").read_text()
     )["bunch"]
     flow = source["flows"][0]
     task = flow["children"][0]
@@ -26,24 +26,21 @@ def flow_data(request):
         aborted_reason="previous attempt failed",
         job_password="UNTRUSTED_WIRE_PASSWORD",
     )
-    task["class_type"] = {
-        "module": request.param.__module__,
-        "name": request.param.__name__,
-    }
+    task["type_id"] = (
+        "takler.shell" if request.param is ShellScriptTask else "takler.task"
+    )
     if request.param is ShellScriptTask:
         task["script_path"] = "/scripts/task.sh"
     flow["children"] = [
         {
             "name": "c",
-            "class_type": {
-                "module": "takler.core.node_container",
-                "name": "NodeContainer",
-            },
+            "type_id": "takler.container",
             "state": {"status": 5, "suspended": True},
             "children": [task],
         }
     ]
     task["limits"][0]["node_paths"] = ["/f/c/t"]
+    task["limits"][0]["value"] = 2
     return flow, request.param
 
 
@@ -138,6 +135,9 @@ def test_status_preserves_runtime_but_never_reads_embedded_password(flow_data):
     assert task.job_password is None  # CheckpointManager restores its separate map.
     expected = copy.deepcopy(data)
     del expected["children"][0]["children"][0]["job_password"]
+    for key in ("trigger_free", "complete_trigger_free", "is_complete_triggered"):
+        if expected.get(key) is False:
+            del expected[key]
     assert restored.to_dict() == expected
     assert task.events[0].value is False
     assert task.meters[0].value == 42

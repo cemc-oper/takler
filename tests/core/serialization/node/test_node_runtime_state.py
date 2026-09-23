@@ -22,10 +22,7 @@ def task_dict():
             status=5,
             suspended=False,
         ),
-        class_type=dict(
-            module="takler.core.task_node",
-            name="Task",
-        ),
+        type_id="takler.task",
         complete_trigger="./task2 == complete",
         is_complete_triggered=True,
         limits=[

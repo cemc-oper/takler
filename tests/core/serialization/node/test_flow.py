@@ -39,19 +39,17 @@ def test_flow_node(flow_case):
     flow1 = flow_case.flow1
     assert flow1.to_dict() == dict(
         name="flow1",
-        class_type=dict(module="takler.core.flow", name="Flow"),
+        type_id="takler.flow",
         state=dict(status=3, suspended=False),
         children=[
             dict(
                 name="container1",
-                class_type=dict(
-                    module="takler.core.node_container", name="NodeContainer"
-                ),
+                type_id="takler.container",
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
                         name="task1",
-                        class_type=dict(module="takler.core.task_node", name="Task"),
+                        type_id="takler.task",
                         state=dict(status=3, suspended=False),
                         task_id=None,
                         aborted_reason=None,
@@ -59,7 +57,7 @@ def test_flow_node(flow_case):
                     ),
                     dict(
                         name="task2",
-                        class_type=dict(module="takler.core.task_node", name="Task"),
+                        type_id="takler.task",
                         state=dict(status=3, suspended=False),
                         task_id=None,
                         aborted_reason=None,
@@ -84,19 +82,17 @@ def test_flow_from_dict(flow_case):
     flow1 = flow_case.flow1
     d = dict(
         name="flow1",
-        class_type=dict(module="takler.core.flow", name="Flow"),
+        type_id="takler.flow",
         state=dict(status=3, suspended=False),
         children=[
             dict(
                 name="container1",
-                class_type=dict(
-                    module="takler.core.node_container", name="NodeContainer"
-                ),
+                type_id="takler.container",
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
                         name="task1",
-                        class_type=dict(module="takler.core.task_node", name="Task"),
+                        type_id="takler.task",
                         state=dict(status=3, suspended=False),
                         task_id=None,
                         aborted_reason=None,
@@ -104,7 +100,7 @@ def test_flow_from_dict(flow_case):
                     ),
                     dict(
                         name="task2",
-                        class_type=dict(module="takler.core.task_node", name="Task"),
+                        type_id="takler.task",
                         state=dict(status=3, suspended=False),
                         task_id=None,
                         aborted_reason=None,

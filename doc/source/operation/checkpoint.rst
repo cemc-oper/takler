@@ -22,7 +22,7 @@ takler 服务把整棵节点树的状态定期快照到**检查点文件**，重
     * - 键
       - 内容
     * - ``format_version``
-      - 快照格式版本，当前为 ``1``
+      - 快照格式版本，当前为 ``2``
     * - ``takler_version``
       - 写出快照的 takler 版本，仅作诊断，不参与恢复
     * - ``written_at``
@@ -100,15 +100,15 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 
 * 文件不存在：记一条 INFO，进入下一级
 * 文件不可读、不是 JSON、缺 ``bunch`` 键，或 ``format_version`` 不是当前
-  整数版本 ``1``：记一条含路径与原因的 ERROR，进入下一级。缺少版本、
+  整数版本 ``2``：记一条含路径与原因的 ERROR，进入下一级。缺少版本、
   null、布尔值、浮点数以及旧/未知版本均拒绝；不提供历史格式兼容
 * 两级都不可用：记一条 ERROR，以空 bunch 启动
 
-成功恢复时记一条 INFO，报告恢复的 flow 数与节点数；单个 flow 反序列化
-失败只记 ERROR 跳过该 flow，其余 flow 照常恢复。随后还原作业口令并记
-一条 INFO 报告还原条数：映射整体缺失（旧格式快照）按空映射处理；映射
-中指向不存在的路径、或指向非 task 节点的条目各记一条 WARNING 并跳过，
-不影响其他条目。
+成功恢复时记 INFO，报告 flow、节点和口令数量。先在临时树校验全部
+节点类型、运行字段、引用、limit 占用和在途口令；任何一项失败都拒绝
+整份快照，再尝试备份。不会跳过坏 flow 后报告成功。
+``job_passwords`` 必须存在；未知路径、非 task 路径、终态口令条目或
+缺失 submitted/active 口令使快照失败，不回显口令值。
 
 根级属性恢复
 ~~~~~~~~~~~~
@@ -117,7 +117,7 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 触发器、事件、标尺、limit/in-limit、repeat 和 time 的已存储值。
 根参数仍由 flow 和子节点继承；这些存储字段的往返不代表根调度属性能控制全部 flow。
 ``trigger_free`` / ``complete_trigger_free`` 保存 free-dep 的运行效果，
-当前格式省略这两个可选字段时按 false 读取；Tree 模式不恢复它们。
+v2 必须显式保存这两个字段及完成触发锁存；缺失时拒绝恢复。
 
 checkpoint 恢复保留当前 ``server_state`` 对象及部署配置，不使用快照旧值替换
 host/port、服务器参数或当前 TLS/auth 等配置。快照中根或子节点的用户参数
@@ -125,13 +125,9 @@ host/port、服务器参数或当前 TLS/auth 等配置。快照中根或子节�
 使继承得到当前服务地址；显式用户 ``TAKLER_HOME`` 和其他业务参数保持原值。
 独立 ``Bunch.from_dict`` 没有在线部署上下文，仍恢复其字典中的 server_state。
 
-恢复之后还有两项自检，都只记日志、不阻止启动：
+在途口令完整性在提交临时树之前强制校验，不因关闭认证而跳过。
+恢复之后还会进行地址诊断：
 
-* **口令自检** （仅 ``auth_mode`` 为 ``enabled`` 时执行）：恢复后仍处于
-  submitted / active 却没有口令的 task，记一条 WARNING 列出全部路径。
-  这些任务的 child 命令会命中 zombie 条件 ``Z1`` ，由 zombie 策略处置，
-  见 :doc:`/operation/zombie` 。 ``disabled`` 下空口令不会成为 zombie
-  条件，因此不检查
 * **地址一致性校验** ：比较快照记录的服务地址与本次启动地址。一致记
   INFO ；不一致但没有在途任务记 WARNING （把空闲服务迁到另一台机器是
   常规操作）；不一致且仍有 submitted / active 任务记 ERROR ，列出两组
@@ -142,15 +138,10 @@ host/port、服务器参数或当前 TLS/auth 等配置。快照中根或子节�
 自定义 Task 的恢复要求
 ----------------------
 
-恢复按每个节点记录的 ``class_type`` （模块名加类名）动态导入并重建节点，
-而不是固定构造内置类型。自定义的 ``Task`` 子类因此必须满足：
-
-* 所在模块可以导入（在服务进程的 Python 环境中可用）
-* 构造器可以只用 ``name`` 一个参数调用
-* 正确覆盖 ``fill_from_dict`` 并调用父类实现
-
-不满足时该节点所在 flow 的恢复失败并被跳过（记 ERROR ），不影响其他
-flow 。
+恢复只使用启动代码注册的稳定 ``type_id``。扩展必须提供定义 schema、
+构造器、定义导出器及运行状态 schema/读写 codec，见 :doc:`/develop/extending`。
+输入不能触发动态模块导入；未知类型使整份快照失败。版本 1 不再读取，
+没有别名或转换器。
 
 发给他人分析前的脱敏
 --------------------
@@ -173,8 +164,8 @@ flow 。
   的下一级
 * ``could not restore from the checkpoint file ... nor from the backup
   file`` ：两级都失败，服务以空 bunch 启动
-* ``failed to restore flow ...`` ：单个 flow 反序列化失败被跳过，
-  常见于自定义 Task 子类不满足上节的恢复要求
+* ``failed to restore the bunch ...``：整份快照未通过类型、字段或引用校验，
+  原在线树保持不变，继续尝试备份
 * ``restored N flow(s) and M node(s)`` 与 ``recovered the job password
   of K task(s)`` ：恢复成功，把数字与预期对比即可确认完整性
 * ``checkpoint server address differs ...`` ：地址不一致的分级记录，

@@ -1,10 +1,13 @@
-import importlib
 from typing import Optional, Dict, Union, List
 
 from pydantic import BaseModel, field_validator, ConfigDict
 
 from takler import constant
-from takler.exceptions import InvalidNodePathError, NodeNotFoundError
+from takler.exceptions import (
+    InvalidNodePathError,
+    NodeNotFoundError,
+    InvalidRequestError,
+)
 
 from .node_container import NodeContainer
 from .flow import Flow
@@ -35,21 +38,11 @@ class Bunch(NodeContainer):
 
     @classmethod
     def from_dict(cls, d: dict) -> "Bunch":
-        class_type = d["class_type"]
-        class_module = class_type["module"]
-        class_name = class_type["name"]
-        class_module = importlib.import_module(class_module)
-        class_object = getattr(class_module, class_name)
-        bunch = class_object(name=d["name"])
-        bunch.restore_root_attributes(d)
-        bunch.server_state = ServerState.from_dict(d["server_state"])
-        for flow in d["flows"]:
-            flow = Flow.from_dict(flow)
-            # go through ``add_flow`` so that the flow gets its back reference to
-            # the bunch, which makes ``get_bunch()`` non ``None`` and lets the
-            # parameter inheritance chain reach the server parameters
-            # (``TAKLER_HOST`` / ``TAKLER_PORT``).
-            bunch.add_flow(flow)
+        from takler.serialization.runtime import restore_node
+
+        bunch = restore_node(d)
+        if not isinstance(bunch, Bunch):
+            raise InvalidRequestError("expected bunch")
         return bunch
 
     def restore_root_attributes(self, d: Dict) -> None:

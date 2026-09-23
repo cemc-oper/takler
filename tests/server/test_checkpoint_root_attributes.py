@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from takler.serialization.runtime import export_runtime
 from takler.core import Bunch
 from takler.server.checkpoint import CheckpointManager
 
 from .test_checkpoint_restore_unit import _capturing_stderr
 
-FIXTURE = Path(__file__).parents[1] / "fixtures" / "checkpoint_root_v1.json"
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "checkpoint_root_v2.json"
 
 
 def test_checkpoint_restores_root_storage_without_restoring_deployment(tmp_path):
@@ -24,7 +25,7 @@ def test_checkpoint_restores_root_storage_without_restoring_deployment(tmp_path)
     assert bunch.server_state is server_state
     expected = data["bunch"]
     expected["server_state"] = server_state.to_dict()
-    assert bunch.to_dict() == expected
+    assert export_runtime(bunch) == expected
     task = bunch.find_node("/f/t")
     assert task.get_bunch() is bunch
     assert task.find_parent_parameter("ROOT_SETTING").value == "inherited"
@@ -48,8 +49,11 @@ def test_address_overrides_at_every_level_are_removed_and_reported(tmp_path):
     task = flow["children"][0]
     container = {
         "name": "c",
-        "class_type": {"module": "takler.core.node_container", "name": "NodeContainer"},
+        "type_id": "takler.container",
         "state": {"status": 1, "suspended": False},
+        "trigger_free": False,
+        "complete_trigger_free": False,
+        "is_complete_triggered": False,
     }
     flow["children"].append(container)
     for node in (root, flow, container, task):
@@ -78,7 +82,7 @@ def test_address_overrides_at_every_level_are_removed_and_reported(tmp_path):
         assert node.find_parent_parameter("TAKLER_PORT").value == "9000"
 
 
-@pytest.mark.parametrize("version", [None, 0, -1, 2, 1.0, True, "1"])
+@pytest.mark.parametrize("version", [None, 0, -1, 1, 3, 2.0, True, "2"])
 def test_unsupported_version_falls_back_without_leaking_root_attributes(
     tmp_path, version
 ):

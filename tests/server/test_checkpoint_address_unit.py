@@ -57,6 +57,7 @@ def _source_bunch(in_flight: bool) -> Bunch:
     if in_flight:
         flow.find_node("/flow1/container1/task1").run()  # -> submitted
         task2 = flow.find_node("/flow1/container1/task2")
+        task2.increment_try_no()
         task2.init(task_id="12345")  # -> active
 
     return bunch

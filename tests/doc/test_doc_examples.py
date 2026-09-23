@@ -3233,9 +3233,8 @@ def test_develop_architecture_documents_layers_and_components():
 
 def test_develop_architecture_core_never_imports_upper_layers():
     """The layering rule the page states: takler.core imports no server,
-    client, tui or tasks code; takler.tasks and the server stay independent
-    of each other (ShellScriptTask enters the server via class_type
-    reflection, not an import).
+    client, tui or tasks code. Serialization entry points delegate to the
+    explicit registry; schema remains execution-independent.
     """
     import re
 
@@ -3252,7 +3251,13 @@ def test_develop_architecture_core_never_imports_upper_layers():
         return result
 
     core_imports = imported_packages(src / "core")
-    assert core_imports <= {"exceptions", "logging", "constant"}
+    assert core_imports <= {
+        "exceptions",
+        "logging",
+        "constant",
+        "schema",
+        "serialization",
+    }
 
     tasks_imports = imported_packages(src / "tasks")
     assert "server" not in tasks_imports
@@ -3435,10 +3440,7 @@ def test_develop_core_design_serialization_class_type_and_password():
 
     # class_type reflection metadata is present and round-trips.
     task_dict = d["flows"][0]["children"][0]
-    assert task_dict["class_type"] == {
-        "module": "takler.tasks.shell.shell_script_task",
-        "name": "ShellScriptTask",
-    }
+    assert task_dict["type_id"] == "takler.shell"
     restored = Bunch.from_dict(json.loads(blob))
     restored_task = restored.find_node("/f/t1")
     assert isinstance(restored_task, ShellScriptTask)
@@ -3690,34 +3692,36 @@ def test_develop_extending_run_template_order_and_do_run_gate():
     assert failing.try_no == 1  # before_run already ran
 
 
-def test_develop_extending_custom_task_class_type_roundtrip():
-    """The documented class_type reflection constraints: the custom class is
-    importable by module path, constructed with name only, and its extra
-    field is restored through fill_from_dict."""
-    import importlib
-    import json
+def test_develop_extending_custom_task_registered_roundtrip():
+    from takler.core import Bunch
+    from takler.schema.definition import DefinitionModel
+    from takler.serialization import (
+        NodeRegistration,
+        builtin_registry,
+        export_definition,
+        build_definition,
+    )
 
-    from takler.core import Bunch, Flow
+    class MarkerDefinition(DefinitionModel):
+        marker_path: str
 
-    module = importlib.import_module(DocExampleMarkerTask.__module__)
-    assert module.DocExampleMarkerTask is DocExampleMarkerTask
-
+    registry = builtin_registry()
+    registry.register(
+        NodeRegistration(
+            type_id="example.marker",
+            python_type=DocExampleMarkerTask,
+            kind="task",
+            definition_schema=MarkerDefinition,
+            export_definition=lambda node: {"marker_path": node.marker_path},
+            construct=lambda name, data: DocExampleMarkerTask(name, data.marker_path),
+        )
+    )
     bunch = Bunch()
-    flow = Flow("f")
-    flow.add_task(DocExampleMarkerTask("t1", marker_path="/tmp/marker.txt"))
-    bunch.add_flow(flow)
-
-    d = bunch.to_dict()
-    task_dict = d["flows"][0]["children"][0]
-    assert task_dict["class_type"] == {
-        "module": DocExampleMarkerTask.__module__,
-        "name": "DocExampleMarkerTask",
-    }
-
-    restored = Bunch.from_dict(json.loads(json.dumps(d)))
-    restored_task = restored.find_node("/f/t1")
-    assert isinstance(restored_task, DocExampleMarkerTask)
-    assert restored_task.marker_path == "/tmp/marker.txt"
+    bunch.add_flow("f").add_task(DocExampleMarkerTask("t1", "/tmp/marker.txt"))
+    document = export_definition(bunch, registry=registry)
+    restored = build_definition(document, registry=registry)
+    assert type(restored.find_node("/f/t1")) is DocExampleMarkerTask
+    assert restored.find_node("/f/t1").marker_path == "/tmp/marker.txt"
 
 
 def test_develop_extending_task_decorator_inline_execution():

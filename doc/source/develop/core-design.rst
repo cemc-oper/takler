@@ -179,12 +179,12 @@ Node 继承体系
    ``Meter`` 取整数值、 ``Parameter`` 取其值；比较节点对左右
    ``value()`` 比较，逻辑节点对左右 ``evaluate()`` 短路求值。
 
-序列化： Tree / Status 双模式与 class_type 反射
+序列化：纯定义与注册类型
 -----------------------------------------------
 
-``to_dict`` / ``from_dict`` 是节点树与外界（ ``show`` 响应、
-快照文件、 ``load`` 命令）之间的唯一通道。每个可序列化的类自己实
-现这对方法， ``Node`` 的基类实现负责公共字段，子类用
+纯定义使用 :doc:`definition` 中的 ``export_definition`` / ``build_definition``。
+现有 ``to_dict`` / ``from_dict`` 保留混合树的定义与运行字段；
+checkpoint v2 另行校验完整 runtime。内建 ``Node`` 负责公共字段，子类用
 ``fill_from_dict`` 链式填充各自多出来的字段（ ``Task`` 填
 ``task_id`` / ``try_no`` ， ``Flow`` 填 ``begun`` / ``calendar``
 ， ``ShellScriptTask`` 填 ``script_path`` ）。
@@ -200,17 +200,16 @@ Node 继承体系
   ``begun`` 、日历、 complete 触发器的闩、限额占用等。快照文件与
   ``show`` 响应用它，见 :doc:`/operation/checkpoint` 。
 
-**class_type 反射** ：每个节点的 dict 里带
-``class_type: {module, name}`` ， ``Node.from_dict`` 用
-``importlib.import_module`` 找到类、调 ``class_object(name=...)``
-构造，再走 ``fill_from_dict`` 。这就是服务端 **不 import**
-``takler.tasks`` 却能恢复 ``ShellScriptTask`` 的机制 —— 代价是自
-定义 ``Task`` 子类必须能被 ``importlib`` 按模块路径导入（快照恢
-复失败的常见原因，见 :doc:`/operation/troubleshooting` ）。
+**受信任类型注册**：节点记录稳定 ``type_id``；``Node.from_dict`` 与
+``Bunch.from_dict`` 只查询启动代码建立的注册表，不按输入导入模块。
+未知类型或缺少 codec 明确失败；局部 ``@task`` 也不能隐式序列化。
+扩展必须显式提供定义 schema、导出器、构造器和独立运行 codec，
+见 :doc:`extending`。checkpoint 在临时树全量校验后提交，坏 flow
+会使整份快照失败，并尝试备份。
 
 **什么不进序列化** 与进了一样重要： ``Task.job_password`` 被刻意
-排除 —— ``to_dict`` 同时喂给 ``show`` 响应与快照文件，序列化它
-等于把全部在途作业口令发给任何能调 ``show`` 的人。它由
+排除 —— ``to_dict`` 供 ``show`` 读取，口令只由 checkpoint 独立映射保存。
+checkpoint 的允许字段投影也不会把口令放入节点树。它由
 ``increment_try_no`` 与 ``requeue`` 两个写入点维护，不变式是
 「 ``job_password`` 为空当且仅当 ``try_no == 0`` 」。同理，
 ``user_parameters`` 之外的 generated 参数（ ``TAKLER_NAME`` 等）

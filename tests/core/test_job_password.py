@@ -38,7 +38,7 @@ MIN_JOB_PASSWORD_LENGTH = 32
 # serialization fails here and has to be argued for.
 M1_TASK_DICT_KEYS = {
     "aborted_reason",
-    "class_type",
+    "type_id",
     "name",
     "state",
     "task_id",

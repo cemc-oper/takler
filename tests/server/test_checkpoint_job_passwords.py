@@ -201,11 +201,11 @@ def test_snapshot_text_holds_no_password_of_a_not_persisted_task():
         assert _password_of(bunch, path) not in payload
 
 
-def test_snapshot_keeps_format_version_one_with_the_new_top_level_key():
+def test_snapshot_uses_format_version_two():
     """Requirement 5.7: a new sibling of ``bunch`` is not a format change."""
     snapshot = json.loads(CheckpointManager(bunch=_source_bunch()).build_payload())
 
-    assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION == 1
+    assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION == 2
     # A sibling of ``bunch``, never inside the node tree: ``show`` and the
     # snapshot share one ``Bunch.to_dict()``.
     assert JOB_PASSWORDS_KEY in snapshot
@@ -235,52 +235,30 @@ def test_restore_writes_the_passwords_back_onto_the_in_flight_tasks(tmp_path):
     assert [line for line in _lines(captured, "INFO") if "job password of 2" in line]
 
 
-def test_restore_of_a_pre_m2_snapshot_without_the_mapping_key(tmp_path):
-    """Requirement 5.6: a snapshot with no password mapping still restores."""
+def test_restore_rejects_a_snapshot_without_the_mapping_key(tmp_path):
     _write_source_snapshot(tmp_path)
     snapshot = _snapshot(tmp_path)
     del snapshot[JOB_PASSWORDS_KEY]
     _rewrite_snapshot(tmp_path, snapshot)
     manager = _target_manager(tmp_path)
-
     result, captured = _capturing_stderr(manager.restore)
-
-    assert result is True
-    assert sorted(manager.bunch.flows) == ["flow1"]
-    assert manager.bunch.find_node(ACTIVE_PATH).state.node_status is NodeStatus.active
-    assert manager.bunch.find_node(ACTIVE_PATH).job_password is None
-    # An absent mapping is an empty mapping, not a fault: no WARNING, no ERROR.
-    assert _lines(captured, "WARNING") == []
-    assert _lines(captured, "ERROR") == []
+    assert result is False
+    assert manager.bunch.flows == {}
+    assert "incomplete_checkpoint" in captured
 
 
-def test_restore_skips_a_stale_path_and_a_non_task_path(tmp_path):
-    """Requirement 5.8: two bad entries, two WARNINGs, the rest restored."""
-    source = _write_source_snapshot(tmp_path)
+def test_restore_rejects_stale_and_non_task_password_paths(tmp_path):
+    _write_source_snapshot(tmp_path)
     snapshot = _snapshot(tmp_path)
-    stale_path = "/flow1/container1/removed_task"
-    # Both bad entries carry a value, so a naive implementation would happily
-    # write them somewhere; neither value may reach any node.
-    snapshot[JOB_PASSWORDS_KEY][stale_path] = "stale-value"
+    snapshot[JOB_PASSWORDS_KEY]["/flow1/container1/removed_task"] = "stale-value"
     snapshot[JOB_PASSWORDS_KEY][CONTAINER_PATH] = "container-value"
     _rewrite_snapshot(tmp_path, snapshot)
     manager = _target_manager(tmp_path)
-
     result, captured = _capturing_stderr(manager.restore)
-
-    assert result is True
-    warnings = _lines(captured, "WARNING")
-    assert len(warnings) == 2
-    assert any(stale_path in line and "does not exist" in line for line in warnings)
-    assert any(CONTAINER_PATH in line and "not a task" in line for line in warnings)
-
-    # The two good entries were still written back.
-    restored = manager.bunch
-    assert _password_of(restored, SUBMITTED_PATH) == _password_of(
-        source, SUBMITTED_PATH
-    )
-    assert _password_of(restored, ACTIVE_PATH) == _password_of(source, ACTIVE_PATH)
-    assert [line for line in _lines(captured, "INFO") if "job password of 2" in line]
+    assert result is False
+    assert manager.bunch.flows == {}
+    assert "invalid_runtime" in captured
+    assert "stale-value" not in captured and "container-value" not in captured
 
 
 # ---------------------------------------------------------------------------

@@ -62,10 +62,7 @@ def test_node_to_dict(task_case):
             status=3,
             suspended=False,
         ),
-        class_type=dict(
-            module="takler.core.task_node",
-            name="Task",
-        ),
+        type_id="takler.task",
         user_parameters=[
             dict(name="param1", value="one"),
         ],
@@ -86,7 +83,7 @@ def test_node_to_dict(task_case):
                 end_date="20221202",
                 step=1,
                 value=20221201,
-                class_type="RepeatDate",
+                type_id="takler.repeat.date",
             )
         ),
         times=[
@@ -106,10 +103,7 @@ def test_node_from_dict(task_case):
             status=3,
             suspended=False,
         ),
-        class_type=dict(
-            module="takler.core.task_node",
-            name="Task",
-        ),
+        type_id="takler.task",
         user_parameters=[
             dict(name="param1", value="one"),
         ],
@@ -130,7 +124,7 @@ def test_node_from_dict(task_case):
                 end_date="20221202",
                 step=1,
                 value=20221201,
-                class_type="RepeatDate",
+                type_id="takler.repeat.date",
             )
         ),
         times=[
