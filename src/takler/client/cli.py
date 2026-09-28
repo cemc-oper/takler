@@ -27,6 +27,7 @@ import warnings
 from typing import Any, Callable, Optional, List, Union, Tuple
 
 import typer
+from typer.core import TyperGroup
 
 import takler.logging
 from takler.client.exit_code import (
@@ -59,7 +60,17 @@ PORT_HELP_STRING = f"takler service port, or use env var {TAKLER_PORT}"
 LOGGER_NAME = "client.cli"
 
 
-app = typer.Typer()
+class RequestErrorGroup(TyperGroup):
+    def main(self, *args, **kwargs):
+        try:
+            return super().main(*args, **kwargs)
+        except SystemExit as exc:
+            if exc.code == 2:
+                raise SystemExit(1) from None
+            raise
+
+
+app = typer.Typer(cls=RequestErrorGroup)
 
 
 # Exit code and error reporting -------------------------------------
@@ -456,6 +467,25 @@ def load(
         host,
         port,
         lambda client: client.load(flow_file_path=flow_file_path),
+    )
+
+
+@app.command()
+def replace(
+    target_path: str = typer.Argument(..., help="existing absolute Flow path"),
+    flow_file: str = typer.Argument(
+        ..., help="single same-name Flow DefinitionDocument v1"
+    ),
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+):
+    """[control] Replace and begin a flow, preserving its suspension.
+
+    Rejects active/submitted nodes. Success means memory updated; periodic
+    checkpoint is pending. Network failures are not retried; query the state.
+    """
+    _run_client_command(
+        host, port, lambda client: client.replace(target_path, flow_file)
     )
 
 

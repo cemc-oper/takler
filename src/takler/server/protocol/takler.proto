@@ -108,6 +108,11 @@ message FreeDepCommand {
   repeated string path = 2;
 }
 
+message ReplaceCommand {
+  string target_path = 1;
+  bytes flow = 2;
+}
+
 message LoadCommand {
   string flow_type = 1;
   bytes flow = 2;
@@ -176,6 +181,7 @@ service TaklerServer {
 
   rpc RunCommandFreeDep(FreeDepCommand) returns (BatchResponse) {}
 
+  rpc RunCommandReplace(ReplaceCommand) returns (ServiceResponse);
   rpc RunCommandLoad(LoadCommand) returns (ServiceResponse) {}
 
   rpc RunCommandBegin(BeginCommand) returns (BatchResponse) {}

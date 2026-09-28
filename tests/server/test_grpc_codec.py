@@ -7,7 +7,7 @@ tests in ``tests/server/test_handlers_grpc_boundary.py``) and client outbound
 
 The properties that matter:
 
-* every one of the sixteen commands has a converter in both directions and a
+* every one of the seventeen commands has a converter in both directions and a
   gRPC method name, and the method names agree with both the ``takler.proto``
   service descriptor and the handler layer's canonical operation names;
 * ``request_to_pb2`` puts every payload field into the right proto field --
@@ -59,6 +59,7 @@ PAYLOAD_BY_COMMAND = {
     },
     Command.FREE_DEP: {"paths": ["/flow1/task1"], "dep_type": "time"},
     Command.LOAD: {"flow_type": "json", "flow_bytes": b'{"flow1": {}}'},
+    Command.REPLACE: {"target_path": "/flow1", "flow_bytes": b"{}"},
     Command.BEGIN: {"flow_name": "flow1", "force": True},
     Command.SHOW: {
         "show_trigger": True,

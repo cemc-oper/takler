@@ -71,7 +71,7 @@ CONTRACT_ERROR_NAME_BY_CODE = {
 }
 
 #: Error_Code -> client exit code, the last column of the same table. The same
-#: sixteen rows, written out again rather than joined against the table above,
+#: seventeen rows, written out again rather than joined against the table above,
 #: because the contract lists them as one row per code.
 CONTRACT_EXIT_CODE_BY_ERROR_CODE = {
     0: 0,
@@ -170,12 +170,12 @@ CONTRACT_BACKOFF_SEQUENCE = [
 ]
 
 # --------------------------------------------------------------------------
-# The command surface: the sixteen RPCs both clients speak.
+# The command surface: the seventeen RPCs both clients speak.
 # --------------------------------------------------------------------------
 
 #: RPC name -> (request message, response message), one row per command of the
 #: contract's command table. The Go half of this drift guard restates the same
-#: sixteen rows against the generated Go descriptor. ``RunCommandResume``
+#: seventeen rows against the generated Go descriptor. ``RunCommandResume``
 #: taking its own ``ResumeCommand`` (rather than reusing ``SuspendCommand``)
 #: and ``RunCommandBegin`` existing at all are both pinned here.
 CONTRACT_RPC_SURFACE = {
@@ -191,6 +191,7 @@ CONTRACT_RPC_SURFACE = {
     "RunCommandForce": ("ForceCommand", "BatchResponse"),
     "RunCommandFreeDep": ("FreeDepCommand", "BatchResponse"),
     "RunCommandLoad": ("LoadCommand", "ServiceResponse"),
+    "RunCommandReplace": ("ReplaceCommand", "ServiceResponse"),
     "RunCommandBegin": ("BeginCommand", "BatchResponse"),
     "RunRequestShow": ("ShowRequest", "ShowResponse"),
     "RunRequestPing": ("PingRequest", "PingResponse"),
@@ -339,7 +340,7 @@ def test_non_retryable_status_codes_match_contract():
 # Feature: m3-protocol-decoupling, Property: 跨语言命令面一致性
 # Validates: the m3-tasks 任务 2 acceptance "契约测试覆盖全部命令"
 def test_rpc_surface_matches_contract():
-    """The service descriptor holds exactly the contract's sixteen RPCs."""
+    """The service descriptor holds exactly the contract's seventeen RPCs."""
     service = takler_pb2.DESCRIPTOR.services_by_name["TaklerServer"]
     actual = {
         method.name: (method.input_type.name, method.output_type.name)

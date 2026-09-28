@@ -1,6 +1,6 @@
 """The transport-neutral protocol model of takler.
 
-This package defines the sixteen commands as pydantic DTOs
+This package defines the seventeen commands as pydantic DTOs
 (:mod:`takler.protocol.commands`) and the envelope that carries them
 (:mod:`takler.protocol.envelope`). It is the one protocol definition both
 transports -- gRPC and HTTP -- and both sides -- server and client -- are
@@ -25,6 +25,7 @@ from takler.protocol.commands import (
     FreeDepCommand,
     InitCommand,
     LoadCommand,
+    ReplaceCommand,
     MeterCommand,
     NodePathsCommand,
     PingRequest,
@@ -63,6 +64,7 @@ __all__ = [
     "ForceCommand",
     "FreeDepCommand",
     "LoadCommand",
+    "ReplaceCommand",
     "BeginCommand",
     "ShowRequest",
     "PingRequest",

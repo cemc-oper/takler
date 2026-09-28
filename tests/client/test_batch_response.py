@@ -10,7 +10,7 @@ from takler.client.http_transport import HttpTransport
 from takler.client.service_client import TaklerServiceClient
 from takler.exceptions import ClientConnectionError, ServerResponseError
 from takler.protocol.batch import validate_batch_response
-from takler.protocol.commands import BATCH_COMMANDS, BatchResponse, Command
+from takler.protocol.commands import BatchResponse, Command
 from takler.server.protocol.adapter import GRPC_METHOD_BY_COMMAND
 from takler.server.protocol import takler_pb2
 
@@ -69,9 +69,14 @@ class Unavailable(grpc.RpcError):
         return "lost response"
 
 
-@pytest.mark.parametrize("command", list(BATCH_COMMANDS))
+@pytest.mark.parametrize(
+    "command",
+    [c for c in Command if c not in (Command.PING, Command.SHOW, Command.COROUTINE)],
+)
 @pytest.mark.parametrize("wire", ["grpc", "http"])
-def test_mutating_batch_never_retries(command, wire):
+def test_all_mutations_never_retry(command, wire):
+    from tests.client.test_grpc_transport_unit import PAYLOAD_AND_TYPE_BY_COMMAND
+
     calls = []
     payload = {"node_paths": ["/f/a"], "force": False}
     if command in (Command.SUSPEND, Command.RESUME, Command.REQUEUE):
@@ -82,6 +87,7 @@ def test_mutating_batch_never_retries(command, wire):
         payload = {"paths": ["/f/a"], "dep_type": "all"}
     if command == Command.BEGIN:
         payload = {"flow_name": "f", "force": False}
+    payload = PAYLOAD_AND_TYPE_BY_COMMAND[command][0]
     if wire == "grpc":
         transport = GrpcTransport("localhost", 33083, retry_window=600)
 
@@ -101,7 +107,9 @@ def test_mutating_batch_never_retries(command, wire):
             transport=httpx.MockTransport(fail), base_url="http://localhost"
         )
     try:
-        with pytest.raises(ClientConnectionError):
+        with pytest.raises(
+            ClientConnectionError, match="outcome unknown; query server state"
+        ):
             transport.call(command, payload)
         assert calls == [1]
     finally:

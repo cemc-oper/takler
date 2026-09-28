@@ -85,7 +85,7 @@
     * - ``TAKLER_TIMEOUT``
       - 重试窗口秒数，须为非负整数字符串， ``0`` 表示只试一次；非法
         取值记 WARNING 后按命令类默认
-      - child 命令 ``86400`` ，其余 ``60``
+      - 只读查询 ``60``；所有变更命令固定只发送一次，不受窗口覆盖
       - :doc:`/guide/cli`
     * - ``TAKLER_TRANSPORT``
       - 客户端使用的 transport ， ``grpc`` / ``http`` ；无法识别的取值

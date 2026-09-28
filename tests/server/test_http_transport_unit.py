@@ -1,6 +1,6 @@
 """Unit tests for the HTTP transport: the endpoint, the auth wiring, uvicorn.
 
-``test_handlers_http_boundary.py`` proves the sixteen commands keep their
+``test_handlers_http_boundary.py`` proves the seventeen commands keep their
 semantics over HTTP; this file pins what the transport adds around them:
 
 * the envelope contract -- the response echoes the request's ``trace_id``, an
@@ -142,7 +142,12 @@ def post_envelope(
     trace_id: Optional[str] = None,
 ) -> "httpx.Response":
     """POST a well formed request envelope and answer with the raw response."""
-    envelope = {"command": command, "payload": {} if payload is None else payload}
+    envelope = {
+        "version": "1",
+        "trace_id": "0" * 32,
+        "command": command,
+        "payload": {} if payload is None else payload,
+    }
     if trace_id is not None:
         envelope["trace_id"] = trace_id
     return asyncio.run(
@@ -223,13 +228,15 @@ def test_a_body_that_is_not_an_envelope_is_a_transport_error() -> None:
 def test_envelope_command_must_match_the_url() -> None:
     app = build_app()
 
-    body = json.dumps({"command": "show", "payload": {}}).encode("utf-8")
+    body = json.dumps(
+        {"version": "1", "trace_id": "0" * 32, "command": "coroutine", "payload": {}}
+    ).encode("utf-8")
     response = asyncio.run(
         _post(app, "ping", body, headers={"content-type": "application/json"})
     )
 
     assert response.status_code == 400
-    assert "'show'" in response.json()["detail"]
+    assert "'coroutine'" in response.json()["detail"]
     assert "'ping'" in response.json()["detail"]
 
 
@@ -247,22 +254,13 @@ def test_a_business_failure_is_200_with_the_error_code_in_flag() -> None:
     assert "NodeNotFoundError" in payload["message"]
 
 
-def test_a_payload_failing_dto_validation_is_a_business_failure() -> None:
-    """The payload is parsed inside the handlers' exception boundary, so a
-    malformed meter value is the server's ``internal_error`` classification
-    (``flag=99``), not a transport ``422`` -- identical to gRPC."""
+def test_a_payload_failing_wire_validation_is_422() -> None:
     app = build_app()
-
     response = post_envelope(
-        app,
-        "meter",
-        {"node_path": TASK1, "meter_name": "meter1", "meter_value": "abc"},
+        app, "meter", {"node_path": TASK1, "meter_name": "meter1", "meter_value": "abc"}
     )
-
-    assert response.status_code == 200
-    payload = response.json()["payload"]
-    assert payload["flag"] == 99
-    assert "ValidationError" in payload["message"]
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid request envelope or payload"}
 
 
 # authentication --------------------------------------------------------------
@@ -417,7 +415,7 @@ def test_a_refusal_happens_before_the_envelope_is_validated(
     )
 
     assert invalid_envelope.status_code == 401
-    assert malformed_json.status_code == 422
+    assert malformed_json.status_code == 401
 
 
 def test_disabled_mode_publishes_the_parsed_credentials(
@@ -461,14 +459,24 @@ def test_credentials_do_not_leak_between_requests(store: CredentialStore) -> Non
         ) as client:
             first = await client.post(
                 f"{API_PREFIX}/commands/requeue",
-                json={"command": "requeue", "payload": {"node_paths": ["/flow1"]}},
+                json={
+                    "version": "1",
+                    "trace_id": "0" * 32,
+                    "command": "requeue",
+                    "payload": {"node_paths": ["/flow1"]},
+                },
                 headers=operator_headers(user=USER),
             )
             # USER is whitelisted; OTHER_USER is not, so the second request is
             # answered 403 -- what matters is which user the records name.
             second = await client.post(
                 f"{API_PREFIX}/commands/requeue",
-                json={"command": "requeue", "payload": {"node_paths": ["/flow1"]}},
+                json={
+                    "version": "1",
+                    "trace_id": "0" * 32,
+                    "command": "requeue",
+                    "payload": {"node_paths": ["/flow1"]},
+                },
                 headers=operator_headers(user=OTHER_USER),
             )
             return first, second
@@ -551,7 +559,12 @@ def _serve_once(transport: HttpTransport) -> None:
                     try:
                         response = await client.post(
                             f"{API_PREFIX}/commands/ping",
-                            json={"command": "ping", "payload": {}},
+                            json={
+                                "version": "1",
+                                "trace_id": "0" * 32,
+                                "command": "ping",
+                                "payload": {},
+                            },
                         )
                         break
                     except httpx.ConnectError:

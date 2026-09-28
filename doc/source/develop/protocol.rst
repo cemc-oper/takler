@@ -83,6 +83,10 @@ gRPC 编码的唯一权威来源仍是
       - ``RunCommandLoad``
       - ``LoadCommand`` → ``ServiceResponse``
       - 载入 flow 定义
+    * - ``replace``
+      - ``RunCommandReplace``
+      - ``ReplaceCommand`` → ``ServiceResponse``
+      - operator 替换单个 Flow，成功仅承诺内存换入
     * - ``begin``
       - ``RunCommandBegin``
       - ``BeginCommand`` → ``BatchResponse``
@@ -109,12 +113,10 @@ gRPC 上全部是 unary-unary 调用（一次请求一次应答，没有流式�
   把它摊平进各命令）。 ``event`` 只能置位；清除事件走 ``force`` ，把
   ``path`` 写成 ``节点路径:事件名`` 、 ``state`` 用 ``clear``
   （ ``set`` 亦可）。
-* ``MeterCommand.meter_value`` 线上是字符串、离开 DTO 时是 ``int``
-  —— ``int()`` 转换从调度器移进了 DTO 校验。一个非整数的字符串以
-  ``internal_error`` 收场（ ``int()`` 抛出的 ``ValueError`` 不是
-  takler 异常）。客户端**不在本地校验**请求：请求以普通 dict 按 DTO
-  字段名过线，校验是服务端的职责，这样两种客户端发同一个坏值会得到
-  同一个 ``flag`` 。
+* ``MeterCommand.meter_value`` 线上为规范有符号 int64 十进制字符串：
+  ``0`` 或可选负号加非零首位数字。拒绝空白、正号、前导零、负零、浮点、
+  指数、非 ASCII 数字及越界值。HTTP 非法值在入口返回 422；gRPC 在
+  adapter 拒绝，沿用 ServiceResponse 错误分类。
 * ``ForceCommand.path`` 接受节点路径与 ``节点:事件`` 两种形式；
   ``recursive`` 只对节点有意义（语义见 :doc:`/guide/node-status` 的
   sink 一节）。
@@ -186,14 +188,18 @@ HTTP 服务（ FastAPI + uvicorn ， ``takler[http]`` extra ）只有一个端
 
 * URL 里的 ``{command}`` 与信封内的 ``command`` 必须一致，不一致以
   ``400`` 拒绝。
-* **HTTP 200 不代表业务成功** 。状态码只表达 transport 层与鉴权结
-  果： ``401`` / ``403`` 是鉴权拒绝（对应 gRPC 的
-  ``UNAUTHENTICATED`` / ``PERMISSION_DENIED`` ）， ``422`` 是命令名
-  或信封不合法（ FastAPI 的参数校验，含 ``extra="forbid"`` 拒绝未知
-  字段）， ``400`` 是 URL 与信封命令不一致。命令本身的成败永远在
-  ``200`` 响应信封的 ``payload.flag`` 里——一个请求 DTO 校验失败
-  （如非整数的 ``meter_value`` ）也是 ``200`` 加非零 ``flag`` ，与
-  gRPC 上同一个坏请求的分类完全一致。
+* **HTTP 200 不代表业务成功**。合法业务失败保留 ``payload.flag``；
+  请求信封或 payload 不合法返回 ``422``，内容类型错误返回 ``415``，
+  URL 不匹配返回 ``400``，鉴权拒绝返回 ``401`` / ``403``。
+  查询执行异常返回 HTTP ``500``，不能伪装为空查询成功。
+* 请求与响应必须显式含 ``version="1"``、已知 ``command``、32 位小写十六进制
+  ``trace_id`` 和完整 ``payload``；仅保留字段 ``auth`` / ``target`` 可省略或为 null。
+  所有命令字段按 ``protocol/wire_schema.json`` 严格校验，不能用 DTO 默认值补齐。
+  拒绝未知字段、重复键、非法类型/null、非 UTF-8、BOM、孤立代理码点、非有限数、
+  截断、尾随垃圾和多个 JSON。字节字段使用标准带填充的规范 base64。
+  仅接受 application/json，可带 charset=utf-8。
+* 双客户端校验响应版本、命令与 trace_id 关联及各命令响应结构；非法 200
+  为协议失败（退出码 3），只处理一次。trace_id 不提供幂等去重。
 * 鉴权判定发生在看信封**之前**（ FastAPI 的依赖注入先于请求体校验
   ）：未通过鉴权的调用方甚至无法让服务端解析信封，被拒绝的请求不可
   能改变任何节点状态。
@@ -203,9 +209,9 @@ HTTP 服务（ FastAPI + uvicorn ， ``takler[http]`` extra ）只有一个端
 客户端对 HTTP 失败的分类（ ``client/http_transport.py`` 的
 ``classify_http_error`` ）与 gRPC 的状态码映射一一对应：
 
-* 可重试：状态码 ``408`` / ``429`` / ``500`` / ``502`` / ``503`` /
+* 仅只读查询可重试：状态码 ``408`` / ``429`` / ``500`` / ``502`` / ``503`` /
   ``504`` ，以及 httpx 的连接类错误；
-* 不重试、直接映射为异常： ``400`` / ``422`` →
+* 不重试、直接映射为异常： ``400`` / ``404`` / ``405`` / ``415`` / ``422`` →
   ``InvalidRequestError`` （退出码 ``1`` ）， ``401`` / ``403`` →
   ``PermissionDeniedError`` （退出码 ``1`` ）；
 * 其余状态码与其余 httpx transport 错误是 FATAL （不重试，退出码
@@ -214,7 +220,7 @@ HTTP 服务（ FastAPI + uvicorn ， ``takler[http]`` extra ）只有一个端
 ``ServiceResponse`` 与 error_code
 ---------------------------------
 
-child 与 load 命令返回 ``ServiceResponse{flag, message}``；七种批量控制
+child、load 与 replace 命令返回 ``ServiceResponse{flag, message}``；七种批量控制
 命令返回 ``BatchResponse{flag, message, results}``。两者的 flag 都使用
 下述错误码表：
 
@@ -245,7 +251,8 @@ child 与 load 命令返回 ``ServiceResponse{flag, message}``；七种批量控
   ``41`` / ``42`` 只由客户端本地抛出，永远不会出现在服务端返回的
   ``flag`` 里； ``1`` 与 ``99`` 分别是 ``takler_error`` 与
   ``internal_error`` 两个兜底。
-* 三个查询命令没有 ``flag`` 字段，错误复用各自的应答类型： ``show``
+* 三个查询命令没有 ``flag`` 字段。HTTP 查询执行异常返回 500；
+  gRPC 保持现有错误应答： ``show``
   把错误写进 ``output`` （ ``error: {类型}: {消息}`` ）， ``ping``
   与 ``coroutine`` 返回空应答。鉴权拒绝不走应答体，见下节。
 
@@ -326,11 +333,11 @@ HTTP 的请求头名（ HTTP 头不区分大小写），都是全小写、不带
 以下常量同属跨语言契约，两个客户端在两种 transport 下都必须一致：
 
 * 单次尝试超时 ``10`` 秒；
-* 批量控制命令 requeue/suspend/resume/run/force/free-dep/begin 固定只尝试一次，
-  不受重试窗口配置覆盖；下述窗口仅适用于其余命令。
-* 重试窗口： child 命令 ``86400`` 秒（一天，作业可以比服务活得久），
-  控制与查询命令 ``60`` 秒；环境变量 ``TAKLER_TIMEOUT`` 覆盖窗口（见
-  :doc:`/operation/reference` ）；
+* 所有变更命令（包括 child、load、replace）固定只发送一次，HTTP 与 gRPC
+  均禁用自动重发，不受重试窗口配置覆盖。失败时结果可能未知，应先查询状态。
+* 只有 ``ping`` / ``show`` / ``coroutine`` 可重试，默认窗口 ``60`` 秒；
+  环境变量 ``TAKLER_TIMEOUT`` 覆盖窗口（见 :doc:`/operation/reference`）。
+  TLS 校验失败与配置错误不重试。
 * 退避公式 ``min(2**(n-1), 60)`` 秒， ``n`` 为第几次尝试；
 * 可重试的 gRPC 状态码： ``UNAVAILABLE`` 、 ``DEADLINE_EXCEEDED`` 、
   ``RESOURCE_EXHAUSTED`` 、 ``UNKNOWN`` ；不可重试：
@@ -383,7 +390,7 @@ descriptor 里的全部方法。
 线上行为的对齐靠 ``takler-client`` 仓库的契约脚本：
 ``scripts/http_contract.sh`` 对真实 takler 服务端（同挂 gRPC 与
 HTTP ）让 Go 客户端跑全部十六个命令，断言退出码与输出行在两种
-transport 下一致（含 ``meter "abc"`` 过线后得 ``internal_error`` 这
+transport 下一致（含非法 meter HTTP 422 与 gRPC 错误响应这
 类边界）； CI 的 ``http-contract`` job 检出 takler 仓启动服务端后
 跑同一脚本。
 

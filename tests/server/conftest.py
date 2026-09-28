@@ -110,6 +110,16 @@ def _new_flow_bytes() -> bytes:
 
 
 HANDLER_CASES: List[HandlerCase] = [
+    HandlerCase(
+        "replace",
+        Command.REPLACE,
+        {
+            "target_path": "/flow2",
+            "flow_bytes": export_definition(Flow("flow2")).model_dump_json().encode(),
+        },
+        message_part="checkpoint pending",
+        check=lambda bunch: _assert_begun(bunch, "flow2", True),
+    ),
     # -- child commands ------------------------------------------------
     HandlerCase(
         "init",
@@ -349,8 +359,13 @@ def run_via_http(case: HandlerCase) -> Tuple[Any, Bunch]:
     app = create_app(CommandHandlers(scheduler))
 
     async def post():
-        payload = dict(case.kwargs)
-        if "flow_bytes" in payload:
+        if case.id == "meter-rejects-a-non-numeric-value":
+            payload = dict(case.kwargs)
+        else:
+            payload = Envelope.for_request(
+                case.command, REQUEST_TYPE_BY_COMMAND[case.command](**case.kwargs)
+            ).payload
+        if isinstance(payload.get("flow_bytes"), bytes):
             # The JSON envelope carries raw bytes base64 encoded, mirroring
             # what ``LoadCommand``'s model config does on the client side.
             payload["flow_bytes"] = base64.b64encode(payload["flow_bytes"]).decode(
@@ -361,10 +376,18 @@ def run_via_http(case: HandlerCase) -> Tuple[Any, Bunch]:
         ) as client:
             return await client.post(
                 f"{API_PREFIX}/commands/{case.command.value}",
-                json={"command": case.command.value, "payload": payload},
+                json={
+                    "version": "1",
+                    "trace_id": "0" * 32,
+                    "command": case.command.value,
+                    "payload": payload,
+                },
             )
 
     http_response = asyncio.run(post())
+    if case.id == "meter-rejects-a-non-numeric-value":
+        assert http_response.status_code == 422
+        return http_response, scheduler.bunch
     assert http_response.status_code == 200, http_response.text
     envelope = Envelope.model_validate(http_response.json())
     return envelope.parse_response(), scheduler.bunch
@@ -446,6 +469,10 @@ def to_pb2(command: Command, kwargs: Dict[str, Any]):
         return takler_pb2.FreeDepCommand(
             path=kwargs["paths"],
             dep_type=takler_pb2.FreeDepCommand.DepType.Value(kwargs["dep_type"]),
+        )
+    if command is Command.REPLACE:
+        return takler_pb2.ReplaceCommand(
+            target_path=kwargs["target_path"], flow=kwargs["flow_bytes"]
         )
     if command is Command.LOAD:
         return takler_pb2.LoadCommand(

@@ -233,6 +233,9 @@ class GrpcTransport(takler_pb2_grpc.TaklerServerServicer, ServerTransport):
     async def RunCommandFreeDep(self, request, context):
         return await self._dispatch(Command.FREE_DEP, request, context)
 
+    async def RunCommandReplace(self, request, context):
+        return await self._dispatch(Command.REPLACE, request, context)
+
     async def RunCommandLoad(self, request, context):
         return await self._dispatch(Command.LOAD, request, context)
 

@@ -478,13 +478,41 @@ class TaklerServiceClient:
 
     def run_command_load(self, flow_file_path: str):
         flow_type = "json"
-        with open(flow_file_path, "rb") as f:
-            flow_bytes = f.read()
+        from takler.exceptions import InvalidRequestError
+
+        try:
+            with open(flow_file_path, "rb") as f:
+                flow_bytes = f.read()
+        except OSError:
+            raise InvalidRequestError("cannot read flow definition file") from None
         response = self.transport.call(
             Command.LOAD,
             {"flow_type": flow_type, "flow_bytes": flow_bytes},
         )
         self._print_response(response)
+        return response
+
+    def replace(self, target_path: str, flow_file_path: str):
+        return self._guarded(
+            lambda: self.run_command_replace(target_path, flow_file_path)
+        )
+
+    def run_command_replace(self, target_path: str, flow_file_path: str):
+        from pathlib import Path
+        from takler.exceptions import InvalidRequestError
+
+        try:
+            data = Path(flow_file_path).read_bytes()
+        except OSError:
+            raise InvalidRequestError(
+                "cannot read replacement definition file"
+            ) from None
+        response = self.transport.call(
+            Command.REPLACE, {"target_path": target_path, "flow_bytes": data}
+        )
+        self._print_response(response)
+        if response.flag == 0:
+            print(response.message)
         return response
 
     def begin(self, flow_name: str = "", force: bool = False):

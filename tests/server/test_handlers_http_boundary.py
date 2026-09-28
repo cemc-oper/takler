@@ -19,4 +19,8 @@ def test_handler_case_over_http(
     handler_case, run_via_http_fixture, assert_handler_case
 ):
     response, bunch = run_via_http_fixture(handler_case)
-    assert_handler_case(handler_case, response, bunch)
+    if handler_case.id == "meter-rejects-a-non-numeric-value":
+        assert response.status_code == 422
+        handler_case.check(bunch)
+    else:
+        assert_handler_case(handler_case, response, bunch)

@@ -958,6 +958,7 @@ PRIVILEGE_BY_METHOD: Dict[str, PrivilegeLevel] = {
     SERVICE_METHOD_PREFIX + "RunCommandForce": PrivilegeLevel.OPERATOR,
     SERVICE_METHOD_PREFIX + "RunCommandFreeDep": PrivilegeLevel.OPERATOR,
     SERVICE_METHOD_PREFIX + "RunCommandLoad": PrivilegeLevel.OPERATOR,
+    SERVICE_METHOD_PREFIX + "RunCommandReplace": PrivilegeLevel.OPERATOR,
     SERVICE_METHOD_PREFIX + "RunCommandBegin": PrivilegeLevel.OPERATOR,
     # Read-only, but still Operator level: both return the entire flow
     # definition -- node paths, variables, trigger expressions -- which is
@@ -1643,6 +1644,7 @@ class AuthGate:
         method: str,
         credentials: CallCredentials,
         reason: RejectionReason,
+        target: Optional[str] = None,
     ) -> str:
         """Record one refusal and return the text to answer it with.
 
@@ -1700,7 +1702,12 @@ class AuthGate:
                     command=audit_command_name(safe_method),
                     user=user,
                     peer=audit_peer(credentials.peer),
-                    target=[],
+                    target=[sanitize_echoed_value(target, credentials)]
+                    if target is not None
+                    else [],
+                    reason=reason.value
+                    if method.endswith("/RunCommandReplace")
+                    else None,
                     outcome=OUTCOME_DENIED,
                     error_code=DENIED_ERROR_CODE,
                 )
@@ -1867,7 +1874,17 @@ class AuthInterceptor(grpc.aio.ServerInterceptor):
                 # refuse the call; the address is diagnostic, not part of the
                 # decision.
                 pass
-            details = self.gate.refuse(method, credentials.with_peer(peer), reason)
+            target = None
+            if method == SERVICE_METHOD_PREFIX + "RunCommandReplace":
+                try:
+                    from takler.server.protocol.takler_pb2 import ReplaceCommand
+
+                    target = ReplaceCommand.FromString(request).target_path
+                except Exception:
+                    pass  # a malformed unauthenticated request is still refused
+            details = self.gate.refuse(
+                method, credentials.with_peer(peer), reason, target=target
+            )
             await context.abort(status_code, details)
 
         return grpc.unary_unary_rpc_method_handler(abort)

@@ -49,7 +49,7 @@ def test_constants():
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.QUERY] == 60.0
 
 
-def test_command_kind_table_covers_the_sixteen_commands():
+def test_command_kind_table_covers_the_seventeen_commands():
     """Command -> CommandKind, as a literal: the five Child_Commands retry
     for a day, the Control_ and Query_Commands give up after a minute
     (requirements 9.10, 9.11)."""
@@ -66,6 +66,7 @@ def test_command_kind_table_covers_the_sixteen_commands():
         Command.FORCE: CommandKind.CONTROL,
         Command.FREE_DEP: CommandKind.CONTROL,
         Command.LOAD: CommandKind.CONTROL,
+        Command.REPLACE: CommandKind.CONTROL,
         Command.BEGIN: CommandKind.CONTROL,
         Command.SHOW: CommandKind.QUERY,
         Command.PING: CommandKind.QUERY,

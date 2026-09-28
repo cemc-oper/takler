@@ -70,7 +70,15 @@ def test_server_serves_grpc_and_http_in_one_process(
     client.start()
     client.run_request_ping()
     with httpx.Client(base_url=f"http://{LOCALHOST}:{http_port}") as http:
-        ping = http.post("/v1/commands/ping", json={"command": "ping", "payload": {}})
+        ping = http.post(
+            "/v1/commands/ping",
+            json={
+                "version": "1",
+                "trace_id": "0" * 32,
+                "command": "ping",
+                "payload": {},
+            },
+        )
         assert ping.status_code == 200
         assert ping.json()["command"] == "ping"
 
@@ -83,6 +91,8 @@ def test_server_serves_grpc_and_http_in_one_process(
         load = http.post(
             "/v1/commands/load",
             json={
+                "version": "1",
+                "trace_id": "0" * 32,
                 "command": "load",
                 "payload": {
                     "flow_type": "json",

@@ -37,7 +37,7 @@ def test_handler_case(handler_case, run_via_handlers_fixture, assert_handler_cas
 
 
 def test_case_list_covers_every_command(handler_cases):
-    """The shared suite exercises all sixteen commands at least once."""
+    """The shared suite exercises all seventeen commands at least once."""
     assert {case.command for case in handler_cases} == set(Command)
 
 
@@ -62,6 +62,7 @@ def test_control_method_names_match_the_control_commands():
         Command.FORCE,
         Command.FREE_DEP,
         Command.LOAD,
+        Command.REPLACE,
         Command.BEGIN,
     }
     assert CONTROL_METHOD_NAMES == {
@@ -70,7 +71,7 @@ def test_control_method_names_match_the_control_commands():
 
 
 def test_every_command_has_request_info():
-    """The dispatch's request-info table covers exactly the sixteen commands."""
+    """The dispatch's request-info table covers exactly the seventeen commands."""
     assert set(handlers._REQUEST_INFO_BY_COMMAND) == set(Command)
 
 
@@ -180,3 +181,34 @@ def test_failed_control_command_is_audited_with_its_error(
     assert record["outcome"] == "error"
     assert record["error_code"] == 16
     assert record["results"][0]["flag"] == 10
+
+
+def test_committed_replace_survives_audit_and_warning_failure(monkeypatch):
+    from types import SimpleNamespace
+    from takler.core import Flow
+    from takler.protocol.commands import ReplaceCommand
+    from takler.serialization import export_definition
+    from tests.server.conftest import build_scheduler
+
+    scheduler = build_scheduler()
+    old = scheduler.bunch.find_flow("flow2")
+
+    def fail(*args, **kwargs):
+        raise OSError("PRIVATE_AUDIT_FAILURE")
+
+    monkeypatch.setattr(handlers.logger, "warning", fail)
+    service = CommandHandlers(scheduler, audit_logger=SimpleNamespace(record=fail))
+    response = asyncio.run(
+        service.dispatch(
+            Command.REPLACE,
+            lambda: ReplaceCommand(
+                target_path="/flow2",
+                flow_bytes=export_definition(Flow("flow2")).model_dump_json().encode(),
+            ),
+        )
+    )
+    assert (
+        response.flag == 0
+        and response.message == "flow replaced in memory; checkpoint pending"
+    )
+    assert scheduler.bunch.find_flow("flow2") is not old

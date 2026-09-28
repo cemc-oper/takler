@@ -91,6 +91,11 @@ class TaklerServerStub:
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.FreeDepCommand.SerializeToString,
                 response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
                 _registered_method=True)
+        self.RunCommandReplace = channel.unary_unary(
+                '/takler_protocol.TaklerServer/RunCommandReplace',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ReplaceCommand.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
+                _registered_method=True)
         self.RunCommandLoad = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunCommandLoad',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.LoadCommand.SerializeToString,
@@ -192,6 +197,12 @@ class TaklerServerServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RunCommandReplace(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def RunCommandLoad(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -281,6 +292,11 @@ def add_TaklerServerServicer_to_server(servicer, server):
                     servicer.RunCommandFreeDep,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.FreeDepCommand.FromString,
                     response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.SerializeToString,
+            ),
+            'RunCommandReplace': grpc.unary_unary_rpc_method_handler(
+                    servicer.RunCommandReplace,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ReplaceCommand.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.SerializeToString,
             ),
             'RunCommandLoad': grpc.unary_unary_rpc_method_handler(
                     servicer.RunCommandLoad,
@@ -607,6 +623,33 @@ class TaklerServer:
             '/takler_protocol.TaklerServer/RunCommandFreeDep',
             takler_dot_server_dot_protocol_dot_takler__pb2.FreeDepCommand.SerializeToString,
             takler_dot_server_dot_protocol_dot_takler__pb2.BatchResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RunCommandReplace(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerServer/RunCommandReplace',
+            takler_dot_server_dot_protocol_dot_takler__pb2.ReplaceCommand.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.ServiceResponse.FromString,
             options,
             channel_credentials,
             insecure,

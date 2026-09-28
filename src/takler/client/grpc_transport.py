@@ -39,6 +39,8 @@ Requirements: 9.1, 9.2, 9.5, 9.6, 9.7, 9.8, 11.4, 11.5, 11.6,
 
 from __future__ import annotations
 
+from takler.client.retry import mutation_failure
+
 import ssl
 import time
 from pathlib import Path
@@ -47,6 +49,7 @@ from typing import Any, Callable, List, Mapping, Optional, Tuple, TypeVar, Union
 import grpc
 
 from takler.protocol.commands import BATCH_COMMANDS
+from takler.protocol.wire import READ_ONLY
 from takler.protocol.batch import validate_batch_response
 from takler.client.retry import (
     COMMAND_KIND_BY_COMMAND,
@@ -227,6 +230,25 @@ def classify_grpc_error(exc: Exception) -> FailureVerdict:
     failure_name = f"gRPC status {status_name}"
     log_field = f"status={status_name}"
 
+    if any(
+        marker in details.lower()
+        for marker in (
+            "certificate verify failed",
+            "certificate_verify_failed",
+            "ssl handshake",
+            "tls handshake",
+            "peer name",
+            "x509:",
+        )
+    ):
+        return FailureVerdict(
+            FailureCategory.NON_RETRYABLE,
+            failure_name,
+            log_field,
+            "TLS verification failed",
+            InvalidRequestError,
+        )
+
     exception_type = NON_RETRYABLE_EXCEPTION_BY_STATUS.get(code)
     if exception_type is not None:
         return FailureVerdict(
@@ -318,10 +340,12 @@ class GrpcTransport(ClientTransport):
         credentials = build_channel_credentials(self.ca_file)
         if credentials is None:
             # Requirement 2.2: unchanged M1 behaviour when no CA is configured.
-            self.channel = grpc.insecure_channel(self.listen_address)
+            self.channel = grpc.insecure_channel(
+                self.listen_address, options=[("grpc.enable_retries", 0)]
+            )
             return
 
-        options: List[Tuple[str, str]] = []
+        options = [("grpc.enable_retries", 0)]
         if not _is_blank(self.server_name):
             options.append((SSL_TARGET_NAME_OVERRIDE_OPTION, self.server_name.strip()))
         # Requirement 2.1.
@@ -370,7 +394,10 @@ class GrpcTransport(ClientTransport):
         (:func:`~takler.server.protocol.adapter.response_from_pb2`).
         """
         kind = COMMAND_KIND_BY_COMMAND[command]
-        request = adapter.request_to_pb2(command, payload)
+        try:
+            request = adapter.request_to_pb2(command, payload)
+        except (ValueError, TypeError, OverflowError):
+            raise InvalidRequestError("invalid request parameters") from None
         rpc = getattr(self.stub, adapter.GRPC_METHOD_BY_COMMAND[command])
         response = self._call(command.value, rpc, request, kind)
         decoded = adapter.response_from_pb2(command, response)
@@ -465,12 +492,12 @@ class GrpcTransport(ClientTransport):
         """
         metadata = self._build_metadata(kind)
         policy = self._retry_policy(kind)
-        if operation_name in {command.value for command in BATCH_COMMANDS}:
+        if operation_name not in READ_ONLY:
             policy.retry_window = 0
         return run_with_retry(
             policy,
             operation_name,
             self.listen_address,
             lambda: rpc(request, timeout=policy.single_timeout, metadata=metadata),
-            classify_grpc_error,
+            lambda exc: mutation_failure(classify_grpc_error(exc), operation_name),
         )

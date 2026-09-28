@@ -233,6 +233,21 @@ root 必须为单个 Flow。同名已存在返回 flow_state（flag=14），非�
 invalid_request（flag=15）；两种失败均非零退出且旧树不变。
 成功加载后需显式 ``begin``。Go 客户端支持相同文件与命令语义。
 
+``replace``
+~~~~~~~~~~~
+
+.. code-block:: console
+
+   takler-client-py replace /forecast forecast.json
+   takler_client replace /forecast forecast.json
+
+以 UTF-8 DefinitionDocument 替换已有单个 Flow。目标必须是规范绝对路径，
+文件内名称必须匹配；Bunch、多 Flow 包和运行态数据均不接受。
+需 operator 凭据；active/submitted 任务、旧作业回调及资源占用会阻止替换，
+没有 force 绕过选项。成功后自动 begin，保留旧 Flow 自身暂停状态。
+返回 ``flow replaced in memory; checkpoint pending`` 只承诺内存换入，
+不承诺 checkpoint 已落盘。命令固定发送一次；网络失败后先查询服务端状态。
+
 ``begin``
 ~~~~~~~~~
 
@@ -311,3 +326,11 @@ none 表示无变更，applied 表示同步操作成功，partial 表示已知�
 unknown 表示无法可靠判断副作用。run 成功不承诺外部作业最终成功。
 这七种命令在 HTTP/gRPC 上均不自动重试；连接中断时结果可能未知，
 重新执行可能重复提交或重置状态。
+
+重试范围
+--------
+
+只有 ``ping``、``show``、``coroutine`` 可按 ``TAKLER_TIMEOUT`` 对瞬时网络失败重试。
+所有变更命令（含 child、load、replace）在 HTTP/gRPC 下均只发送一次。
+网络失败不能证明变更未发生；收到 outcome unknown 时先查询状态再决定是否重发。
+TLS/配置错误、非法响应及业务失败不重试。

@@ -191,7 +191,7 @@ def test_create_channel_stays_insecure_without_ca(monkeypatch):
     """Requirement 2.2: unchanged M1 behaviour when no CA is configured."""
     built = {}
 
-    def fake_insecure_channel(address):
+    def fake_insecure_channel(address, options=None):
         built["address"] = address
         return FakeChannel(address)
 
@@ -222,7 +222,7 @@ def test_create_channel_uses_tls_with_ca(monkeypatch, ca_file):
     assert client.channel.address == "h:1"
     assert isinstance(client.channel.credentials, grpc.ChannelCredentials)
     # No override configured, so no option is added.
-    assert client.channel.options == []
+    assert client.channel.options == [("grpc.enable_retries", 0)]
 
 
 def test_create_channel_adds_server_name_override(monkeypatch, ca_file):
@@ -237,7 +237,10 @@ def test_create_channel_adds_server_name_override(monkeypatch, ca_file):
     )
     client.create_channel()
 
-    assert client.channel.options == [(SSL_TARGET_NAME_OVERRIDE_OPTION, "login_a06")]
+    assert client.channel.options == [
+        ("grpc.enable_retries", 0),
+        (SSL_TARGET_NAME_OVERRIDE_OPTION, "login_a06"),
+    ]
 
 
 def test_create_channel_ignores_blank_server_name(monkeypatch, ca_file):
@@ -248,7 +251,7 @@ def test_create_channel_ignores_blank_server_name(monkeypatch, ca_file):
     client.server_name = "   "
     client.create_channel()
 
-    assert client.channel.options == []
+    assert client.channel.options == [("grpc.enable_retries", 0)]
 
 
 def test_constructor_resolves_ca_file_from_environment(monkeypatch, ca_file):

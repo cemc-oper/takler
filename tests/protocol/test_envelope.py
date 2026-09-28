@@ -80,7 +80,7 @@ def test_for_request_builds_the_payload():
     assert envelope.payload == {
         "node_path": "/flow1/task1",
         "meter_name": "step",
-        "meter_value": 10,
+        "meter_value": "10",
     }
 
 

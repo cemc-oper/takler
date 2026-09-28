@@ -5,7 +5,7 @@
 各自为一次事件写出恰好一条审计记录：
 
 * **运维命令执行结束** ：八个控制命令（ ``requeue`` 、 ``suspend`` 、
-  ``resume`` 、 ``run`` 、 ``force`` 、 ``free_dep`` 、 ``load`` 、
+  ``resume`` 、 ``run`` 、 ``force`` 、 ``free_dep`` 、 ``load`` 、 ``replace`` 、
   ``begin`` ）每处理完一个请求写一条
 * **鉴权拒绝** ：鉴权拦截器每拒绝一个请求写一条，见
   :doc:`/operation/security`
@@ -112,3 +112,10 @@
 含路径与原因的 WARNING （组件名 ``server.audit`` ），**请求的响应不受
 任何影响**：审计是观测手段，不是可用性单点。审计磁盘写满的服务照常
 处理命令，只是暂时无法证明自己处理过什么。
+
+replace 审计
+------------
+
+``replace`` 的 control 记录包含 operator 用户、目标路径、结果、错误码与
+``reason``。成功原因明确 checkpoint pending；拒绝原因只包含安全诊断，
+不记录定义字节、参数取值或凭据。审计写入失败不会撤销已经完成的内存换入。

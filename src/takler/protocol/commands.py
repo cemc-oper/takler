@@ -1,4 +1,4 @@
-"""Transport-neutral model of the sixteen takler commands.
+"""Transport-neutral model of the seventeen takler commands.
 
 Every command takler speaks -- the five Child_Commands, the eight
 Control_Commands and the three Query_Commands -- has its request and response
@@ -103,7 +103,7 @@ class ProtocolModel(BaseModel):
 
 
 class Command(str, Enum):
-    """The name of one of the sixteen commands, as the envelope carries it.
+    """The name of one of the seventeen commands, as the envelope carries it.
 
     The values are the CLI words -- ``init`` .. ``coroutine`` -- because they
     are the one command surface already shared by both clients, and because
@@ -124,6 +124,7 @@ class Command(str, Enum):
     FORCE = "force"
     FREE_DEP = "free-dep"
     LOAD = "load"
+    REPLACE = "replace"
     BEGIN = "begin"
     SHOW = "show"
     PING = "ping"
@@ -425,6 +426,7 @@ REQUEST_TYPE_BY_COMMAND: Dict[Command, Type[ProtocolModel]] = {
     Command.FORCE: ForceCommand,
     Command.FREE_DEP: FreeDepCommand,
     Command.LOAD: LoadCommand,
+    Command.REPLACE: ReplaceCommand,
     Command.BEGIN: BeginCommand,
     Command.SHOW: ShowRequest,
     Command.PING: PingRequest,
@@ -447,6 +449,7 @@ RESPONSE_TYPE_BY_COMMAND: Dict[Command, Type[ProtocolModel]] = {
     Command.FORCE: BatchResponse,
     Command.FREE_DEP: BatchResponse,
     Command.LOAD: ServiceResponse,
+    Command.REPLACE: ServiceResponse,
     Command.BEGIN: BatchResponse,
     Command.SHOW: ShowResponse,
     Command.PING: PingResponse,

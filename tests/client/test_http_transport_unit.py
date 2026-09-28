@@ -86,6 +86,7 @@ PAYLOAD_BY_COMMAND: Dict[Command, Dict[str, Any]] = {
     },
     Command.FREE_DEP: {"paths": ["/flow1/task1"], "dep_type": "all"},
     Command.LOAD: {"flow_type": "json", "flow_bytes": b"{}"},
+    Command.REPLACE: {"target_path": "/flow1", "flow_bytes": b"{}"},
     Command.BEGIN: {"flow_name": "flow1", "force": False},
     Command.SHOW: {
         "show_trigger": True,
@@ -358,12 +359,15 @@ def test_non_retryable_status_table_is_exact() -> None:
         401: PermissionDeniedError,
         403: PermissionDeniedError,
         422: InvalidRequestError,
+        404: InvalidRequestError,
+        405: InvalidRequestError,
+        415: InvalidRequestError,
     }
     assert not (RETRYABLE_HTTP_STATUSES & set(NON_RETRYABLE_EXCEPTION_BY_HTTP_STATUS))
 
 
 @pytest.mark.parametrize("status", [401, 403])
-def test_auth_refusal_raises_permission_denied_with_the_server_text(
+def test_auth_refusal_raises_permission_denied_with_safe_diagnostics(
     status: int,
 ) -> None:
     detail = "RunCommandRequeue refused: missing credential"
@@ -377,11 +381,12 @@ def test_auth_refusal_raises_permission_denied_with_the_server_text(
     text = str(exc_info.value)
     assert "requeue on server localhost:33084" in text
     assert f"HTTP status {status}" in text
-    assert detail in text
+    assert ("authentication required" if status == 401 else "permission denied") in text
+    assert detail not in text
     assert len(wire.requests) == 1
 
 
-@pytest.mark.parametrize("status", [400, 422])
+@pytest.mark.parametrize("status", [400, 404, 405, 415, 422])
 def test_malformed_request_answer_raises_invalid_request(status: int) -> None:
     wire = Wire(httpx.Response(status, json={"detail": "bad envelope"}))
     transport = make_transport()
@@ -394,7 +399,7 @@ def test_malformed_request_answer_raises_invalid_request(status: int) -> None:
     assert len(wire.requests) == 1
 
 
-@pytest.mark.parametrize("status", [404, 501])
+@pytest.mark.parametrize("status", [501])
 def test_an_unmapped_status_is_a_fatal_transport_error(status: int) -> None:
     wire = Wire(httpx.Response(status, text="odd answer"))
     transport = make_transport()
@@ -416,21 +421,21 @@ def test_retryable_status_is_retried_until_success(
     wire = Wire(
         httpx.Response(503, text="busy"),
         httpx.Response(500, text="boom"),
-        httpx.Response(200, json=_response_body(Command.COMPLETE)),
+        httpx.Response(200, json=_response_body(Command.PING)),
     )
     transport = make_transport(fake_clock, retry_window=60.0)
     wire.bind(transport)
 
-    response = transport.call(Command.COMPLETE, PAYLOAD_BY_COMMAND[Command.COMPLETE])
+    response = transport.call(Command.PING, PAYLOAD_BY_COMMAND[Command.PING])
 
-    assert response.flag == 0
+    assert response == PingResponse()
     assert len(wire.requests) == 3
     assert fake_clock.slept == [1.0, 2.0]
     warnings = warning_lines(captured_console_log)
     assert len(warnings) == 2
     for line in warnings:
         assert "localhost:33084" in line
-        assert "complete" in line
+        assert "ping" in line
         assert "elapsed=" in line
     assert "status=503" in warnings[0]
     assert "status=500" in warnings[1]
@@ -459,7 +464,7 @@ def test_exhausted_window_raises_client_connection_error_for_a_status(
     wire.bind(transport)
 
     with pytest.raises(ClientConnectionError) as exc_info:
-        transport.call(Command.COMPLETE, PAYLOAD_BY_COMMAND[Command.COMPLETE])
+        transport.call(Command.PING, PAYLOAD_BY_COMMAND[Command.PING])
 
     text = str(exc_info.value)
     assert "localhost:33084" in text

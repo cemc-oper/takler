@@ -82,6 +82,7 @@ GRPC_METHOD_BY_COMMAND: Dict[Command, str] = {
     Command.FORCE: "RunCommandForce",
     Command.FREE_DEP: "RunCommandFreeDep",
     Command.LOAD: "RunCommandLoad",
+    Command.REPLACE: "RunCommandReplace",
     Command.BEGIN: "RunCommandBegin",
     Command.SHOW: "RunRequestShow",
     Command.PING: "RunRequestPing",
@@ -115,6 +116,9 @@ def _event(message) -> commands.EventCommand:
 
 
 def _meter(message) -> commands.MeterCommand:
+    from takler.protocol.wire import decimal
+
+    decimal(message.meter_value)
     return commands.MeterCommand(
         node_path=message.child_options.node_path,
         meter_name=message.meter_name,
@@ -202,6 +206,9 @@ _REQUEST_FROM_PB2: Dict[Command, Callable[[object], ProtocolModel]] = {
     Command.FORCE: _force,
     Command.FREE_DEP: _free_dep,
     Command.LOAD: _load,
+    Command.REPLACE: lambda m: commands.ReplaceCommand(
+        target_path=m.target_path, flow_bytes=m.flow
+    ),
     Command.BEGIN: _begin,
     Command.SHOW: _show,
     Command.PING: _ping,
@@ -218,7 +225,7 @@ def request_from_pb2(command: Command, message) -> ProtocolModel:
             makes possible. Callers run this inside the command boundary, so
             the error is classified and answered like any command failure.
         KeyError: If ``command`` has no converter (unreachable while the table
-            covers the sixteen commands; the module's tests pin that).
+            covers the seventeen commands; the module's tests pin that).
     """
     return _REQUEST_FROM_PB2[command](message)
 
@@ -373,6 +380,9 @@ _REQUEST_TO_PB2: Dict[Command, Callable[[Mapping[str, Any]], Any]] = {
     Command.FORCE: _force_to_pb2,
     Command.FREE_DEP: _free_dep_to_pb2,
     Command.LOAD: _load_to_pb2,
+    Command.REPLACE: lambda p: takler_pb2.ReplaceCommand(
+        target_path=p["target_path"], flow=p["flow_bytes"]
+    ),
     Command.BEGIN: _begin_to_pb2,
     Command.SHOW: _show_to_pb2,
     Command.PING: _ping_to_pb2,
@@ -405,7 +415,7 @@ def response_from_pb2(command: Command, message) -> ProtocolModel:
     right attributes (a test double, say).
 
     Raises:
-        KeyError: If ``command`` is not one of the sixteen.
+        KeyError: If ``command`` is not one of the seventeen.
     """
     response_type = commands.RESPONSE_TYPE_BY_COMMAND[command]
     if response_type is commands.BatchResponse:

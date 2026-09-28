@@ -69,6 +69,7 @@ from takler.server.auth import (
     SERVICE_METHOD_PREFIX,
     PrivilegeLevel,
     get_call_credentials,
+    sanitize_echoed_value,
 )
 from takler.server.connect_config import DEFAULT_EXCEPTION_POLICY, ExceptionPolicy
 from takler.server.scheduler import Scheduler
@@ -137,6 +138,7 @@ METHOD_NAME_BY_COMMAND: Dict[Command, str] = {
     Command.FORCE: "RunCommandForce",
     Command.FREE_DEP: "RunCommandFreeDep",
     Command.LOAD: "RunCommandLoad",
+    Command.REPLACE: "RunCommandReplace",
     Command.BEGIN: "RunCommandBegin",
     Command.SHOW: "RunRequestShow",
     Command.PING: "RunRequestPing",
@@ -199,6 +201,7 @@ _REQUEST_INFO_BY_COMMAND: Dict[Command, Callable[[ProtocolModel], str]] = {
     Command.FREE_DEP: lambda r: f"path={list(r.paths)}, dep_type={r.dep_type.value}",
     Command.BEGIN: lambda r: f"flow_name={r.flow_name}, force={r.force}",
     Command.LOAD: lambda r: f"flow_type={r.flow_type}",
+    Command.REPLACE: lambda r: f"target_path={r.target_path}",
     Command.SHOW: lambda r: "show",
     Command.PING: lambda r: "ping",
     Command.COROUTINE: lambda r: "coroutine",
@@ -221,11 +224,17 @@ def _audit_target(command: Command, request: ProtocolModel) -> Optional[List[str
         return list(request.paths)
     if command is Command.BEGIN:
         return [request.flow_name]
+    if command is Command.REPLACE:
+        return [request.target_path]
     return None
 
 
+def _raise_query_error():
+    raise RuntimeError("query execution failed") from None
+
+
 class CommandHandlers:
-    """The sixteen commands behind the exception and audit boundary.
+    """The seventeen commands behind the exception and audit boundary.
 
     Attributes
     ----------
@@ -266,6 +275,7 @@ class CommandHandlers:
         command: Command,
         parse_request: Callable[[], ProtocolModel],
         peer: Optional[str] = None,
+        query_errors: bool = False,
     ) -> ProtocolModel:
         """Run one command behind the boundary and answer with its DTO.
 
@@ -321,6 +331,9 @@ class CommandHandlers:
                 )
             )
             if command in BATCH_COMMANDS
+            else (lambda exc: _raise_query_error())
+            if query_errors
+            and command in (Command.SHOW, Command.PING, Command.COROUTINE)
             else _ERROR_RESPONSE_BY_COMMAND.get(command, command_error_response),
             audit_target=audit_target,
             peer=peer,
@@ -368,6 +381,8 @@ class CommandHandlers:
             return self._service(self.scheduler.run_command_force, request)
         if command is Command.FREE_DEP:
             return self._service(self.scheduler.run_command_free_dep, request)
+        if command is Command.REPLACE:
+            return self.scheduler.run_command_replace(request)
         if command is Command.LOAD:
             return self._service(self.scheduler.run_command_load, request)
         if command is Command.BEGIN:
@@ -506,11 +521,20 @@ class CommandHandlers:
                 self._trigger_fatal_shutdown()
             return result
         except Exception as exc:  # noqa: BLE001 - boundary is intentional
+            if (
+                operation_name == "RunCommandReplace"
+                and error_code_for_exception(exc) == 99
+            ):
+                exc = RuntimeError("replacement preparation failed")
             info = request_info() if callable(request_info) else request_info
+            if operation_name == "RunCommandReplace":
+                info = sanitize_echoed_value(info, get_call_credentials())
+            detail = f"{type(exc).__name__}: {exc}"
+            if operation_name == "RunCommandReplace":
+                detail = sanitize_echoed_value(detail, get_call_credentials())
             logger.error(
-                f"error handling RPC {operation_name} ({info}): "
-                f"{type(exc).__name__}: {exc}",
-                exc_info=True,
+                f"error handling RPC {operation_name} ({info}): {detail}",
+                exc_info=operation_name != "RunCommandReplace",
             )
             if self.exception_policy is ExceptionPolicy.FAIL_FAST:
                 logger.critical(
@@ -519,6 +543,10 @@ class CommandHandlers:
                 )
                 self._trigger_fatal_shutdown()
             response = error_response(exc)
+            if operation_name == "RunCommandReplace":
+                response.message = sanitize_echoed_value(
+                    response.message, get_call_credentials()
+                )
             self._audit_control(operation_name, _resolve(audit_target), response, peer)
             return response
 
@@ -575,22 +603,27 @@ class CommandHandlers:
                     command=audit_command_name(operation_name),
                     user=credentials.audit_user(),
                     peer=audit_peer(record_peer),
-                    target=list(audit_target) if audit_target else [],
+                    target=[sanitize_echoed_value(t, credentials) for t in audit_target]
+                    if operation_name == "RunCommandReplace" and audit_target
+                    else list(audit_target)
+                    if audit_target
+                    else [],
                     outcome=OUTCOME_SUCCESS if flag == SUCCESS else OUTCOME_ERROR,
                     error_code=flag,
                     reason=response.message
                     if isinstance(response, BatchResponse)
+                    or operation_name == "RunCommandReplace"
                     else None,
                     results=[item.model_dump() for item in response.results]
                     if isinstance(response, BatchResponse)
                     else None,
                 )
             )
-        except Exception as exc:  # noqa: BLE001 - auditing is never fatal
-            logger.warning(
-                f"could not build the audit record of {operation_name}: "
-                f"{type(exc).__name__}: {exc}"
-            )
+        except Exception:  # noqa: BLE001 - auditing is never fatal
+            try:
+                logger.warning(f"could not build the audit record of {operation_name}")
+            except Exception:  # logging failure must not undo a committed command
+                pass
 
 
 def _resolve(
@@ -606,6 +639,6 @@ class UnsupportedCommandError(Exception):
     """A command with no registered handler implementation.
 
     Unreachable while :data:`METHOD_NAME_BY_COMMAND` and
-    :meth:`CommandHandlers._run` cover the same sixteen commands; the tests
+    :meth:`CommandHandlers._run` cover the same seventeen commands; the tests
     of this module pin that correspondence.
     """

@@ -65,6 +65,7 @@ CONTRACT_COMMAND_NAMES = {
     "force",
     "free-dep",
     "load",
+    "replace",
     "begin",
     "show",
     "ping",
@@ -92,7 +93,7 @@ CONTRACT_DEP_TYPE_NAMES = {"all", "trigger", "time"}
 
 def test_command_names_match_the_contract():
     assert {command.value for command in Command} == CONTRACT_COMMAND_NAMES
-    assert len(Command) == 16
+    assert len(Command) == 17
 
 
 def test_command_count_matches_the_rpc_count():

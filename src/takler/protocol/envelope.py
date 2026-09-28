@@ -31,6 +31,8 @@ A forwarder that wanted to relay commands it does not know would relax this
 
 from __future__ import annotations
 
+import base64
+
 import uuid
 from typing import Any, Dict, Optional
 
@@ -111,12 +113,13 @@ class Envelope(ProtocolModel):
                 f"command {command.value!r} takes {request_type.__name__}, "
                 f"got {type(request).__name__}"
             )
-        return cls(
-            command=command,
-            payload=request.model_dump(mode="json"),
-            auth=auth,
-            target=target,
-        )
+        payload = request.model_dump(mode="json")
+        for name, value in request.model_dump().items():
+            if isinstance(value, bytes):
+                payload[name] = base64.b64encode(value).decode("ascii")
+        if command is Command.METER:
+            payload["meter_value"] = str(request.meter_value)
+        return cls(command=command, payload=payload, auth=auth, target=target)
 
     @classmethod
     def for_response(

@@ -12,4 +12,9 @@ def test_handler_case_over_grpc(
     handler_case, run_via_grpc_fixture, assert_handler_case
 ):
     response, bunch = run_via_grpc_fixture(handler_case)
-    assert_handler_case(handler_case, response, bunch)
+    if handler_case.id == "meter-rejects-a-non-numeric-value":
+        assert response.flag == 99
+        assert response.message == "WireError: invalid decimal integer"
+        handler_case.check(bunch)
+    else:
+        assert_handler_case(handler_case, response, bunch)

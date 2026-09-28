@@ -206,3 +206,6 @@ show_missing = true
 #   done
 #   # M3 任务 11：TUI 包的过渡门槛（60%，随 pilot 测试补齐逐步上调至 85%）
 #   coverage report --include="src/takler/tui/*" --fail-under=60
+
+[tool.setuptools.package-data]
+"takler.protocol" = ["wire_schema.json"]

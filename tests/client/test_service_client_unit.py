@@ -112,7 +112,7 @@ def call_capturing_stderr(client, rpc, retry_window=None):
             takler.logging.configure(level="WARNING", console=True)
             try:
                 result = client.transport._call(
-                    "complete", rpc, FakeResponse(), CommandKind.CHILD
+                    "ping", rpc, FakeResponse(), CommandKind.QUERY
                 )
                 error = None
             except BaseException as exc:  # noqa: BLE001 - returned to caller
@@ -185,7 +185,7 @@ def test_call_retries_retryable_status_then_succeeds(fake_clock):
     assert len(warnings) == 2
     for line in warnings:
         assert "localhost:33083" in line
-        assert "complete" in line
+        assert "ping" in line
         assert "elapsed=" in line
     assert "UNAVAILABLE" in warnings[0]
     assert "DEADLINE_EXCEEDED" in warnings[1]
@@ -288,7 +288,7 @@ def test_close_channel_clears_channel_and_stub():
 def test_guarded_closes_channel_when_body_raises(monkeypatch):
     client = TaklerServiceClient(host="h", port=1)
     channel = FakeChannel()
-    monkeypatch.setattr("grpc.insecure_channel", lambda address: channel)
+    monkeypatch.setattr("grpc.insecure_channel", lambda address, **kwargs: channel)
 
     def body():
         assert client.channel is channel

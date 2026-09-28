@@ -283,7 +283,7 @@ Python 客户端（ M3 任务 8 起）在两种 transport 下由同一个构建�
       - ``init``、``complete``、``abort``、``event``、``meter``
       - ``takler-pass``
     * - 运维
-      - ``requeue``、``suspend``、``resume``、``run``、``force``、``free-dep``、``load``、``begin``、``show``、``coroutine``
+      - ``requeue``、``suspend``、``resume``、``run``、``force``、``free-dep``、``load``、``replace``、``begin``、``show``、``coroutine``
       - ``takler-secret`` 加在白名单中的 ``takler-user``
     * - 公开
       - ``ping``

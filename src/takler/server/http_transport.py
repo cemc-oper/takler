@@ -12,7 +12,7 @@ does that import lazily and reports a missing extra as a startup error.
 The wire contract is the JSON :class:`~takler.protocol.envelope.Envelope`:
 
 * one endpoint, ``POST /v1/commands/{command}``, where ``{command}`` is the
-  CLI word of one of the sixteen commands (``init`` .. ``coroutine``); the
+  CLI word of one of the seventeen commands (``init`` .. ``coroutine``); the
   body is the request envelope and the answer is the response envelope, whose
   ``trace_id`` echoes the request's;
 * the HTTP status code says nothing about the command's outcome -- a business
@@ -57,6 +57,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from takler.logging import get_logger
 from takler.protocol.commands import Command
 from takler.protocol.envelope import Envelope
+from takler.protocol.wire import decode_envelope, is_json_content_type, WireError
 from takler.server.audit import AuditLogger
 from takler.server.auth import (
     SERVICE_METHOD_PREFIX,
@@ -145,6 +146,12 @@ def create_app(
     if gate is None:
         gate = AuthGate()
     app = FastAPI(title="takler")
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import JSONResponse
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, exc):
+        return JSONResponse(status_code=422, content={"detail": "invalid request"})
 
     async def authorize(
         request: Request, command: Command
@@ -172,28 +179,45 @@ def create_app(
             # The credentials are never None on this path: a rejection only
             # exists for a CHILD or OPERATOR level method, whose metadata the
             # gate parsed.
-            text = gate.refuse(method, outcome.credentials, outcome.rejection)
+            target = None
+            if command is Command.REPLACE:
+                try:
+                    target = decode_envelope(await request.body(), direction="request")[
+                        "payload"
+                    ]["target_path"]
+                except WireError:
+                    pass
+            text = gate.refuse(
+                method, outcome.credentials, outcome.rejection, target=target
+            )
             raise HTTPException(
                 status_code=HTTP_STATUS_BY_REJECTION[outcome.rejection],
                 detail=text,
             )
         return outcome.credentials
 
-    @app.post(COMMAND_PATH, response_model=Envelope)
+    @app.post(COMMAND_PATH, response_model=Envelope, response_model_exclude_none=True)
     async def run_command(
         command: Command,
-        envelope: Envelope,
         request: Request,
         credentials: Optional[CallCredentials] = Depends(authorize),
     ) -> Envelope:
         """Run one command and answer with its response envelope.
 
-        The request payload is parsed *inside* the handlers' exception
-        boundary, so a payload that fails DTO validation is classified and
-        answered like any command failure -- ``200`` with a non-zero ``flag``
-        -- exactly as on gRPC, where a malformed meter value is the server's
-        ``internal_error`` and not a transport error.
+        Wire and DTO validation finish before dispatch: malformed requests
+        return a safe 422 without entering the scheduler. Valid business
+        failures retain their response flag; query execution failures use 500.
         """
+        if not is_json_content_type(request.headers.get("content-type", "")):
+            raise HTTPException(status_code=415, detail="expected application/json")
+        try:
+            data = decode_envelope(await request.body(), direction="request")
+            envelope = Envelope.model_validate(data)
+            parsed = envelope.parse_request()
+        except (WireError, ValueError):
+            raise HTTPException(
+                status_code=422, detail="invalid request envelope or payload"
+            ) from None
         if envelope.command is not command:
             raise HTTPException(
                 status_code=400,
@@ -212,8 +236,12 @@ def create_app(
         token = set_call_credentials(credentials) if credentials is not None else None
         try:
             response = await handlers.dispatch(
-                command, envelope.parse_request, peer=_peer_of(request)
+                command, lambda: parsed, peer=_peer_of(request), query_errors=True
             )
+        except RuntimeError:
+            raise HTTPException(
+                status_code=500, detail="query execution failed"
+            ) from None
         finally:
             if token is not None:
                 reset_call_credentials(token)

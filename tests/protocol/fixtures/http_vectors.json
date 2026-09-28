@@ -1,0 +1,2615 @@
+{
+  "contract": "R0-04",
+  "scope": "HTTP wire validation only; request acceptance does not promise business success; show inner output is validated separately by R0-15",
+  "cases": [
+    {
+      "id": "request_valid_init",
+      "direction": "request",
+      "command": "init",
+      "request": {
+        "version": "1",
+        "command": "init",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "task_id": "123"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"task_id\":\"123\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_init_node_path_missing",
+      "direction": "request",
+      "command": "init",
+      "request": {
+        "version": "1",
+        "command": "init",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "task_id": "123"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"task_id\":\"123\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_init_node_path_null",
+      "direction": "request",
+      "command": "init",
+      "request": {
+        "version": "1",
+        "command": "init",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "task_id": "123"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"task_id\":\"123\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_init_task_id_missing",
+      "direction": "request",
+      "command": "init",
+      "request": {
+        "version": "1",
+        "command": "init",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "task_id": "123"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_init_task_id_null",
+      "direction": "request",
+      "command": "init",
+      "request": {
+        "version": "1",
+        "command": "init",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "task_id": "123"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"task_id\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_complete",
+      "direction": "request",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_complete_node_path_missing",
+      "direction": "request",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_complete_node_path_null",
+      "direction": "request",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_abort",
+      "direction": "request",
+      "command": "abort",
+      "request": {
+        "version": "1",
+        "command": "abort",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "reason": ""
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"reason\":\"\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_abort_node_path_missing",
+      "direction": "request",
+      "command": "abort",
+      "request": {
+        "version": "1",
+        "command": "abort",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "reason": ""
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"reason\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_abort_node_path_null",
+      "direction": "request",
+      "command": "abort",
+      "request": {
+        "version": "1",
+        "command": "abort",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "reason": ""
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"reason\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_abort_reason_missing",
+      "direction": "request",
+      "command": "abort",
+      "request": {
+        "version": "1",
+        "command": "abort",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "reason": ""
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_abort_reason_null",
+      "direction": "request",
+      "command": "abort",
+      "request": {
+        "version": "1",
+        "command": "abort",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "reason": ""
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"reason\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_event",
+      "direction": "request",
+      "command": "event",
+      "request": {
+        "version": "1",
+        "command": "event",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "event_name": "ready"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"event_name\":\"ready\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_event_node_path_missing",
+      "direction": "request",
+      "command": "event",
+      "request": {
+        "version": "1",
+        "command": "event",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "event_name": "ready"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"event_name\":\"ready\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_event_node_path_null",
+      "direction": "request",
+      "command": "event",
+      "request": {
+        "version": "1",
+        "command": "event",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "event_name": "ready"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"event_name\":\"ready\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_event_event_name_missing",
+      "direction": "request",
+      "command": "event",
+      "request": {
+        "version": "1",
+        "command": "event",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "event_name": "ready"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_event_event_name_null",
+      "direction": "request",
+      "command": "event",
+      "request": {
+        "version": "1",
+        "command": "event",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "event_name": "ready"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"event_name\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_meter",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"50\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_meter_node_path_missing",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"meter_name\":\"progress\",\"meter_value\":\"50\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_meter_node_path_null",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"meter_name\":\"progress\",\"meter_value\":\"50\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_meter_meter_name_missing",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_value\":\"50\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_meter_meter_name_null",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":null,\"meter_value\":\"50\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_meter_meter_value_missing",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_meter_meter_value_null",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_requeue",
+      "direction": "request",
+      "command": "requeue",
+      "request": {
+        "version": "1",
+        "command": "requeue",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"requeue\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":[\"/f/t\"]}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_requeue_node_paths_missing",
+      "direction": "request",
+      "command": "requeue",
+      "request": {
+        "version": "1",
+        "command": "requeue",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"requeue\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_requeue_node_paths_null",
+      "direction": "request",
+      "command": "requeue",
+      "request": {
+        "version": "1",
+        "command": "requeue",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"requeue\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_suspend",
+      "direction": "request",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":[\"/f/t\"]}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_suspend_node_paths_missing",
+      "direction": "request",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_suspend_node_paths_null",
+      "direction": "request",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_resume",
+      "direction": "request",
+      "command": "resume",
+      "request": {
+        "version": "1",
+        "command": "resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":[\"/f/t\"]}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_resume_node_paths_missing",
+      "direction": "request",
+      "command": "resume",
+      "request": {
+        "version": "1",
+        "command": "resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_resume_node_paths_null",
+      "direction": "request",
+      "command": "resume",
+      "request": {
+        "version": "1",
+        "command": "resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_run",
+      "direction": "request",
+      "command": "run",
+      "request": {
+        "version": "1",
+        "command": "run",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ],
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"run\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":[\"/f/t\"],\"force\":false}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_run_node_paths_missing",
+      "direction": "request",
+      "command": "run",
+      "request": {
+        "version": "1",
+        "command": "run",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ],
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"run\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"force\":false}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_run_node_paths_null",
+      "direction": "request",
+      "command": "run",
+      "request": {
+        "version": "1",
+        "command": "run",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ],
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"run\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":null,\"force\":false}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_run_force_missing",
+      "direction": "request",
+      "command": "run",
+      "request": {
+        "version": "1",
+        "command": "run",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ],
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"run\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":[\"/f/t\"]}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_run_force_null",
+      "direction": "request",
+      "command": "run",
+      "request": {
+        "version": "1",
+        "command": "run",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ],
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"run\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":[\"/f/t\"],\"force\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_force",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"state\":\"complete\",\"recursive\":true}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_force_paths_missing",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"state\":\"complete\",\"recursive\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_force_paths_null",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":null,\"state\":\"complete\",\"recursive\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_force_state_missing",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"recursive\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_force_state_null",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"state\":null,\"recursive\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_force_recursive_missing",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"state\":\"complete\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_force_recursive_null",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"state\":\"complete\",\"recursive\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_free-dep",
+      "direction": "request",
+      "command": "free-dep",
+      "request": {
+        "version": "1",
+        "command": "free-dep",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "dep_type": "all"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"free-dep\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"dep_type\":\"all\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_free-dep_paths_missing",
+      "direction": "request",
+      "command": "free-dep",
+      "request": {
+        "version": "1",
+        "command": "free-dep",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "dep_type": "all"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"free-dep\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"dep_type\":\"all\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_free-dep_paths_null",
+      "direction": "request",
+      "command": "free-dep",
+      "request": {
+        "version": "1",
+        "command": "free-dep",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "dep_type": "all"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"free-dep\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":null,\"dep_type\":\"all\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_free-dep_dep_type_missing",
+      "direction": "request",
+      "command": "free-dep",
+      "request": {
+        "version": "1",
+        "command": "free-dep",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "dep_type": "all"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"free-dep\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"]}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_free-dep_dep_type_null",
+      "direction": "request",
+      "command": "free-dep",
+      "request": {
+        "version": "1",
+        "command": "free-dep",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "dep_type": "all"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"free-dep\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"dep_type\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_load",
+      "direction": "request",
+      "command": "load",
+      "request": {
+        "version": "1",
+        "command": "load",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_type": "json",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"load\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_type\":\"json\",\"flow_bytes\":\"e30=\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_load_flow_type_missing",
+      "direction": "request",
+      "command": "load",
+      "request": {
+        "version": "1",
+        "command": "load",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_type": "json",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"load\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_bytes\":\"e30=\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_load_flow_type_null",
+      "direction": "request",
+      "command": "load",
+      "request": {
+        "version": "1",
+        "command": "load",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_type": "json",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"load\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_type\":null,\"flow_bytes\":\"e30=\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_load_flow_bytes_missing",
+      "direction": "request",
+      "command": "load",
+      "request": {
+        "version": "1",
+        "command": "load",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_type": "json",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"load\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_type\":\"json\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_load_flow_bytes_null",
+      "direction": "request",
+      "command": "load",
+      "request": {
+        "version": "1",
+        "command": "load",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_type": "json",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"load\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_type\":\"json\",\"flow_bytes\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_begin",
+      "direction": "request",
+      "command": "begin",
+      "request": {
+        "version": "1",
+        "command": "begin",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_name": "f",
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"begin\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_name\":\"f\",\"force\":false}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_begin_flow_name_missing",
+      "direction": "request",
+      "command": "begin",
+      "request": {
+        "version": "1",
+        "command": "begin",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_name": "f",
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"begin\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"force\":false}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_begin_flow_name_null",
+      "direction": "request",
+      "command": "begin",
+      "request": {
+        "version": "1",
+        "command": "begin",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_name": "f",
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"begin\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_name\":null,\"force\":false}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_begin_force_missing",
+      "direction": "request",
+      "command": "begin",
+      "request": {
+        "version": "1",
+        "command": "begin",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_name": "f",
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"begin\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_name\":\"f\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_begin_force_null",
+      "direction": "request",
+      "command": "begin",
+      "request": {
+        "version": "1",
+        "command": "begin",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_name": "f",
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"begin\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_name\":\"f\",\"force\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_replace",
+      "direction": "request",
+      "command": "replace",
+      "request": {
+        "version": "1",
+        "command": "replace",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "target_path": "/f",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"replace\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"target_path\":\"/f\",\"flow_bytes\":\"e30=\"}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_replace_target_path_missing",
+      "direction": "request",
+      "command": "replace",
+      "request": {
+        "version": "1",
+        "command": "replace",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "target_path": "/f",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"replace\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_bytes\":\"e30=\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_replace_target_path_null",
+      "direction": "request",
+      "command": "replace",
+      "request": {
+        "version": "1",
+        "command": "replace",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "target_path": "/f",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"replace\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"target_path\":null,\"flow_bytes\":\"e30=\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_replace_flow_bytes_missing",
+      "direction": "request",
+      "command": "replace",
+      "request": {
+        "version": "1",
+        "command": "replace",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "target_path": "/f",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"replace\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"target_path\":\"/f\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_replace_flow_bytes_null",
+      "direction": "request",
+      "command": "replace",
+      "request": {
+        "version": "1",
+        "command": "replace",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "target_path": "/f",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"replace\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"target_path\":\"/f\",\"flow_bytes\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_show",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":true,\"show_limit\":true,\"show_event\":true,\"show_meter\":true}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_show_show_trigger_missing",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_parameter\":true,\"show_limit\":true,\"show_event\":true,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_trigger_null",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":null,\"show_parameter\":true,\"show_limit\":true,\"show_event\":true,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_parameter_missing",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_limit\":true,\"show_event\":true,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_parameter_null",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":null,\"show_limit\":true,\"show_event\":true,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_limit_missing",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":true,\"show_event\":true,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_limit_null",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":true,\"show_limit\":null,\"show_event\":true,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_event_missing",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":true,\"show_limit\":true,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_event_null",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":true,\"show_limit\":true,\"show_event\":null,\"show_meter\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_meter_missing",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":true,\"show_limit\":true,\"show_event\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_show_show_meter_null",
+      "direction": "request",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"show_trigger\":true,\"show_parameter\":true,\"show_limit\":true,\"show_event\":true,\"show_meter\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_ping",
+      "direction": "request",
+      "command": "ping",
+      "request": {
+        "version": "1",
+        "command": "ping",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"ping\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_valid_coroutine",
+      "direction": "request",
+      "command": "coroutine",
+      "request": {
+        "version": "1",
+        "command": "coroutine",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"coroutine\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_valid_complete",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": true,
+      "expected_category": "success",
+      "expected_exit": 0
+    },
+    {
+      "id": "response_business_complete",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":31,\"message\":\"zombie\"}}",
+      "expected_wire_valid": true,
+      "expected_category": "business",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_version_missing",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_version_null",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":null,\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_command_missing",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_command_null",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":null,\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_trace_id_missing",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_trace_id_null",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":null,\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_payload_missing",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\"}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_payload_null",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":null}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_version_89",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"999\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_version_90",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":1,\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_trace_id_91",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_command_92",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_payload_93",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":[]}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_auth_94",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"},\"auth\":{}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_target_95",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"},\"target\":\"/f\"}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_extra_96",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"},\"extra\":true}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_changed_Version_97",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"},\"Version\":\"1\"}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_payload_flag_missing",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_payload_flag_null",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":null,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_payload_message_missing",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_payload_message_null",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":null}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_flag_bad_102",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":false,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_flag_bad_103",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":\"0\",\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_flag_bad_104",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":1.5,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_flag_bad_105",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":2147483648,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_flag_bad_106",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":999,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_extra_payload",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"extra\":0}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_two_documents",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}{}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_trailing",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}}junk",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_truncated",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\"}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_duplicate_key",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":99,\"flag\":0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_integer_decimal",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0.0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_integer_exponent",
+      "direction": "response",
+      "command": "complete",
+      "request": {
+        "version": "1",
+        "command": "complete",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0e0,\"message\":\"\"}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_valid_ping",
+      "direction": "response",
+      "command": "ping",
+      "request": {
+        "version": "1",
+        "command": "ping",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"ping\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": true,
+      "expected_category": "success",
+      "expected_exit": 0
+    },
+    {
+      "id": "response_unknown_ping",
+      "direction": "response",
+      "command": "ping",
+      "request": {
+        "version": "1",
+        "command": "ping",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"ping\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"extra\":0}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_valid_coroutine",
+      "direction": "response",
+      "command": "coroutine",
+      "request": {
+        "version": "1",
+        "command": "coroutine",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"coroutine\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"coroutines\":[]}}",
+      "expected_wire_valid": true,
+      "expected_category": "success",
+      "expected_exit": 0
+    },
+    {
+      "id": "response_unknown_coroutine",
+      "direction": "response",
+      "command": "coroutine",
+      "request": {
+        "version": "1",
+        "command": "coroutine",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"coroutine\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"coroutines\":[],\"extra\":0}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_valid_show",
+      "direction": "response",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"output\":\"{}\"}}",
+      "expected_wire_valid": true,
+      "expected_category": "success",
+      "expected_exit": 0
+    },
+    {
+      "id": "response_unknown_show",
+      "direction": "response",
+      "command": "show",
+      "request": {
+        "version": "1",
+        "command": "show",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "show_trigger": true,
+          "show_parameter": true,
+          "show_limit": true,
+          "show_event": true,
+          "show_meter": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"show\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"output\":\"{}\",\"extra\":0}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_valid_batch",
+      "direction": "response",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"processed=1 succeeded=1 failed=0\",\"results\":[{\"index\":0,\"target\":\"/f/t\",\"flag\":0,\"message\":\"suspended\",\"effect\":\"applied\"}]}}",
+      "expected_wire_valid": true,
+      "expected_category": "success",
+      "expected_exit": 0
+    },
+    {
+      "id": "response_batch_index",
+      "direction": "response",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"processed=1 succeeded=1 failed=0\",\"results\":[{\"index\":1,\"target\":\"/f/t\",\"flag\":0,\"message\":\"suspended\",\"effect\":\"applied\"}]}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_batch_target",
+      "direction": "response",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"processed=1 succeeded=1 failed=0\",\"results\":[{\"index\":0,\"target\":\"/f/other\",\"flag\":0,\"message\":\"suspended\",\"effect\":\"applied\"}]}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_batch_effect",
+      "direction": "response",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"processed=1 succeeded=1 failed=0\",\"results\":[{\"index\":0,\"target\":\"/f/t\",\"flag\":0,\"message\":\"suspended\",\"effect\":\"maybe\"}]}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "response_business_batch",
+      "direction": "response",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":16,\"message\":\"processed=1 succeeded=1 failed=0\",\"results\":[{\"index\":0,\"target\":\"/f/t\",\"flag\":10,\"message\":\"suspended\",\"effect\":\"none\"}]}}",
+      "expected_wire_valid": true,
+      "expected_category": "business",
+      "expected_exit": 1
+    },
+    {
+      "id": "response_batch_wrong_aggregate",
+      "direction": "response",
+      "command": "suspend",
+      "request": {
+        "version": "1",
+        "command": "suspend",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ]
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"suspend\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"processed=1 succeeded=1 failed=0\",\"results\":[{\"index\":0,\"target\":\"/f/t\",\"flag\":10,\"message\":\"suspended\",\"effect\":\"none\"}]}}",
+      "expected_wire_valid": false,
+      "expected_category": "protocol",
+      "expected_exit": 3
+    },
+    {
+      "id": "request_bad_meter_126",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":50}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_bad_meter_127",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"01\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_bad_meter_128",
+      "direction": "request",
+      "command": "meter",
+      "request": {
+        "version": "1",
+        "command": "meter",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_path": "/f/t",
+          "meter_name": "progress",
+          "meter_value": "50"
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"9223372036854775808\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_bad_run_129",
+      "direction": "request",
+      "command": "run",
+      "request": {
+        "version": "1",
+        "command": "run",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "node_paths": [
+            "/f/t"
+          ],
+          "force": false
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"run\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_paths\":[\"/f/t\"],\"force\":\"false\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_bad_load_130",
+      "direction": "request",
+      "command": "load",
+      "request": {
+        "version": "1",
+        "command": "load",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "flow_type": "json",
+          "flow_bytes": "e30="
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"load\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flow_type\":\"json\",\"flow_bytes\":\"e30\"}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_bad_force_131",
+      "direction": "request",
+      "command": "force",
+      "request": {
+        "version": "1",
+        "command": "force",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {
+          "paths": [
+            "/f/t"
+          ],
+          "state": "complete",
+          "recursive": true
+        }
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"state\":\"bad\",\"recursive\":true}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    }
+  ]
+}

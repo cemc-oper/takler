@@ -1,0 +1,150 @@
+{
+  "request": {
+    "init": {
+      "node_path": "s",
+      "task_id": "s"
+    },
+    "complete": {
+      "node_path": "s"
+    },
+    "abort": {
+      "node_path": "s",
+      "reason": "s"
+    },
+    "event": {
+      "node_path": "s",
+      "event_name": "s"
+    },
+    "meter": {
+      "node_path": "s",
+      "meter_name": "s",
+      "meter_value": "decimal"
+    },
+    "requeue": {
+      "node_paths": "as"
+    },
+    "suspend": {
+      "node_paths": "as"
+    },
+    "resume": {
+      "node_paths": "as"
+    },
+    "run": {
+      "node_paths": "as",
+      "force": "b"
+    },
+    "force": {
+      "paths": "as",
+      "state": "state",
+      "recursive": "b"
+    },
+    "free-dep": {
+      "paths": "as",
+      "dep_type": "dep"
+    },
+    "load": {
+      "flow_type": "s",
+      "flow_bytes": "base64"
+    },
+    "replace": {
+      "target_path": "s",
+      "flow_bytes": "base64"
+    },
+    "begin": {
+      "flow_name": "s",
+      "force": "b"
+    },
+    "show": {
+      "show_trigger": "b",
+      "show_parameter": "b",
+      "show_limit": "b",
+      "show_event": "b",
+      "show_meter": "b"
+    },
+    "ping": {},
+    "coroutine": {}
+  },
+  "response": {
+    "init": {
+      "flag": "flag",
+      "message": "s"
+    },
+    "complete": {
+      "flag": "flag",
+      "message": "s"
+    },
+    "abort": {
+      "flag": "flag",
+      "message": "s"
+    },
+    "event": {
+      "flag": "flag",
+      "message": "s"
+    },
+    "meter": {
+      "flag": "flag",
+      "message": "s"
+    },
+    "requeue": {
+      "flag": "flag",
+      "message": "s",
+      "results": "items"
+    },
+    "suspend": {
+      "flag": "flag",
+      "message": "s",
+      "results": "items"
+    },
+    "resume": {
+      "flag": "flag",
+      "message": "s",
+      "results": "items"
+    },
+    "run": {
+      "flag": "flag",
+      "message": "s",
+      "results": "items"
+    },
+    "force": {
+      "flag": "flag",
+      "message": "s",
+      "results": "items"
+    },
+    "free-dep": {
+      "flag": "flag",
+      "message": "s",
+      "results": "items"
+    },
+    "load": {
+      "flag": "flag",
+      "message": "s"
+    },
+    "replace": {
+      "flag": "flag",
+      "message": "s"
+    },
+    "begin": {
+      "flag": "flag",
+      "message": "s",
+      "results": "items"
+    },
+    "show": {
+      "output": "s"
+    },
+    "ping": {},
+    "coroutine": {
+      "coroutines": "coroutines"
+    }
+  },
+  "item": {
+    "index": "uint32",
+    "target": "s",
+    "flag": "flag",
+    "message": "s",
+    "effect": "effect"
+  },
+  "coroutine": {
+    "name": "s",
+    "description": "s"
+  }
+}

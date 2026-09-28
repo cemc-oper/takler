@@ -226,7 +226,7 @@ def test_child_command_carries_no_operator_credential(
     assert keys == [METADATA_KEY_JOB_PASSWORD]
 
 
-def test_every_attempt_of_one_call_carries_the_same_metadata(
+def test_mutation_sends_credentials_once_even_with_retry_window(
     monkeypatch, new_password, fake_clock
 ):
     """Requirement 8.1: the Call_Wrapper hands the metadata to each attempt."""
@@ -249,7 +249,7 @@ def test_every_attempt_of_one_call_carries_the_same_metadata(
     with pytest.raises(ClientConnectionError):
         client.transport._call("complete", spy, "req", CommandKind.CHILD)
 
-    assert len(spy.metadata_calls) > 1
+    assert len(spy.metadata_calls) == 1
     for metadata in spy.metadata_calls:
         assert metadata == [(METADATA_KEY_JOB_PASSWORD, new_password)]
 

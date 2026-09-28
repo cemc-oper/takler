@@ -270,6 +270,7 @@ def make_scheduler(zombie_detector=None, begin: bool = True) -> Scheduler:
     bunch = Bunch(name="bunch")
     flow = build_flow()
     bunch.add_flow(flow)
+    bunch.add_flow(Flow("replaceable"))
     if begin:
         flow.begin()
     return Scheduler(bunch=bunch, zombie_detector=zombie_detector)
@@ -337,6 +338,14 @@ CONTROL_CASES: "Dict[str, Tuple[Callable[[], Any], Callable[[], Any], List[str]]
         lambda: takler_pb2.BeginCommand(flow_name="flow1", force=True),
         lambda: takler_pb2.BeginCommand(flow_name="no-such-flow"),
         ["flow1"],
+    ),
+    "RunCommandReplace": (
+        lambda: takler_pb2.ReplaceCommand(
+            target_path="/replaceable",
+            flow=export_definition(Flow("replaceable")).model_dump_json().encode(),
+        ),
+        lambda: takler_pb2.ReplaceCommand(target_path="/missing", flow=_LOADED_FLOW),
+        ["/replaceable"],
     ),
     "RunCommandLoad": (
         lambda: takler_pb2.LoadCommand(flow_type="json", flow=_LOADED_FLOW),

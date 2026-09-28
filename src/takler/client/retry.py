@@ -99,7 +99,7 @@ class CommandKind(enum.Enum):
 #: operator and give up after a minute. A literal table rather than a name
 #: pattern, for the same reason as the server's privilege table: a future
 #: command must be classified deliberately, not by accident of its name. The
-#: module's tests pin the table against the sixteen Commands.
+#: module's tests pin the table against the seventeen Commands.
 COMMAND_KIND_BY_COMMAND: Dict[Command, CommandKind] = {
     Command.INIT: CommandKind.CHILD,
     Command.COMPLETE: CommandKind.CHILD,
@@ -113,6 +113,7 @@ COMMAND_KIND_BY_COMMAND: Dict[Command, CommandKind] = {
     Command.FORCE: CommandKind.CONTROL,
     Command.FREE_DEP: CommandKind.CONTROL,
     Command.LOAD: CommandKind.CONTROL,
+    Command.REPLACE: CommandKind.CONTROL,
     Command.BEGIN: CommandKind.CONTROL,
     Command.SHOW: CommandKind.QUERY,
     Command.PING: CommandKind.QUERY,
@@ -399,3 +400,19 @@ def run_with_retry(
                 f"elapsed={elapsed:.1f}s, {verdict.log_field}"
             )
             policy.sleep(delay)
+
+
+def mutation_failure(verdict: FailureVerdict, operation_name: str) -> FailureVerdict:
+    """A lost mutation response cannot establish whether the server committed it."""
+    if operation_name not in {"ping", "show", "coroutine"} and verdict.category in {
+        FailureCategory.RETRYABLE,
+        FailureCategory.FATAL,
+    }:
+        from dataclasses import replace
+
+        return replace(
+            verdict,
+            failure_name=verdict.failure_name
+            + "; outcome unknown; query server state before retrying",
+        )
+    return verdict

@@ -1,63 +1,20 @@
-"""The HTTP client transport of the ``takler[http]`` extra (M3 task 8).
+"""HTTP client with strict response decoding and command-safe retries.
 
-``HttpTransport`` is the :class:`~takler.client.transport.ClientTransport`
-that speaks HTTP: it posts the JSON
-:class:`~takler.protocol.envelope.Envelope` to the server's
-``POST /v1/commands/{command}`` endpoint and decodes the response envelope
-into the command's response DTO. The module lives behind the ``http`` extra
--- httpx is not part of the default install -- so it is only ever imported
-through :func:`takler.client.transport.build_client_transport`, which turns
-a missing extra into a clear error naming ``takler[http]``.
+Requests carry complete payloads and canonical base64 bytes. Responses must be
+single UTF-8 JSON envelopes with supported metadata, matching command/trace and
+all fields required by ``protocol/wire_schema.json``. Invalid 200 responses are
+protocol failures; business flags are preserved. Only ping/show/coroutine can
+retry transient HTTP or network failures. Mutations send once, including child
+commands. TLS/configuration failures never retry, and non-200 error bodies are
+not echoed because they may contain secrets or request data.
 
-Everything a call shares with the gRPC transport comes from the same one
-place, so the two transports cannot drift:
-
-* the credentials travel as the HTTP headers ``takler-pass`` /
-  ``takler-secret`` / ``takler-user`` -- the header names are the gRPC
-  metadata keys -- built by the shared
-  :func:`~takler.client.transport.build_credential_pairs` (m2 requirement
-  8.1);
-* the retry loop is the transport-neutral
-  :func:`~takler.client.retry.run_with_retry`: same per-attempt deadline
-  (requirement 9.2), same backoff and Retry_Window (requirements 9.3 - 9.6),
-  same exception types, and with them the same CLI exit codes. What is local
-  to this module is only the classification of HTTP failures into a
-  :class:`~takler.client.retry.FailureVerdict`
-  (:func:`classify_http_error`), mirroring the gRPC status-code mapping
-  (requirements 9.3, 9.8):
-    - the server never uses an HTTP status to report a business outcome, so
-      a non-``200`` status is always a transport-level event: ``401`` /
-      ``403`` answer ``PermissionDeniedError`` (the HTTP form of
-      ``UNAUTHENTICATED`` / ``PERMISSION_DENIED``), ``400`` / ``422`` answer
-      ``InvalidRequestError`` (the request cannot be routed or the envelope
-      is malformed -- retrying cannot fix either), the transient statuses of
-      :data:`RETRYABLE_HTTP_STATUSES` are retried, and any other status is a
-      ``TransportError`` without retry;
-    - an httpx transport error (refused connection, timeout, reset stream)
-      is the HTTP form of ``UNAVAILABLE`` and is retried;
-* a business failure is not retried and not raised: a response envelope
-  carrying a non-zero ``flag`` is handed back unchanged (requirement 9.7),
-  and the CLI turns its Error_Code into an exit code.
-
-What deliberately does not cross over is client-side validation: the payload
-is posted verbatim (``meter_value: "abc"`` included), because the server's
-end of the wire owns validation and both clients must be answered with the
-same ``flag`` for the same malformed request. The one encoding concern this
-module owns is the JSON form of ``bytes`` payload fields -- base64, matching
-the DTOs' JSON-mode serialization, exactly as ``LoadCommand.flow_bytes``
-travels.
-
-TLS mirrors the gRPC channel rules: a configured CA certificate file
-switches the base URL to ``https`` and is validated at :meth:`open` with the
-same path-and-reason messages (requirement 2.6); without one the transport
-is plaintext (requirement 2.2) -- the recommended deployment shape behind a
-TLS-terminating reverse proxy. The ``server_name`` override has no httpx
-equivalent (the certificate is always verified against the URL host), so a
-configured override draws one WARNING at :meth:`open` rather than being
-silently ignored.
+Credential headers and timeout/backoff policy are shared with gRPC. Installing
+``takler[http]`` supplies httpx; the base package keeps this import optional.
 """
 
 from __future__ import annotations
+
+from takler.client.retry import mutation_failure
 
 import base64
 import ssl
@@ -90,6 +47,12 @@ from takler.exceptions import (
 from takler.logging import get_logger
 from takler.protocol.commands import Command, ProtocolModel
 from takler.protocol.envelope import Envelope
+from takler.protocol.wire import (
+    READ_ONLY,
+    decode_envelope,
+    is_json_content_type,
+    WireError,
+)
 
 __all__ = [
     "COMMAND_URL_PREFIX",
@@ -127,6 +90,9 @@ NON_RETRYABLE_EXCEPTION_BY_HTTP_STATUS = {
     401: PermissionDeniedError,
     403: PermissionDeniedError,
     422: InvalidRequestError,
+    404: InvalidRequestError,
+    405: InvalidRequestError,
+    415: InvalidRequestError,
 }
 
 #: httpx transport errors that mean "the server could not be reached or the
@@ -147,11 +113,6 @@ _RETRYABLE_HTTPX_ERRORS = (
     httpx.RemoteProtocolError,
 )
 
-#: How much of an unreadable error body goes into the exception message.
-#: Enough to identify what answered (a proxy's error page, say), short
-#: enough for a single terminal line.
-_ERROR_BODY_SNIPPET_LENGTH: int = 200
-
 
 class _HttpStatusFailure(Exception):
     """One attempt answered with a non-200 HTTP status.
@@ -169,22 +130,16 @@ class _HttpStatusFailure(Exception):
 
 
 def _response_details(response: httpx.Response) -> str:
-    """Extract the detail text of a non-200 response.
-
-    The takler server answers a refusal as FastAPI's
-    ``{"detail": "<text>"}``; anything else answering (a reverse proxy's
-    error page, a truncated body) is quoted as a snippet. No content ever
-    lands here that is not already on its way into an exception message, and
-    the server's refusal texts are sanitized by construction -- they name
-    the reason, never a credential value.
-    """
-    try:
-        body = response.json()
-    except ValueError:
-        body = None
-    if isinstance(body, dict) and isinstance(body.get("detail"), str):
-        return body["detail"]
-    return response.text[:_ERROR_BODY_SNIPPET_LENGTH]
+    """Use controlled diagnostics; proxy bodies may contain credentials or requests."""
+    return {
+        400: "URL and envelope command mismatch",
+        401: "authentication required",
+        403: "permission denied",
+        404: "route not found",
+        405: "method not allowed",
+        415: "expected application/json",
+        422: "invalid request envelope or payload",
+    }.get(response.status_code, "HTTP request failed")
 
 
 def classify_http_error(exc: Exception) -> FailureVerdict:
@@ -227,6 +182,31 @@ def classify_http_error(exc: Exception) -> FailureVerdict:
             )
         return FailureVerdict(
             FailureCategory.FATAL, failure_name, log_field, exc.details
+        )
+
+    cause = exc
+    seen = set()
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, ssl.SSLError) or "CERTIFICATE_VERIFY_FAILED" in str(cause):
+            return FailureVerdict(
+                FailureCategory.NON_RETRYABLE,
+                "TLS verification failed",
+                "error=TLS",
+                "TLS verification failed",
+                InvalidRequestError,
+            )
+        cause = cause.__cause__ or cause.__context__
+
+    if isinstance(
+        exc, (httpx.InvalidURL, httpx.UnsupportedProtocol, httpx.LocalProtocolError)
+    ):
+        return FailureVerdict(
+            FailureCategory.NON_RETRYABLE,
+            "invalid transport configuration",
+            "error=configuration",
+            "request could not be sent",
+            InvalidRequestError,
         )
 
     if isinstance(exc, _RETRYABLE_HTTPX_ERRORS):
@@ -531,9 +511,9 @@ class HttpTransport(ClientTransport):
         """
         headers = dict(build_credential_pairs(kind, self.secret_file))
         policy = self._retry_policy(kind)
-        if operation_name in {command.value for command in BATCH_COMMANDS}:
+        if operation_name not in READ_ONLY:
             policy.retry_window = 0
-        body = envelope.model_dump(mode="json")
+        body = envelope.model_dump(mode="json", exclude_none=True)
         url = f"{COMMAND_URL_PREFIX}{operation_name}"
 
         def attempt() -> Envelope:
@@ -548,12 +528,25 @@ class HttpTransport(ClientTransport):
             # truncated body) raises its ValueError / ValidationError here,
             # outside the retry classification -- exactly as a malformed pb2
             # response raises on the gRPC side.
-            return Envelope.model_validate(response.json())
+            if not is_json_content_type(response.headers.get("content-type", "")):
+                raise ServerResponseError("invalid response content type")
+            try:
+                value = decode_envelope(
+                    response.content,
+                    direction="response",
+                    command=operation_name,
+                    trace_id=envelope.trace_id,
+                )
+                return Envelope.model_validate(value)
+            except (WireError, ValueError):
+                raise ServerResponseError(
+                    "invalid response envelope or payload"
+                ) from None
 
         return run_with_retry(
             policy,
             operation_name,
             self.listen_address,
             attempt,
-            classify_http_error,
+            lambda exc: mutation_failure(classify_http_error(exc), operation_name),
         )

@@ -72,6 +72,10 @@ PAYLOAD_AND_TYPE_BY_COMMAND: Dict[Command, Tuple[Dict[str, Any], Any]] = {
         {"flow_type": "json", "flow_bytes": b"{}"},
         takler_pb2.LoadCommand,
     ),
+    Command.REPLACE: (
+        {"target_path": "/flow1", "flow_bytes": b"{}"},
+        takler_pb2.ReplaceCommand,
+    ),
     Command.BEGIN: ({"flow_name": "flow1", "force": False}, takler_pb2.BeginCommand),
     Command.SHOW: (
         {
@@ -209,7 +213,7 @@ def test_open_and_close_drive_the_channel_lifecycle(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "grpc.insecure_channel",
-        lambda address: created.append(address) or FakeChannel(),
+        lambda address, **kwargs: created.append(address) or FakeChannel(),
     )
     transport = GrpcTransport(host="localhost", port=33083)
 
