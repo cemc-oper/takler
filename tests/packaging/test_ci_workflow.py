@@ -33,6 +33,8 @@ Validates: Requirements 16.1, 16.2, 16.3, 16.4, 16.5, 16.6
 from __future__ import annotations
 
 import re
+import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -299,3 +301,61 @@ def test_pytest_step_collects_coverage_and_reports_it(test_job: dict[str, Any]):
     for line in measured:
         reports = [token for token in line.split() if token.startswith("--cov-report")]
         assert reports, line
+
+
+def test_pair_defaults_to_main_and_contract_runs_in_ci(workflow):
+    assert any(
+        'coverage report --include="src/takler/serialization/*" --fail-under=85'
+        in command
+        for command in _run_commands(workflow["jobs"]["build"])
+    )
+    assert "peer_sha" in _triggers(workflow)["workflow_dispatch"]["inputs"]
+    job = workflow["jobs"]["paired-contract"]
+    steps = job["steps"]
+    peer_checkout = next(
+        step for step in steps if step.get("with", {}).get("repository")
+    )
+    assert peer_checkout["with"]["ref"] == "${{ steps.peer.outputs.ref }}"
+    commands = "\n".join(_run_commands(job))
+    assert "^[0-9a-f]{40}$" in commands
+    assert 'git -C "$repo" rev-parse HEAD' in commands
+    assert '"$GITHUB_STEP_SUMMARY"' in commands
+    assert "uv sync --locked --all-groups --extra http" in commands
+    assert "bash scripts/check_proto.sh" in commands
+    assert "make proto-check wire-check" in commands
+    assert "make http-contract" in commands
+    assert "make load-contract replace-contract show-contract" in commands
+    assert "paired_check.py" not in commands
+
+
+@pytest.mark.parametrize(
+    "requested,success",
+    [
+        ("", True),
+        ("b" * 40, True),
+        ("main", False),
+        ("v1", False),
+        ("abc", False),
+        ("a" * 40 + "\ninjected=value", False),
+    ],
+)
+def test_pair_selector_validates_sha_before_checkout(
+    workflow, tmp_path, requested, success
+):
+    output = tmp_path / "output"
+    selector = next(
+        step
+        for step in workflow["jobs"]["paired-contract"]["steps"]
+        if step.get("id") == "peer"
+    )
+    result = subprocess.run(
+        ["bash", "-e", "-c", selector["run"]],
+        cwd=tmp_path,
+        env=dict(os.environ, REQUESTED_SHA=requested, GITHUB_OUTPUT=str(output)),
+        capture_output=True,
+    )
+    assert (result.returncode == 0) == success
+    if success:
+        assert output.read_text() == f"ref={requested or 'main'}\nsha={requested}\n"
+    else:
+        assert not output.exists()
