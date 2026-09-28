@@ -309,6 +309,11 @@ def test_pair_defaults_to_main_and_contract_runs_in_ci(workflow):
         in command
         for command in _run_commands(workflow["jobs"]["build"])
     )
+    for scope in ("src/takler/schema/*", "src/takler/server/flow_replace.py"):
+        assert any(
+            f'coverage report --include="{scope}" --fail-under=85' in command
+            for command in _run_commands(workflow["jobs"]["build"])
+        )
     assert "peer_sha" in _triggers(workflow)["workflow_dispatch"]["inputs"]
     job = workflow["jobs"]["paired-contract"]
     steps = job["steps"]

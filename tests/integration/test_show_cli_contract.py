@@ -1,4 +1,4 @@
-"""Paired CLI queries consume the same safe view over real HTTP and gRPC."""
+"""Paired CLI and TUI queries consume safe views over real HTTP and gRPC."""
 
 import json
 import os
@@ -19,7 +19,9 @@ from takler.server.connect_config import (
     Server,
 )
 
-CLIENTS = ["python"] + (["go"] if os.environ.get("TAKLER_SHOW_GO_CLIENT") else [])
+CLIENTS = ["python", "tui"] + (
+    ["go"] if os.environ.get("TAKLER_SHOW_GO_CLIENT") else []
+)
 
 
 @pytest.mark.parametrize("client", CLIENTS)
@@ -54,9 +56,28 @@ def test_show_cli_contract(client, transport, server_runner_factory, free_port_f
     flow.append_child(task)
     command = (
         [str(Path(sys.executable).with_name("takler-client-py"))]
-        if client == "python"
+        if client in ("python", "tui")
         else [os.environ["TAKLER_SHOW_GO_CLIENT"]]
     )
+    if client == "tui":
+        # A fresh process has no access to the server's local PluginTask class.
+        command = [
+            sys.executable,
+            "-c",
+            """
+import os
+from takler.tui.service import TaklerTuiService
+from takler.tui.show_parser import parse_show
+with TaklerTuiService(os.environ['TAKLER_HOST'], os.environ['TAKLER_PORT'],
+                     transport_name=os.environ['TAKLER_TRANSPORT']) as service:
+    output = service.show()
+view = parse_show(output)
+assert view.get('/flow/custom').suspended
+assert view.lookup_parameter('/flow/custom', 'ROOT_SETTING') == 'root-value'
+assert view.resolve_parameter('/flow/custom', 'BUSINESS_TOKEN').redacted
+print(output)
+""",
+        ]
     env = {k: v for k, v in os.environ.items() if not k.startswith("TAKLER_")}
     env.update(
         TAKLER_HOST="127.0.0.1",
@@ -78,8 +99,8 @@ def test_show_cli_contract(client, transport, server_runner_factory, free_port_f
     assert "<redacted>" in result.stdout
     for value in ("ROOT_SECRET", "CUSTOM_SECRET", "TASK_SECRET"):
         assert value not in result.stdout + result.stderr
-    if client == "go":
-        payload = result.stdout.split("\n", 1)[1]
+    if client in ("go", "tui"):
+        payload = result.stdout.split("\n", 1)[1] if client == "go" else result.stdout
         data = json.loads(payload)
         assert data["flows"][0]["children"][0]["node_kind"] == "task"
         assert parse_show(payload).get("/flow/custom").suspended
