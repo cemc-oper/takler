@@ -187,8 +187,9 @@ class ShellScriptTask(Task):
         Create job script and return run command.
 
         The generated job script is made executable by its owner. Its read and
-        write permission bits are left as created, i.e. decided by the process
-        umask, and are never set explicitly by takler.
+        write permissions follow the directory default ACL and process umask
+        for new files. Existing files are overwritten directly; only owner
+        execute is added. A failed write may leave incomplete content.
 
         Returns
         -------

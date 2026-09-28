@@ -51,7 +51,7 @@ class ShellRender(object):
 
         job_script_path = Path(self.node.find_parameter(TAKLER_JOB).value)
         job_script_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(job_script_path, "w") as f:
+        with open(job_script_path, "w", encoding="utf-8") as f:
             f.write(job_script_content)
 
         return job_script_path

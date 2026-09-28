@@ -89,7 +89,7 @@ def _make_task(tmp_path: Path) -> ShellScriptTask:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("with_umask", [0o022, 0o077], indirect=True)
+@pytest.mark.parametrize("with_umask", [0o022, 0o077, 0o002], indirect=True)
 def test_job_script_is_owner_executable_and_keeps_umask_read_write_bits(
     tmp_path, with_umask
 ):

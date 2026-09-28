@@ -20,7 +20,7 @@
         run["Task.run()"] --> before["before_run：try_no 加一，轮换作业口令"]
         before --> create["create_job_script：渲染脚本，写出作业文件"]
         create --> cmd["render_job_command：渲染提交命令"]
-        cmd --> spawn["ShellRunner.spwan：/bin/sh -c 启动进程"]
+        cmd --> spawn["ShellRunner.spawn：/bin/sh -c 启动进程"]
         spawn --> submitted["after_run：状态置为 submitted"]
         create -.->|渲染失败| abort1["aborted（JobSubmissionError）"]
         spawn -.->|进程创建失败| abort1
@@ -34,7 +34,7 @@
    属主执行位（见下文「权限位与 umask 」）
 3. ``render_job_command`` ：按 ``TAKLER_SHELL_JOB_CMD`` 模板渲染
    出提交命令
-4. ``ShellRunner.spwan`` ：用 ``/bin/sh -c <提交命令>`` 在服务进程
+4. ``ShellRunner.spawn`` ：用 ``/bin/sh -c <提交命令>`` 在服务进程
    的事件循环里派生一个子进程任务，作业在后台运行
 5. ``after_run`` ：任务状态置为 ``submitted`` 。此后状态推进由
    脚本中的 child 命令上报驱动（ ``init`` → ``active`` ，
@@ -152,12 +152,22 @@ try_no 与作业口令
 权限位与 umask
 --------------
 
-作业文件由 takler 以默认方式创建，读写权限位完全由服务进程的
-umask 决定； takler 只额外补一个**属主执行位**（``chmod
-mode | 0o100`` ），从不显式设定整体权限。原因是作业脚本内嵌
-``TAKLER_PASS`` 口令，是否允许同组 / 其他用户读取属于部署决策，
-应由启动服务时的 umask 表达，而不是由 takler 放宽。例如以
-``umask 077`` 启动服务，作业文件即仅属主可读写执行。
+新建作业文件通过普通 ``open(..., "w", encoding="utf-8")`` 直接写入最终路径，
+创建请求权限为 ``0666``，由内核处理目录默认 ACL 和进程 umask。
+takler 不读取、计算或复制 ACL，只在写入后增加 **属主执行位**
+（``mode | 0o100``）。没有默认 ACL 时，``umask 077`` 得到 ``0700``，
+``umask 022`` 得到 ``0744``；有默认 ACL 时以实际继承结果为准。
+
+覆盖已有普通文件时直接截断并写入原文件，通常保留原权限和 access ACL，
+不会重新继承目录默认 ACL。takler 仍只增加属主执行位。
+
+为减少 HPC 共享文件系统上的元数据操作，生成路径不使用暂存文件、原子替换、
+逐级目录安全检查或 ACL/xattr 查询与复制。父目录按需创建，路径和链接遵循
+操作系统原生语义；作业目录及路径配置应由受信任的运维人员管理。
+
+写入失败可能留下空文件或不完整内容，不保证旧内容保留。生成失败沿用
+``JobSubmissionError`` 处理，不提交作业。脚本包含 ``TAKLER_PASS``，
+可读范围由部署权限决定，见 :doc:`/operation/security`。
 
 现状限制
 --------
