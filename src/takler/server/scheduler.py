@@ -27,6 +27,7 @@ from takler.protocol.commands import (
     FreeDepCommand,
     InitCommand,
     LoadCommand,
+    ReplaceCommand,
     MeterCommand,
     RequeueCommand,
     ResumeCommand,
@@ -744,6 +745,12 @@ class Scheduler:
         self.bunch.add_flow(flow)
         # Loading registers the definition; only an explicit begin starts it.
         logger.info(f"load json flow...done [flow name: {flow.name}]")
+
+    def run_command_replace(self, command: ReplaceCommand):
+        """Replace in memory and begin; periodic checkpoint persists later."""
+        from takler.server.flow_replace import replace_flow
+
+        return replace_flow(self.bunch, command)
 
     @batch_targets("flow_name")
     def run_command_begin(self, command: BeginCommand):

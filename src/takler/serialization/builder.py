@@ -79,7 +79,12 @@ def _construct(data, registry):
         validate_definition_data(
             data.type_data.model_dump(mode="json"), entry.secret_fields
         )
-        node = entry.construct(data.name, data.type_data)
+        try:
+            node = entry.construct(data.name, data.type_data)
+        except DefinitionError:
+            raise
+        except Exception:
+            raise DefinitionError("construction_failed") from None
         if type(node) is not entry.python_type or node.name != data.name:
             raise DefinitionError("invalid_structure")
     for param in data.user_parameters:
@@ -122,8 +127,13 @@ def _construct(data, registry):
 
 
 @safe_codec
-def build_definition(document, *, registry=None, existing_bunch=None):
-    """Build a new unbegun Flow/Bunch; never attach it to an online Bunch."""
+def build_definition(document, *, registry=None, existing_bunch=None, initialize=None):
+    """Build a detached Flow/Bunch, unbegun by default.
+
+    A trusted ``initialize`` callback may initialize the candidate before any
+    references to the online tree are bound. It must perform no IO or job
+    submission. This is used by replace, which begins its isolated candidate.
+    """
     registry = registry or get_registry()
     if isinstance(document, DefinitionDocument):
         document = document.model_dump(mode="json")
@@ -136,20 +146,29 @@ def build_definition(document, *, registry=None, existing_bunch=None):
         and document["schema_version"] == 1
     ):
 
-        def check_types(item):
+        def check_types(item, kinds):
             if isinstance(item, dict):
-                entry = registry.by_id(item.get("type_id"))
+                if not isinstance(item.get("type_id"), str):
+                    raise DefinitionError("invalid_field")
+                entry = registry.by_id(item["type_id"])
+                if entry.kind not in kinds:
+                    raise DefinitionError("invalid_structure")
                 require_codec(entry, "definition_schema", "construct")
                 for field in ("children", "flows"):
                     children = item.get(field, [])
                     if isinstance(children, list):
                         for child in children:
-                            check_types(child)
+                            check_types(
+                                child,
+                                {"flow"} if field == "flows" else {"task", "container"},
+                            )
 
-        check_types(document.get("root"))
+        check_types(document.get("root"), {"flow", "bunch"})
     with using_registry(registry):
         data = parse_definition(document, model=registry.document_model())
         root = _construct(data.root, registry)
+        if initialize is not None:
+            initialize(root)
         bind_expressions(root, existing_bunch)
         validate_references(root, existing_bunch)
         return root
@@ -195,7 +214,10 @@ def bind_expressions(root, existing_bunch=None):
         for expression in (node.trigger_expression, node.complete_trigger_expression):
             if expression is not None:
                 try:
-                    expression.parse_expression()
+                    try:
+                        expression.parse_expression()
+                    except Exception:
+                        raise DefinitionError("expression_syntax") from None
                     bind(expression.ast, node)
                 except DefinitionError:
                     raise

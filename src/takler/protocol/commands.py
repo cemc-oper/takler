@@ -71,6 +71,7 @@ __all__ = [
     "ForceCommand",
     "FreeDepCommand",
     "LoadCommand",
+    "ReplaceCommand",
     "BeginCommand",
     "ShowRequest",
     "PingRequest",
@@ -284,6 +285,16 @@ class LoadCommand(ProtocolModel):
     )
 
     flow_type: str = "json"
+    flow_bytes: bytes
+
+
+class ReplaceCommand(ProtocolModel):
+    """Replace one existing Flow; transport registration is added in R0-14."""
+
+    model_config = ConfigDict(
+        extra="forbid", val_json_bytes="base64", ser_json_bytes="base64"
+    )
+    target_path: str
     flow_bytes: bytes
 
 

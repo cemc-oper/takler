@@ -59,3 +59,36 @@ Bunch 只导出 name、user_parameters、flows；根上配置未支持的调度�
 同名 flow 已存在时拒绝（flow_state，flag=14），保留原树及运行进度。
 加载成功不自动 begin；显式执行 begin 后才参与调度。查询只读化留给 R0-15。
 不提供旧 module/class 别名或历史格式转换器。
+
+服务端 flow 替换
+-----------------------
+
+``Scheduler.run_command_replace(ReplaceCommand(target_path, flow_bytes))``
+提供单个已有 Flow 的内存替换。``target_path`` 必须为规范绝对路径，
+新定义必须是同名 Flow，不能隐式新增、重命名或传入 Bunch。
+此服务端接口已实现；网络协议、CLI 命令、operator 鉴权及审计接入由后续
+集成任务提供，当前不能通过客户端调用 replace。
+
+服务端在隔离树上 begin，然后准备跨 flow trigger、complete-trigger 和
+in-limit 的引用更新。最终提交前重新检查目标身份，以及旧 flow 自身和
+每个后代的真实状态：存在 active/submitted 即拒绝，暂停不豁免。
+旧树 limit 仍有占用，或外部 limit 仍记录旧树路径的占用时，也拒绝替换。
+新定义删除仍被引用的节点、变量或 limit，或使 in-limit tokens 超过容量时，
+返回定义错误，在线树和缓存均不修改。
+
+成功后新 flow 已 begun，保留提交时旧 flow 自身的 suspended；后代暂停、
+运行身份、repeat/event/meter 进度均不迁移，按新定义和 begin 规则初始化。
+根 Bunch 与部署参数保留；外部消费者切换到新对象，旧提交回调失去在线归属。
+重复执行会再次初始化，不提供幂等去重。
+
+成功响应为 ``flow replaced in memory; checkpoint pending``，仅表示内存生效。
+replace 不同步写 checkpoint；后续周期保存新树，保存前崩溃仍可能丢失替换。
+
+准备与提交都运行在 scheduler 的单写者上下文中。最终状态检查到内存换入、
+缓存更新之间不 await，不调用扩展回调或 I/O。扩展构造和初始化须遵守
+受信任注册器的无副作用约定；builder 的 ``initialize`` 回调在连接在线引用
+之前执行，不得提交作业、访问文件或修改在线对象。
+
+服务端错误分类：目标不存在 10，路径非法 11，目标非 Flow 12，不支持的
+类型/版本 13，运行状态/身份变化/占用冲突 14，定义/名称/引用非法 15，
+表达式语法错误 20，非预期构造/初始化失败 99。错误消息不含定义参数值。

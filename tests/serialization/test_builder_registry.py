@@ -100,7 +100,7 @@ def test_replacement_reference_does_not_bind_to_old_same_name_flow():
 def test_invalid_expression_and_old_documents_fail_without_import(monkeypatch):
     flow = Flow("f")
     flow.add_trigger("invalid ???")
-    with pytest.raises(DefinitionError, match="invalid_field"):
+    with pytest.raises(DefinitionError, match="expression_syntax"):
         build_definition(export_definition(flow))
 
     def forbidden(*a, **kw):
