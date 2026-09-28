@@ -36,11 +36,28 @@
 作业调度系统集成
 --------------------
 
-需要说明的是，takler 当前的作业提交方式只有本地 shell 后台运行（``ShellRunner.spwan()`` 经 ``anyio.run_process`` 执行 ``/bin/sh -c``），
-没有面向 PBS / Slurm 等作业调度系统的提交实现，也没有 kill 实现（``TAKLER_SHELL_KILL_CMD`` 已定义但全库无引用）。
+takler 已面向 HPC 共享文件系统使用，HPC 调度系统交互由 orvix 承担。
+takler 负责依赖调度、job 脚本生成及 child 状态回报；orvix 负责向目标调度器
+提交作业。``ShellRunner.spawn()`` 在服务节点执行提交命令，并不意味着
+计算作业只能在该节点运行。
 
-在 HPC 环境中运行时，任务脚本仍然是在提交 takler 服务所在节点上以本地进程方式执行，不会经由 ``qsub`` / ``sbatch`` 提交到 HPC 的计算队列系统。
-如果需要把作业提交到调度系统排队执行，需要自行在任务脚本中调用相应的提交命令并自行处理与调度系统的交互，takler 本身不提供这层封装。
+默认 ``TAKLER_SHELL_JOB_CMD`` 直接执行 job 文件；HPC 部署可以将其配置为
+orvix 提交命令，例如已配置 Slurm 资源指令的脚本可使用：
+
+.. code-block:: python
+
+   flow.add_parameter(
+       "TAKLER_SHELL_JOB_CMD",
+       'orvix submit --scheduler slurm "{{ TAKLER_JOB }}"',
+   )
+
+orvix 必须安装在服务账户的 PATH 中，脚本需包含部署所需的 ``#ORVIX``
+资源指令；队列、账户和资源配置由站点决定。计算节点需能访问脚本及客户端，
+并能向 takler 回报 init/complete/abort。提交命令退出成功不等于计算作业完成。
+本教程不连接真实 HPC 队列进行验收。
+
+takler CLI/TUI 当前没有 kill 命令。终止队列作业应使用 orvix 或调度系统工具，
+随后核对任务状态；不要将调度器作业 ID 一律当作本地进程号。
 
 .. note::
 

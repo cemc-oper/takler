@@ -44,8 +44,8 @@ user 参数与 generated 参数
 变量分两类：
 
 * **user 参数** ：通过 ``add_parameter`` 显式定义的变量。序列化
-  （ ``to_dict`` ）只保存 user 参数， load 与 checkpoint 恢复的都是
-  它们
+  中的参数列表只保存 user 参数；load 使用纯定义，checkpoint 使用运行
+  快照，均按各自格式恢复这些用户参数
 * **generated 参数** ： takler 根据节点当前状态自动计算的变量（任务名、
   日历日期、作业口令等）。它们不会被序列化，也**不应该** 用
   ``add_parameter`` 手动设置——同名 user 参数会遮蔽 generated 参数，

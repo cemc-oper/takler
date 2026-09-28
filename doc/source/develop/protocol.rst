@@ -6,7 +6,7 @@
 
 M3 起协议分两层描述：
 
-* **协议模型** （ ``takler/protocol`` 包）是传输中立的：十六个命令各
+* **协议模型** （ ``takler/protocol`` 包）是传输中立的：十七个命令各
   有一对请求 / 应答 DTO （ ``commands.py`` ）、一个信封类型
   （ ``envelope.py`` ）与一张 error_code 分类表（ ``error_code.py``
   ）。这一层不 import ``grpc`` 、 ``takler_pb2`` 或
@@ -25,7 +25,7 @@ gRPC 编码的唯一权威来源仍是
 命令面
 ------
 
-全部命令共十六个：五个 child 命令、八个控制命令、三个查询命令。每个
+全部命令共十七个：五个 child 命令、九个控制命令、三个查询命令。每个
 命令在协议模型里有一个名字（ ``Command`` 枚举，取值就是两个 CLI 使
 用的命令词），在 gRPC 上对应一个 RPC 方法，在 HTTP 上对应
 ``POST /v1/commands/{command}`` 路径的一段。三种命名的一一对应关系
@@ -120,17 +120,15 @@ gRPC 上全部是 unary-unary 调用（一次请求一次应答，没有流式�
 * ``ForceCommand.path`` 接受节点路径与 ``节点:事件`` 两种形式；
   ``recursive`` 只对节点有意义（语义见 :doc:`/guide/node-status` 的
   sink 一节）。
-* ``LoadCommand.flow`` 在 gRPC 编码里是 ``bytes`` ，内容为
-  :py:class:`~takler.core.Flow` 的 ``to_dict`` JSON ； HTTP 信封里
-  同一字段按 JSON 模式的 pydantic 序列化规则走 **base64 字符串**。
-  ``flow_type`` 目前只接受 ``"json"`` ，其他取值与坏 JSON 分别以
-  ``unsupported_value`` / ``invalid_request`` 拒绝。载入按 Tree 模
-  式恢复：状态归零、未 begun （见 :doc:`core-design` 的序列化一节）
-  。
+* ``LoadCommand.flow`` 与 ``ReplaceCommand.flow`` 在 gRPC 中为 UTF-8 JSON
+  ``bytes``，HTTP 中为 canonical base64 字符串。内容为版本1的单个 Flow
+  ``DefinitionDocument``，由 ``export_definition`` 导出，不是 ``to_dict``
+  混合运行树。load 仅支持 ``flow_type="json"``，成功后未 begun；replace
+  替换已有同名 Flow 并自动 begin，具体状态及错误约定见 :doc:`definition`。
 * ``BeginCommand.flow_name`` 为空串表示对 Bunch 里全部 flow 执行
   begin —— 空串就是线上形式，不是省略字段。
-* ``ShowResponse.output`` 是服务端排版好的文本，客户端直接打印，不再
-  解析。
+* ``ShowResponse.output`` 是纯数据 JSON 投影；Python CLI/TUI 解码为
+  只读视图，Go CLI 打印 JSON。客户端不根据类型标识导入或重建执行对象。
 * DTO 的字段默认值对齐 CLI 的表面而不是 proto3 零值：
   ``ForceCommand.recursive`` 默认 ``True`` （两个 CLI 的
   ``--recursive`` 默认开）， ``show`` 的三个展示开关默认 ``True``
@@ -168,7 +166,7 @@ HTTP 编码的线上形式是信封 JSON
         下凭据都走 metadata / 请求头而不走信封，该字段为将来的代理
         形态预留
     * - ``command``
-      - ``Command`` 枚举，必须是十六个已知命令之一——未知命令名在
+      - ``Command`` 枚举，必须是十七个已知命令之一——未知命令名在
         信封校验时就失败，不会漏到下游
     * - ``payload``
       - 请求或应答 DTO 以 ``model_dump(mode="json")`` 序列化后的
@@ -291,7 +289,7 @@ HTTP 的请求头名（ HTTP 头不区分大小写），都是全小写、不带
 （ ``/takler_protocol.TaklerServer/<方法名>`` ）为键：
 
 * ``CHILD`` —— 五个 child 命令；
-* ``OPERATOR`` —— 八个控制命令，外加 ``show`` 与 ``coroutine`` 两
+* ``OPERATOR`` —— 九个控制命令，外加 ``show`` 与 ``coroutine`` 两
   个只读命令（它们返回整份流程定义，侦察价值与写操作相当）；
 * ``PUBLIC`` —— 仅 ``ping`` 。
 
@@ -387,12 +385,11 @@ proto 的 ``go_package`` 选项已指向该仓库。
 ``tests/server/test_privilege_table_property.py`` 断言权限表覆盖
 descriptor 里的全部方法。
 
-线上行为的对齐靠 ``takler-client`` 仓库的契约脚本：
-``scripts/http_contract.sh`` 对真实 takler 服务端（同挂 gRPC 与
-HTTP ）让 Go 客户端跑全部十六个命令，断言退出码与输出行在两种
-transport 下一致（含非法 meter HTTP 422 与 gRPC 错误响应这
-类边界）； CI 的 ``http-contract`` job 检出 takler 仓启动服务端后
-跑同一脚本。
+线上行为对齐使用 Go 仓的 ``scripts/http_contract.sh`` 检查 HTTP 命令，
+并通过 ``load_contract.sh``、``replace_contract.sh``、``show_contract.sh``
+运行 Python/Go × gRPC/HTTP 的真实服务端矩阵。两仓 ``paired-contract`` CI
+直接调用这些已有入口，默认检出 peer main，也支持手动指定完整 peer SHA，
+并记录实际两端 SHA。精确复现需检出记录中的两个提交。
 
 新增一个命令要同步改的地方
 --------------------------

@@ -193,7 +193,7 @@ flow 执行会被拒绝（退出码 ``1`` ）。
 ``force``
 ~~~~~~~~~
 
-**仅 ``takler-client-py`` 提供。**
+**Python 与 Go 客户端均提供。**
 
 ::
 
@@ -207,7 +207,7 @@ flow 执行会被拒绝（退出码 ``1`` ）。
 ``free-dep``
 ~~~~~~~~~~~~
 
-**仅 ``takler-client-py`` 提供。**
+**Python 与 Go 客户端均提供。**
 
 ::
 
@@ -215,8 +215,8 @@ flow 执行会被拒绝（退出码 ``1`` ）。
 
 解除节点的依赖： ``time`` 解除时间依赖， ``trigger`` 解除触发器依
 赖， ``all`` 两者皆解除。 ``--dep-type`` 请**显式给出**——省略时
-客户端发出的默认值不合法，服务端会以 unsupported value 拒绝
-（退出码 ``1`` ）。
+Python 客户端发出的默认值不合法，服务端会以 unsupported value 拒绝
+（退出码 ``1`` ）。Go 客户端默认 ``--dep-type all``。
 
 ``load``
 ~~~~~~~~
@@ -243,15 +243,16 @@ invalid_request（flag=15）；两种失败均非零退出且旧树不变。
 
 以 UTF-8 DefinitionDocument 替换已有单个 Flow。目标必须是规范绝对路径，
 文件内名称必须匹配；Bunch、多 Flow 包和运行态数据均不接受。
-需 operator 凭据；active/submitted 任务、旧作业回调及资源占用会阻止替换，
+需 operator 凭据；旧 Flow 或任意后代为 active/submitted、资源仍被占用
+或提交前目标身份变化会阻止替换，
 没有 force 绕过选项。成功后自动 begin，保留旧 Flow 自身暂停状态。
 返回 ``flow replaced in memory; checkpoint pending`` 只承诺内存换入，
-不承诺 checkpoint 已落盘。命令固定发送一次；网络失败后先查询服务端状态。
+不承诺 checkpoint 已落盘；周期保存前崩溃可能丢失本次替换。命令固定发送一次；网络失败后先查询服务端状态。
 
 ``begin``
 ~~~~~~~~~
 
-**仅 ``takler-client-py`` 提供。**
+**Python 与 Go 客户端均提供。**
 
 ::
 
@@ -290,7 +291,7 @@ invalid_request（flag=15）；两种失败均非零退出且旧树不变。
 ``coroutine``
 ~~~~~~~~~~~~~
 
-**仅 ``takler-client-py`` 提供。** 打印服务进程当前的协程列表，供
+**Python 与 Go 客户端均提供。** 打印服务进程当前的协程列表，供
 调试使用。
 
 两个客户端的差异
@@ -301,9 +302,10 @@ invalid_request（flag=15）；两种失败均非零退出且旧树不变。
 ==================  ===================================  ===================================
 child 命令          init / complete / abort /            相同
                     event / meter
-控制命令            requeue / suspend / resume / run     另有 force / free-dep / load /
-                                                         begin
-查询命令            show / ping                          另有 coroutine
+控制命令            requeue / suspend / resume / run /   相同
+                    force / free-dep / load / replace /
+                    begin
+查询命令            show / ping / coroutine              相同（show 的显示方式不同）
 TLS / 鉴权选项      全部子命令接受 ``--tls-ca`` /        无命令行选项，只用环境变量与
                     ``--tls-server-name`` /              ``connect.yaml``
                     ``--secret-file``
@@ -364,3 +366,7 @@ Go CLI 保留 JSON 输出，并透传同一安全视图。
 以区别真实字符串值。客户端对内置名称再次防御性脱敏。
 查询投影不导出插件私有字段、执行凭据或完整部署配置，不可用作定义或恢复输入。
 用户业务参数的其它机密名称需要部署者显式配置。
+
+定义文件的格式、导出示例、受信任类型注册及恢复边界见
+:doc:`/develop/definition`。R0 不提供请求去重或提交 exactly-once；
+变更请求只发送一次不代表响应丢失后可以安全重发。

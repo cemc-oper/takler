@@ -62,7 +62,7 @@ per-node ``zombie`` 属性
 --------------
 
 ``.def`` 文本定义语言与解析器
-    没有。工作流只能用 Python API 定义（
+    不支持 ecFlow 的 .def 语法。可用 Python API 定义（
     :doc:`/guide/defining-flows` ）；与文本定义最接近的是
     ``takler-client-py load`` ，可把
     ``export_definition`` 导出的版本 1 纯定义
@@ -72,7 +72,7 @@ per-node ``zombie`` 属性
     用 Jinja2 模板取代：变量写作 ``{{NAME}}`` ，包含写作
     ``{% include %}`` ，搜索路径规则见 :doc:`/guide/task-script` 。
 
-``alter`` / ``delete`` / ``replace`` / ``migrate`` / ``check`` / ``order`` / ``kill`` / ``status`` 命令
+``alter`` / ``delete`` / ``migrate`` / ``check`` / ``order`` / ``kill`` / ``status`` 命令
     均无对应命令。逐项说明与替代：
 
     * ``check`` ：定义期校验在 Python 侧完成（属性重复、取值非法等在
@@ -81,16 +81,16 @@ per-node ``zombie`` 属性
     * ``status`` ：查询状态用 ``show`` （ :doc:`/guide/cli` ）或
       :doc:`TUI </guide/tui>` 。
     * ``kill`` ：没有实现。从界面或 CLI 都无法终止运行中的作业，需
-      用系统工具按 ``TAKLER_RID`` 手动处理，见
+      用 orvix、调度器或本地进程工具按实际作业标识处理，见
       :doc:`/guide/job-management` 的「现状限制」。
-    * ``alter`` / ``delete`` / ``replace`` / ``migrate`` /
+    * ``alter`` / ``delete`` / ``migrate`` /
       ``order`` ：运行时不能修改、删除或重排节点；结构性变更需修改
-      Python 定义并重建 bunch （重启服务或另起 bunch 加载）。
+      定义后用 ``replace`` 替换已有同名 Flow；active/submitted 或资源占用
+      会拒绝替换，成功自动 begin，详见 :doc:`/develop/definition`。
 
 作业提交
 --------
 
-ecFlow 支持多种作业提交方式（本地、 PBS 、 Slurm 、 LSF 等），
-takler **只有本地 shell 后台运行** 一种：作业是与服务同机、同用户
-的子进程，需要调度系统资源时只能在脚本内部自行调用 ``qsub`` /
-``sbatch`` 。详见 :doc:`/guide/job-management` 的「现状限制」。
+takler 默认直接执行 job 文件，也可通过 ``TAKLER_SHELL_JOB_CMD`` 调用
+orvix，由 orvix 承担 HPC 调度系统交互。服务端启动本地提交进程与计算作业
+在哪里运行是不同层次；部署方式见 :doc:`/tutorial/hpc-appendix`。

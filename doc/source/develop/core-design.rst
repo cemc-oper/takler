@@ -195,7 +195,8 @@ checkpoint v2 另行校验完整 runtime。内建 ``Node`` 负责公共字段，
 * ``Tree`` —— 只恢复 **定义** ：节点结构、参数、触发器字符串、
   事件 / 标尺 / 限额 / repeat / 时间属性，运行状态全部取初始值
   （ ``State`` 为 ``unknown`` ， ``begun`` 为 ``False`` ，日历字
-  段为空）。 ``load`` 命令用它：载入的是一份新定义，不是一段历史。
+  段为空）。这是内存树兼容 API；网络 ``load`` 使用版本1纯定义的
+  parser/builder，不接受该混合树字典。
 * ``Status`` —— 定义之外再恢复 **运行状态** ： ``State`` 、
   ``begun`` 、日历、 complete 触发器的闩、限额占用等。快照恢复使用此模式；``show`` 使用独立查询投影。见 :doc:`/operation/checkpoint` 。
 

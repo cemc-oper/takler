@@ -57,7 +57,7 @@ Bunch 只导出 name、user_parameters、flows；根上配置未支持的调度�
 完整校验后才恢复。网络 load 只接受版本 1 的单个 Flow 纯定义；Bunch 根、
 旧混合格式、运行字段和未知类型均拒绝（invalid_request，flag=15）。
 同名 flow 已存在时拒绝（flow_state，flag=14），保留原树及运行进度。
-加载成功不自动 begin；显式执行 begin 后才参与调度。查询只读化留给 R0-15。
+加载成功不自动 begin；显式执行 begin 后才参与调度。CLI/TUI 查询采用纯数据投影，不重建执行对象。
 不提供旧 module/class 别名或历史格式转换器。
 
 服务端 flow 替换
@@ -66,8 +66,8 @@ Bunch 只导出 name、user_parameters、flows；根上配置未支持的调度�
 ``Scheduler.run_command_replace(ReplaceCommand(target_path, flow_bytes))``
 提供单个已有 Flow 的内存替换。``target_path`` 必须为规范绝对路径，
 新定义必须是同名 Flow，不能隐式新增、重命名或传入 Bunch。
-此服务端接口已实现；网络协议、CLI 命令、operator 鉴权及审计接入由后续
-集成任务提供，当前不能通过客户端调用 replace。
+Python 与 Go 客户端均提供 ``replace TARGET_PATH FLOW_FILE``，
+HTTP/gRPC 均已接入 operator 鉴权与审计，见 :doc:`/guide/cli`。
 
 服务端在隔离树上 begin，然后准备跨 flow trigger、complete-trigger 和
 in-limit 的引用更新。最终提交前重新检查目标身份，以及旧 flow 自身和
@@ -92,3 +92,55 @@ replace 不同步写 checkpoint；后续周期保存新树，保存前崩溃仍�
 服务端错误分类：目标不存在 10，路径非法 11，目标非 Flow 12，不支持的
 类型/版本 13，运行状态/身份变化/占用冲突 14，定义/名称/引用非法 15，
 表达式语法错误 20，非预期构造/初始化失败 99。错误消息不含定义参数值。
+
+格式与兼容边界
+--------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 35 40
+
+   * - 用途
+     - 当前格式
+     - 边界
+   * - load / replace
+     - UTF-8 JSON，``kind=takler.definition``、``schema_version=1``
+     - 网络入口只接受单个 Flow；不接受 Bunch、多文档、YAML、旧混合树或运行字段
+   * - checkpoint
+     - ``format_version=2``
+     - 用于运行状态恢复，不能作为 load / replace 输入；旧格式拒绝，无自动迁移
+   * - show / TUI
+     - 只读 JSON 投影
+     - 不可用作定义或 checkpoint；未知 type_id 可展示，不导入插件或构造任务
+
+自定义类型必须由部署启动代码注册 schema、构造器和 codec；网络输入不能指定
+模块导入路径或注册新类型。恢复 checkpoint 的扩展还须提供运行状态 codec。
+
+可执行的定义导出示例
+--------------------
+
+从 Python 仓库根目录运行：
+
+.. code-block:: console
+
+   uv run python doc/examples/definition/export_flow.py forecast.json
+   takler-client-py load forecast.json
+   takler-client-py begin forecast
+   takler_client replace /forecast forecast.json
+
+后面三条命令需要运行中的服务及对应 operator 凭据；两种客户端可以互换。
+示例任务的默认状态为 complete，begin 后不会提交作业；这不豁免 replace
+的真实状态及资源占用检查。重复 replace 会再次初始化；仅导出文件的步骤不连接服务器。
+
+.. literalinclude:: ../../examples/definition/export_flow.py
+   :language: python
+
+R0 的保证范围
+-------------
+
+变更命令不自动重试，但这不构成请求去重或提交 exactly-once 保证。
+响应丢失时可能已经执行；先查询服务状态再决定是否重发。
+``async_task`` 自动调度支持延至 R1，当前不能作为可自动运行的协程任务使用。
+作业文件直接写入、默认 ACL/umask 及失败可能部分写入的约定见
+:doc:`/guide/job-management`。HPC 调度系统交互由 orvix 承担，见
+:doc:`/tutorial/hpc-appendix`。

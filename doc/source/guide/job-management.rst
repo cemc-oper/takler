@@ -172,13 +172,11 @@ takler 不读取、计算或复制 ACL，只在写入后增加 **属主执行位
 现状限制
 --------
 
-* **只有本地 shell 后台运行** 一种提交方式：作业是与服务同机、
-  同用户的子进程，没有 PBS / Slurm 等调度系统提交；需要调度系统
-  资源时只能在脚本内部自行调用 ``qsub`` / ``sbatch``
-* **没有 kill 实现**： ``TAKLER_SHELL_KILL_CMD`` 常量已定义但全库
-  无任何引用，从界面或 CLI 都无法终止一个运行中的作业；需要终止
-  时用系统工具按 ``TAKLER_RID`` （进程号）手动处理，任务状态随后
-  由作业脚本的 trap 或 ``on_job_failure`` 兜底
+* 默认提交命令直接执行本地 job；HPC 部署通过 ``TAKLER_SHELL_JOB_CMD``
+  调用 orvix，由 orvix 负责调度系统交互。服务节点运行的是提交命令，计算
+  作业可在集群队列中运行，见 :doc:`/tutorial/hpc-appendix`。
+* **没有 kill 实现**：takler CLI/TUI 未接入作业终止。按实际执行方式使用
+  orvix、调度系统或本地进程工具终止作业，再核对 takler 状态。
 * **作业输出不经过 RPC** ：输出文件留在 ``TAKLER_HOME`` 下，
   客户端命令取不到内容； TUI 的 output 页是直接读本地文件，
   因此要求 TUI 与服务能访问同一文件系统
