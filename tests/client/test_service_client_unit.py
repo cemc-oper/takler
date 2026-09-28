@@ -333,10 +333,11 @@ def test_show_error_prefix_raises_server_response_error():
     with pytest.raises(ServerResponseError) as excinfo:
         client.run_show()
 
-    assert output in str(excinfo.value)
+    assert "server returned an error for show" in str(excinfo.value)
+    assert output not in str(excinfo.value)
 
 
-def test_show_invalid_json_raises_with_first_200_characters():
+def test_show_invalid_json_raises_without_echoing_untrusted_content():
     output = "x" * 500
     client = ShowClient(output)
 
@@ -344,7 +345,8 @@ def test_show_invalid_json_raises_with_first_200_characters():
         client.run_show()
 
     text = str(excinfo.value)
-    assert output[:200] in text
+    assert "not valid json" in text
+    assert output[:200] not in text
     assert output not in text
 
 

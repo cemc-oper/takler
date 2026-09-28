@@ -45,14 +45,13 @@ class ScriptTab(_FileViewTab):
     def _resolve_script(
         node: NodeInfo, snapshot: Optional[ShowSnapshot]
     ) -> Optional[str]:
-        # Direct override on the node first.
-        value = node.user_parameters.get("TAKLER_SCRIPT")
-        if value:
-            return value
-        # Then walk parents — TAKLER_SCRIPT can in principle be set on
-        # a container.
         if snapshot is not None:
-            value = snapshot.lookup_parameter(node.path, "TAKLER_SCRIPT")
-            if value:
-                return value
-        return None
+            return snapshot.lookup_parameter(node.path, "TAKLER_SCRIPT")
+        value = node.parameters.get(
+            "TAKLER_SCRIPT", node.generated.get("TAKLER_SCRIPT")
+        )
+        return (
+            None
+            if value is None or value.redacted or value.value is None
+            else value.text
+        )

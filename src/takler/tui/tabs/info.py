@@ -58,6 +58,20 @@ class InfoTab(VerticalScroll):
         text.append("Children: ", style="bold")
         text.append(f"{len(node.children)}\n")
 
+        for label, value in (
+            ("Task ID", node.task_id),
+            ("Try number", node.try_no),
+            ("Aborted reason", node.aborted_reason),
+            ("Script path", node.script_path),
+        ):
+            if value is not None:
+                text.append(f"{label}: {value}\n")
+
+        if node.generated_parameters:
+            text.append("\nGenerated parameters\n", style="bold underline")
+            for name, value in sorted(node.generated_parameters.items()):
+                text.append(f"  {name} = {value}\n")
+
         if node.trigger:
             text.append("\nTrigger\n", style="bold underline")
             text.append(f"  {node.trigger}\n")
@@ -115,15 +129,10 @@ class InfoTab(VerticalScroll):
         # Show inherited parameters (parents) so the picture matches the
         # actual runtime lookup.
         if snapshot is not None:
-            inherited: dict[str, str] = {}
-            for ancestor in snapshot.parents_of(node.path):
-                for k, v in ancestor.user_parameters.items():
-                    inherited.setdefault(k, v)
+            inherited = snapshot.inherited_parameters(node.path)
             if inherited:
                 text.append("\nInherited parameters\n", style="bold underline")
                 for k, v in sorted(inherited.items()):
-                    text.append(f"  {k} = ")
-                    text.append(v, style="dim cyan")
-                    text.append("\n")
+                    text.append(f"  {k} = {v}\n", style="dim cyan")
 
         self._body.update(text)

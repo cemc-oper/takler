@@ -73,6 +73,7 @@ SECURITY_FIELDS = (
     "operator_whitelist_file",
     "zombie_policy",
     "audit_file",
+    "query_redacted_parameters",
 )
 
 
@@ -126,7 +127,9 @@ def _assert_security_all_unset(settings: SecuritySettings) -> None:
     """Assert every Security_Settings knob reads as "not configured"."""
     assert set(type(settings).model_fields) == set(SECURITY_FIELDS)
     for field in SECURITY_FIELDS:
-        assert getattr(settings, field) is None, field
+        assert getattr(settings, field) == (
+            [] if field == "query_redacted_parameters" else None
+        ), field
 
 
 def _config(**security) -> ConnectConfig:
@@ -587,6 +590,9 @@ def test_generated_config_writes_security_section_to_file(
     written = yaml.safe_load(file_path.read_text())
 
     assert "security" in written
-    assert written["security"] == dict.fromkeys(SECURITY_FIELDS, None)
+    assert written["security"] == {
+        field: [] if field == "query_redacted_parameters" else None
+        for field in SECURITY_FIELDS
+    }
     # ...and the file it produced is loadable again.
     _assert_security_all_unset(load_connect_config(file_path).security)

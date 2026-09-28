@@ -226,8 +226,8 @@ def test_artifact_prefix_without_snapshot_or_home(snapshot, rich_payload) -> Non
     # The server always ships a default TAKLER_HOME ("."), so exercise the
     # "not resolvable" branch with a payload whose server state omits it.
     data = json.loads(rich_payload)
-    data["server_state"]["parameters"] = [
-        p for p in data["server_state"]["parameters"] if p["name"] != "TAKLER_HOME"
+    data["generated_parameters"] = [
+        p for p in data["generated_parameters"] if p["name"] != "TAKLER_HOME"
     ]
     homeless = parse_show(json.dumps(data))
     bare = homeless.get("/flow1/family1")

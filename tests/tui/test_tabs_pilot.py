@@ -120,13 +120,13 @@ async def test_parameters_tab_lists_local_and_inherited(snapshot) -> None:
     async with app.run_test(size=(100, 40)):
         app.tab.show_node(snapshot.get("/flow1/family1/task1"), snapshot)
         assert text_of(app.tab._title) == (
-            "Parameters of /flow1/family1/task1  (local: 2, inherited: 1)"
+            "Parameters of /flow1/family1/task1  (local: 2, inherited: 5)"
         )
         table = app.tab._table
-        assert table.row_count == 3
+        assert table.row_count == 7
         assert list(table.get_row_at(0)) == ["local", "TAKLER_HOME", "/tmp/takler_home"]
         assert list(table.get_row_at(1))[:2] == ["local", "TAKLER_SCRIPT"]
-        assert list(table.get_row_at(2)) == ["inherited", "FLOW_HOME", "/flow"]
+        assert list(table.get_row_at(3)) == ["inherited", "FLOW_HOME", "/flow"]
 
 
 @pytest.mark.anyio
@@ -141,7 +141,7 @@ async def test_parameters_tab_local_value_shadows_inherited() -> None:
     app = TabHost(ParametersTab())
     async with app.run_test(size=(100, 40)):
         app.tab.show_node(snapshot.get("/flow1/task1"), snapshot)
-        assert "(local: 1, inherited: 0)" in text_of(app.tab._title)
+        assert "(local: 1, inherited: 5)" in text_of(app.tab._title)
         assert list(app.tab._table.get_row_at(0)) == ["local", "SHARED", "from-task"]
 
 
@@ -375,3 +375,24 @@ async def test_output_tab_row_selection_reports_read_errors(tmp_path: Path) -> N
 
 def _richlog_text(log) -> str:
     return "\n".join(strip.text for strip in log.lines)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "tab_type,parameter", [(JobTab, "TAKLER_JOB"), (OutputTab, "TAKLER_JOBOUT")]
+)
+async def test_artifact_tabs_use_explicit_view_parameter(tmp_path, tab_type, parameter):
+    chosen = tmp_path / "chosen.txt"
+    chosen.write_text("chosen artifact\n")
+    bunch = Bunch("b")
+    task = bunch.add_flow(Flow("f")).add_task("t")
+    task.add_parameter(parameter, str(chosen))
+    snapshot = parse_show(show_payload(bunch))
+    app = TabHost(tab_type())
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.tab.show_node(snapshot.get("/f/t"), snapshot)
+        await wait_until(lambda: str(chosen) in text_of(app.tab._title), pilot)
+        if isinstance(app.tab, OutputTab):
+            assert app.tab._table.row_count == 1
+        else:
+            assert "chosen artifact" in app.tab._body.render()._renderable.code

@@ -81,8 +81,8 @@
         BASE["takler.exceptions · takler.constant<br/>takler.visitor · takler.logging"]
 
         TUI --> CLIENT
-        TUI --> CORE
-        CLIENT --> CORE
+        TUI --> QUERY["takler.query<br/>纯数据查询视图"]
+        CLIENT --> QUERY
         CLIENT -.->|"复用 stub 与配置模型"| PROTO["takler.server.protocol<br/>takler.server.connect_config"]
         SERVER --> CORE
         SERVER --> PROTO
@@ -104,8 +104,7 @@
       - 领域模型： ``Bunch`` / ``Flow`` / ``NodeContainer`` / ``Task``
         的节点树，状态与传播，触发器表达式，限额、事件、标尺、 repeat 、
         时间依赖， ``to_dict`` / ``from_dict`` 序列化。**不知道** 网络、
-        进程与文件提交的存在 —— 它能脱离服务端单独实例化与驱动（单元测试
-        与 TUI 的 ``show`` 解析就是这么用的）。设计细节见
+        进程与文件提交的存在 —— 它能脱离服务端单独实例化与驱动（例如单元测试）。设计细节见
         :doc:`core-design` 。
     * - ``takler.tasks``
       - ``Task`` 的具体实现，目前只有
@@ -130,11 +129,11 @@
         ``takler.server.protocol`` 的 stub 与
         ``takler.server.connect_config`` 的配置模型 —— 协议与配置文件
         的 schema 在仓库里只有一份，所有客户端共享同一契约。
-        ``show`` 的输出在客户端本地反序列化成 ``Bunch`` 再排版打印，
-        所以客户端也依赖 ``takler.core`` 与 ``takler.visitor`` 。
+        ``show`` 的输出由 ``takler.query`` 解析为纯数据视图，再由
+        ``takler.visitor.print_show`` 排版，不导入或构造执行类型。
     * - ``takler.tui``
       - 终端界面，建立在 ``takler.client.service_client`` 之上；轮询
-        ``show`` 并把响应解析回 ``core`` 的节点树来渲染。
+        ``show`` 并与 CLI 共用纯数据视图，菜单按 ``node_kind`` 与路径工作。
     * - 基础层
       - ``takler.exceptions`` 的异常体系（ ``error_code`` 映射的输入
         ，见 :doc:`/operation/reference` ）、 ``takler.constant`` 的

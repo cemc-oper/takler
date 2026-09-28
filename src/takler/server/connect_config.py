@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Mapping, Optional, Union
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field as _Field
 
 from takler.logging import get_logger
 
@@ -377,6 +377,8 @@ class SecuritySettings(BaseModel):
             ``fob`` or ``adopt`` (Requirements 3.3, 3.6).
         audit_file: Audit_File path (Requirement 11.12).
     """
+
+    query_redacted_parameters: list[str] = _Field(default_factory=list)
 
     # TLS (Requirements 1.1, 1.8, 2.1, 2.4)
     server_cert_file: Optional[str] = None

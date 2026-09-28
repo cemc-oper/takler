@@ -3,12 +3,9 @@ The job password must not reach a ``show`` response.
 
 Covers requirements 4.11 and 16.8 of the ``m2-security`` spec.
 
-``Scheduler.handle_request_show`` returns the JSON of ``Bunch.to_dict()``, and
-the checkpoint file is built from the same method, so requirement 4.11 rests
-entirely on the password being neither a serialized node field nor a user
-parameter. ``tests/core/test_job_password.py`` pins the key set of
-``Task.to_dict()``; this module pins the other end of the pipeline: the response
-text an operator actually receives, and what a client rebuilds from it.
+``Scheduler.handle_request_show`` builds a dedicated safe projection. This
+module pins the response received by an operator and its data-only client view;
+checkpoint's separate password map is never part of this query document.
 
 The task under test is put into the active state, which is exactly the state
 whose password is live and persisted.
@@ -86,32 +83,15 @@ def test_bunch_to_dict_does_not_contain_job_password(scheduler):
     assert task1.job_password not in json.dumps(scheduler.bunch.to_dict())
 
 
-def test_client_round_trip_yields_empty_takler_pass(scheduler):
-    """
-    Requirement 4.11 on the client side.
+def test_client_query_view_has_no_password_or_execution_methods(scheduler):
+    from takler.query import parse_show
 
-    A client parses the show response through ``Bunch.from_dict``. The
-    reconstructed task must carry the server's status but an empty
-    ``TAKLER_PASS``, which is what proves the password does not survive the
-    round trip even indirectly.
-    """
-    task1 = scheduler.bunch.find_node("/flow1/task1")
-
-    output = scheduler.handle_request_show(ShowRequest(**SHOW_KWARGS))
-    restored_bunch = Bunch.from_dict(json.loads(output))
-    restored_task1 = restored_bunch.find_node("/flow1/task1")
-
-    # The status side of the response did survive, so the empty password is
-    # not an artifact of the round trip having lost everything.
-    assert restored_task1.state.node_status is NodeStatus.active
-    assert restored_task1.try_no == task1.try_no
-    assert restored_task1.task_id == task1.task_id
-
-    assert restored_task1.job_password is None
-    assert not restored_task1.find_parameter(TAKLER_PASS).value
-
-    # Recomputing the generated parameters, as a client does before rendering
-    # or printing, must not conjure a password either.
-    restored_task1.update_generated_parameters()
-    assert not restored_task1.generated_parameters_only()[TAKLER_PASS].value
-    assert TAKLER_PASS not in restored_task1.user_parameters_only()
+    task = scheduler.bunch.find_node("/flow1/task1")
+    snapshot = parse_show(scheduler.handle_request_show(ShowRequest(**SHOW_KWARGS)))
+    view = snapshot.find_node("/flow1/task1")
+    assert view.state == "active"
+    assert view.try_no == task.try_no
+    assert view.task_id == task.task_id
+    assert not hasattr(view, "job_password")
+    assert not hasattr(view, "update_generated_parameters")
+    assert snapshot.resolve_parameter(view.path, TAKLER_PASS) is None

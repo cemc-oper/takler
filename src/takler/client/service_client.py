@@ -26,7 +26,6 @@ Requirements: 9.1, 9.5, 9.6, 9.7, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6,
 
 from __future__ import annotations
 
-import json
 import sys
 import time
 from datetime import datetime
@@ -49,12 +48,12 @@ from takler.client.transport import (
     resolve_transport,
 )
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
-from takler.core import Bunch
+from takler.query import parse_show
 from takler.exceptions import ServerResponseError
 from takler.protocol.commands import Command
 from takler.protocol.error_code import error_name_for_code
 from takler.server.connect_config import ConnectConfig
-from takler.visitor import pre_order_travel, PrintVisitor
+from takler.visitor import print_show
 
 __all__ = [
     "SSL_TARGET_NAME_OVERRIDE_OPTION",
@@ -68,11 +67,6 @@ T = TypeVar("T")
 #: ``ShowResponse.output`` starting with this prefix carries an error text
 #: instead of a serialized Bunch (requirement 11.1).
 SHOW_ERROR_PREFIX: str = "error:"
-
-#: How much of an unparseable ``output`` goes into the exception message
-#: (requirement 11.2). Enough to identify the payload, short enough for a
-#: single terminal line's worth of context.
-SHOW_SNIPPET_LENGTH: int = 200
 
 
 class TaklerServiceClient:
@@ -586,28 +580,24 @@ class TaklerServiceClient:
 
         output = response.output
         if output.startswith(SHOW_ERROR_PREFIX):
-            raise ServerResponseError(f"server returned an error for show: {output}")
+            raise ServerResponseError("server returned an error for show")
 
         try:
-            bunch_dict = json.loads(output)
-        except json.JSONDecodeError as exc:
+            snapshot = parse_show(output)
+        except (ValueError, TypeError, RecursionError) as exc:
             raise ServerResponseError(
-                f"show response is not valid json: {output[:SHOW_SNIPPET_LENGTH]}"
+                "show response is not valid json query data"
             ) from exc
 
-        bunch = Bunch.from_dict(bunch_dict)
-        for name, flow in bunch.flows.items():
-            pre_order_travel(
-                flow,
-                PrintVisitor(
-                    stream=sys.stdout,
-                    show_parameter=show_parameter,
-                    show_trigger=show_trigger,
-                    show_limit=show_limit,
-                    show_event=show_event,
-                    show_meter=show_meter,
-                ),
-            )
+        print_show(
+            snapshot,
+            sys.stdout,
+            show_parameter=show_parameter,
+            show_trigger=show_trigger,
+            show_limit=show_limit,
+            show_event=show_event,
+            show_meter=show_meter,
+        )
         return response
 
     def ping(self):

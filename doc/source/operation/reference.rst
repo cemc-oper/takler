@@ -209,6 +209,9 @@ connect.yaml 配置项
     * - ``security.zombie_policy``
       - ``fail``
       - ``TAKLER_ZOMBIE_POLICY`` > 本字段
+    * - ``security.query_redacted_parameters``
+      - ``[]``
+      - 附加的查询脱敏参数名称，大小写不敏感；仅服务端配置生效
     * - ``security.audit_file``
       - 未配置
       - ``TAKLER_AUDIT_FILE`` > 本字段

@@ -152,6 +152,9 @@ security 段
     * - ``security.zombie_policy``
       - ``fail``
       - zombie 处置策略， ``fail`` / ``fob`` / ``adopt``
+    * - ``security.query_redacted_parameters``
+      - ``[]``
+      - 附加的查询脱敏参数名称，大小写不敏感；仅服务端配置生效
     * - ``security.audit_file``
       - 未配置
       - 审计日志文件路径；未配置时审计记录写入常规日志目标

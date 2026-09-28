@@ -34,8 +34,6 @@ from textual.widgets import (
     TabPane,
 )
 
-from takler.core.task_node import Task
-
 from .menu import (
     NODE_ACTIONS,
     NodeAction,
@@ -217,7 +215,7 @@ class TaklerTuiApp(App):
         """Kick off a background refresh.
 
         The gRPC ``show`` call and the (potentially expensive)
-        ``parse_show`` reconstruction run on a worker thread so the UI
+        ``parse_show`` parsing run on a worker thread so the UI
         stays responsive. Results are applied back on the main thread
         via :meth:`_apply_snapshot`.
 
@@ -251,7 +249,7 @@ class TaklerTuiApp(App):
         self._tree.rebuild(snapshot)
         node = snapshot.get(self._selected_path) if self._selected_path else None
         self._render_tabs(node)
-        self._toolbar.set_bunch(snapshot.bunch.name)
+        self._toolbar.set_bunch(snapshot.name)
         self._toolbar.set_refreshed(datetime.now())
 
     # -- Selection --------------------------------------------------
@@ -319,7 +317,7 @@ class TaklerTuiApp(App):
         except Exception:
             return  # called before mount completes
 
-        is_task = node is not None and isinstance(node.node, Task)
+        is_task = node is not None and node.node_kind == "task"
 
         # If we're about to hide the active tab, switch to ``info`` first
         # so Textual doesn't pick an arbitrary sibling on hide.
@@ -430,8 +428,7 @@ class TaklerTuiApp(App):
     def _actions_for_path(self, path: str) -> list[NodeAction]:
         """Per-node actions filtered by the concrete node type."""
         info = self._node_for_path(path)
-        node = info.node if info is not None else None
-        return applicable_actions(node)
+        return applicable_actions(info)
 
     # -- Server actions ---------------------------------------------
 
@@ -531,7 +528,7 @@ class TaklerTuiApp(App):
         if path is None:
             return
         info = self._node_for_path(path)
-        if info is not None and not isinstance(info.node, Task):
+        if info is not None and info.node_kind != "task":
             self._set_status(
                 f"Run is only available on Task nodes ({info.class_name})",
                 style="yellow",

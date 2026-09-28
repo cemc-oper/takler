@@ -1,6 +1,6 @@
 """Unit tests for :mod:`takler.tui.show_parser`.
 
-``parse_show`` reconstructs a real :class:`~takler.core.Bunch` from the
+``parse_show`` parses pure display data from the
 ``show`` JSON payload; these tests pin the projection into
 :class:`NodeInfo` / :class:`ShowSnapshot` that the tree and the tabs
 read from.
@@ -13,7 +13,6 @@ import json
 import pytest
 
 from takler.core import Bunch, Flow
-from takler.core.task_node import Task
 from takler.tui.show_parser import NodeInfo, ShowSnapshot, parse_show
 
 from .conftest import show_payload
@@ -115,9 +114,9 @@ def test_nodes_without_attributes_project_empty(snapshot: ShowSnapshot) -> None:
     assert task3.user_parameters == {}
 
 
-def test_find_node_returns_domain_objects(snapshot: ShowSnapshot) -> None:
+def test_find_node_returns_data_views(snapshot: ShowSnapshot) -> None:
     node = snapshot.find_node("/flow1/family1/task1")
-    assert isinstance(node, Task)
+    assert isinstance(node, NodeInfo)
     assert snapshot.find_node("/missing") is None
 
 
@@ -169,24 +168,16 @@ def test_multiple_flows_become_multiple_roots() -> None:
 
 
 def test_event_set_state_is_projected(rich_payload: str) -> None:
-    # Flip the event on the reconstructed domain node, re-serialise and
-    # confirm the projection reports "set".
-    snapshot = parse_show(rich_payload)
-    task = snapshot.find_node("/flow1/family1/task1")
-    assert isinstance(task, Task)
-    task.set_event("evt", True)
-    reparsed = parse_show(show_payload(snapshot.bunch))
-    info = reparsed.get("/flow1/family1/task1")
-    assert info is not None
+    data = json.loads(rich_payload)
+    data["flows"][0]["children"][0]["children"][0]["events"][0]["value"] = True
+    info = parse_show(json.dumps(data)).get("/flow1/family1/task1")
     assert ("evt", "set") in info.events
 
 
-def test_snapshot_is_pure_view_over_reused_bunch(snapshot: ShowSnapshot) -> None:
-    # NodeInfo wraps the very nodes of the reconstructed bunch -- the
-    # tabs rely on this for Task type checks.
+def test_snapshot_is_pure_view(snapshot):
     info = snapshot.get("/flow1/family1/task1")
-    assert info is not None
-    assert info.node is snapshot.bunch.find_node("/flow1/family1/task1")
+    assert not hasattr(info, "node")
+    assert not hasattr(snapshot, "bunch")
     assert isinstance(info, NodeInfo)
 
 

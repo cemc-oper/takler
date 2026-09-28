@@ -43,6 +43,16 @@ class JobTab(_FileViewTab):
             self._show_empty()
             return
 
+        parameter = (
+            snapshot.resolve_parameter(node.path, "TAKLER_JOB") if snapshot else None
+        )
+        if parameter is not None:
+            if parameter.redacted or parameter.value is None or not parameter.text:
+                self._show_no_job(node.path)
+            else:
+                self._render_file(node.path, Path(parameter.text))
+            return
+
         prefix = artifact_prefix(node, snapshot)
         if prefix is None:
             self._show_no_job(node.path)

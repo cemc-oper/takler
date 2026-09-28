@@ -46,11 +46,7 @@ class ParametersTab(Vertical):
 
         inherited: dict[str, str] = {}
         if snapshot is not None:
-            for ancestor in snapshot.parents_of(node.path):
-                for k, v in ancestor.user_parameters.items():
-                    if k in local:
-                        continue
-                    inherited.setdefault(k, v)
+            inherited = snapshot.inherited_parameters(node.path)
 
         self._title.update(
             f"Parameters of {node.path}  "

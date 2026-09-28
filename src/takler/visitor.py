@@ -157,3 +157,55 @@ def pre_order_travel(root_node: Node, visitor: NodeVisitor):
         visitor.before_visit_child()
         pre_order_travel(child_node, visitor)
         visitor.after_visit_child()
+
+
+def print_show(
+    snapshot,
+    stream,
+    *,
+    show_parameter=False,
+    show_trigger=False,
+    show_limit=True,
+    show_event=True,
+    show_meter=True,
+):
+    """Print a data-only query snapshot, without execution-node visitors."""
+
+    def visit(path):
+        node = snapshot.get(path)
+        prefix = "  " * node.level
+        stream.write(f"{prefix}|- {node.name} [{node.display_state}]\n")
+        spaces = " " * len(f"{prefix}|- ")
+
+        def line(value):
+            stream.write(f"{spaces} {value}\n")
+
+        if node.repeat:
+            line(f"repeat {node.repeat}")
+        if show_trigger:
+            if node.trigger:
+                line(f"trigger {node.trigger}")
+            for time in node.times:
+                line(f"time {time}")
+        if show_parameter:
+            for name, value in node.user_parameters.items():
+                line(f"param {name} '{value}'")
+            for name, value in node.generated_parameters.items():
+                line(f"# param {name} '{value}'")
+        if show_limit:
+            for name, value in node.limits:
+                line(f"limit {name} [{value}]")
+        if show_event:
+            for name, value in node.events:
+                line(f"event {name} [{value}]")
+        if show_meter:
+            for name, minimum, maximum, value in node.meters:
+                line(f"meter {name} {minimum} {maximum} [{value}]")
+        for child in node.children:
+            visit(child)
+
+    if show_parameter:
+        for name, value in snapshot.server_parameters.items():
+            stream.write(f"param {name} '{value}'\n")
+    for path in snapshot.roots:
+        visit(path)

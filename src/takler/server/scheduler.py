@@ -69,7 +69,9 @@ class Scheduler:
         exception_policy: Optional[ExceptionPolicy] = None,
         fatal_shutdown: Optional[Callable[[], None]] = None,
         zombie_detector: Optional[ZombieDetector] = None,
+        query_redacted_parameters: tuple[str, ...] = (),
     ):
+        self.query_redacted_parameters = query_redacted_parameters
         self.bunch: Bunch = bunch
         self.interval_main_loop: float = interval_main_loop
         self.command_queue: Queue = Queue()
@@ -805,8 +807,10 @@ class Scheduler:
     # Query -------------------------------------------------
 
     def handle_request_show(self, request: ShowRequest) -> str:
-        """Serialize the bunch; the flags select the detail sections."""
-        bunch_dict = self.bunch.to_dict()
+        """Project safe display data; clients use the flags to select details."""
+        from takler.serialization.query import project_show
+
+        bunch_dict = project_show(self.bunch, self.query_redacted_parameters)
         bunch_json_str = json.dumps(bunch_dict)
 
         return bunch_json_str

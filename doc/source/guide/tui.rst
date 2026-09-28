@@ -154,3 +154,15 @@ output
     在开启 XON/XOFF 流控的终端里， ``Ctrl+S`` / ``Ctrl+Q`` 可能被
     TTY 拦截而表现失灵；执行 ``stty -ixon`` 或换用默认关闭流控的
     终端即可。
+
+查询数据与参数
+--------------
+
+TUI 使用与 Python CLI 相同的纯数据查询视图，无需安装服务器执行插件。
+未知类型保留通用树展示；缺少 ``node_kind=task`` 时不提供专属 Run 操作。
+暂停、恢复等菜单继续以节点路径调用服务端。
+Info 和 Parameters 保留根参数及继承顺序；Info 同时展示安全生成参数及可用的任务字段。
+Script、Job、Output 优先使用视图中的 ``TAKLER_SCRIPT``、``TAKLER_JOB``、
+``TAKLER_JOBOUT``，参数缺失时按现有路径规则回退，不构建任务来生成路径。
+null 和脱敏值阻止回退。
+脱敏参数不会作为文件路径使用。标签页仍读取客户端可见的本地文件，尚无远程 artifact API。

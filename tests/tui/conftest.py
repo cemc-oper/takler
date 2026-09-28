@@ -2,7 +2,7 @@
 
 The whole suite runs against an in-memory :class:`~takler.core.Bunch`
 serialised exactly the way the server's ``show`` command produces it
-(``json.dumps(bunch.to_dict())``), so ``parse_show`` and every widget
+(``json.dumps(project_show(bunch))``), so ``parse_show`` and every widget
 downstream of it see the same payload shape as in production.
 
 :class:`FakeTuiService` is the test double for
@@ -65,7 +65,9 @@ def build_rich_bunch() -> Bunch:
 
 def show_payload(bunch: Bunch) -> str:
     """Serialise ``bunch`` the way ``Scheduler.handle_request_show`` does."""
-    return json.dumps(bunch.to_dict())
+    from takler.serialization.query import project_show
+
+    return json.dumps(project_show(bunch))
 
 
 @pytest.fixture

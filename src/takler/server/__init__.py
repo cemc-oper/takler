@@ -235,6 +235,11 @@ class TaklerServer:
             exception_policy=self.exception_policy,
             fatal_shutdown=self._trigger_fatal_shutdown,
             zombie_detector=self.zombie_detector,
+            query_redacted_parameters=tuple(
+                connect_config.security.query_redacted_parameters
+            )
+            if connect_config
+            else (),
         )
         self.grpc_transport: GrpcTransport = GrpcTransport(
             scheduler=self.scheduler,

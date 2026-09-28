@@ -1,15 +1,8 @@
 """Output tab: tail the job output for the selected task and list related files.
 
-The server-side ``Bunch.to_dict()`` payload does not include the
-generated ``TAKLER_JOBOUT`` parameter (those live only on the runtime
-``ShellScriptTaskGeneratedParameters``). We derive the path the same
-way :class:`ShellScriptTaskGeneratedParameters` does:
-
-    TAKLER_HOME + node_path + "." + try_no
-
-If we can't determine ``try_no`` (we never can from JSON alone), pick
-the most recently modified ``TAKLER_HOME + node_path.*`` file, which
-matches every output / job script for this node.
+The shared query view resolves user and generated TAKLER_JOBOUT parameters.
+When that parameter is missing, the tab uses TAKLER_HOME plus the node path
+and discovers existing output files. Null/redacted values block that fallback.
 
 The tab also renders a sortable table of every file in the same
 directory whose name starts with ``<node_name>.`` (output files, job
@@ -164,8 +157,21 @@ class OutputTab(Vertical):
             self._refresh_table()
             return
 
+        parameter = (
+            snapshot.resolve_parameter(node.path, "TAKLER_JOBOUT") if snapshot else None
+        )
+        preferred = (
+            Path(parameter.text)
+            if parameter is not None
+            and not parameter.redacted
+            and parameter.value is not None
+            and parameter.text
+            else None
+        )
         prefix = self._prefix_for(node, snapshot)
-        if prefix is None:
+        if (parameter is not None and preferred is None) or (
+            prefix is None and preferred is None
+        ):
             self._title.update(f"{node.path}: no output yet")
             self._log.write(
                 Text(
@@ -183,12 +189,26 @@ class OutputTab(Vertical):
         # apply results back on the main thread.
         self._title.update(f"{node.path}: loading…")
         self._files_title.update(Text("Related files (…)", style="dim"))
-        self._load_output(node.path, prefix)
+        self._load_output(node.path, prefix or preferred, preferred)
 
     @work(thread=True, exclusive=True, group="output")
-    def _load_output(self, node_path: str, prefix: Path) -> None:
+    def _load_output(
+        self, node_path: str, prefix: Path, preferred: Optional[Path] = None
+    ) -> None:
         rows = self._collect_files(prefix)
-        target = self._pick_output(prefix, rows)
+        target = preferred if preferred is not None else self._pick_output(prefix, rows)
+        if preferred is not None and all(row.path != preferred for row in rows):
+            try:
+                stat = preferred.stat()
+                rows.append(
+                    _FileRow(
+                        preferred,
+                        stat.st_mtime,
+                        getattr(stat, "st_birthtime", stat.st_ctime),
+                    )
+                )
+            except OSError:
+                pass
         log_lines: Optional[List[str]] = None
         log_error: Optional[str] = None
         log_path: Optional[Path] = None

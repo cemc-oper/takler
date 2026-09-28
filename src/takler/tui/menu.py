@@ -29,8 +29,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, OptionList, Static
 from textual.widgets.option_list import Option
 
-from takler.core.node import Node
-from takler.core.task_node import Task
+from takler.query import NodeInfo
 
 
 # Sentinel returned by :class:`NodeActionMenu` when the user picks
@@ -78,7 +77,7 @@ class NodeAction:
         call. Control operations want this; queries (``refresh``
         itself, ``ping``) do not.
     applies_to
-        Predicate over the selected :class:`~takler.core.node.Node` deciding whether the
+        Predicate over the selected :class:`~takler.query.NodeInfo` deciding whether the
         action is offered for that node. Defaults to "applies to every
         node". Use this to hide e.g. ``Run`` on containers, since the
         scheduler only runs ``Task`` nodes.
@@ -91,12 +90,14 @@ class NodeAction:
     needs_node: bool = True
     confirm: bool = False
     refresh_after: bool = False
-    applies_to: Callable[[Node], bool] = field(default=lambda node: True, repr=False)
+    applies_to: Callable[[NodeInfo], bool] = field(
+        default=lambda node: True, repr=False
+    )
 
 
-def _task_only(node: Node) -> bool:
-    """Predicate: only ``Task`` nodes accept the action."""
-    return isinstance(node, Task)
+def _task_only(node: NodeInfo) -> bool:
+    """Offer the action only for views with node_kind=task."""
+    return node.node_kind == "task"
 
 
 NODE_ACTIONS: List[NodeAction] = [
@@ -139,7 +140,7 @@ def per_node_actions() -> List[NodeAction]:
     return [a for a in NODE_ACTIONS if a.needs_node]
 
 
-def applicable_actions(node: Optional[Node]) -> List[NodeAction]:
+def applicable_actions(node: Optional[NodeInfo]) -> List[NodeAction]:
     """Per-node actions that apply to ``node``'s concrete type.
 
     When ``node`` is ``None`` we fall back to :func:`per_node_actions`

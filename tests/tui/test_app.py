@@ -411,3 +411,41 @@ def _payload_without_cursor_bunch() -> str:
     bunch = Bunch(name="b")
     bunch.add_flow(Flow("flow1"))
     return show_payload(bunch)
+
+
+@pytest.mark.anyio
+async def test_unknown_plugin_view_keeps_tabs_and_path_operations(
+    rich_payload, monkeypatch
+):
+    import json
+    import importlib
+
+    data = json.loads(rich_payload)
+    task = data["flows"][0]["children"][0]["children"][0]
+    task.update(
+        type_id="uninstalled.PluginTask",
+        module="attacker",
+        class_type={"module": "attacker", "class": "Run"},
+    )
+    task["user_parameters"].append({"name": "TAKLER_PASS", "value": "PRIVATE_MARKER"})
+    service = FakeTuiService(json.dumps(data))
+    original = importlib.import_module
+
+    def checked_import(name, *args, **kwargs):
+        assert name not in {"attacker", "uninstalled"}
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", checked_import)
+    app = make_app(service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await started_app(pilot, app, service)
+        await select(pilot, app, "/flow1/family1/task1")
+        assert "run" in {a.id for a in app._actions_for_path(app._selected_path)}
+        tabs = app.query_one(TabbedContent)
+        for tab_id in ("info", "params", "script", "job", "output"):
+            tabs.active = f"tab-{tab_id}-pane"
+            await pilot.pause()
+        app.action_suspend()
+        await wait_until(lambda: bool(service.calls), pilot)
+        assert service.calls[-1] == ("suspend", {"paths": ["/flow1/family1/task1"]})
+        assert "PRIVATE_MARKER" not in repr(app._snapshot)

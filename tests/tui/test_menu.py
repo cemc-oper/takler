@@ -7,8 +7,6 @@ from textual.app import App, ComposeResult
 from textual.geometry import Offset
 from textual.widgets import OptionList, Static
 
-from takler.core.node_container import NodeContainer
-from takler.core.task_node import Task
 from takler.tui.menu import (
     FORCE_STATES,
     NODE_ACTIONS,
@@ -59,9 +57,9 @@ def test_applicable_actions_fall_back_to_full_list_without_node() -> None:
     assert applicable_actions(None) == per_node_actions()
 
 
-def test_run_is_only_offered_for_tasks() -> None:
-    task_ids = {a.id for a in applicable_actions(Task("t"))}
-    container_ids = {a.id for a in applicable_actions(NodeContainer("f"))}
+def test_run_is_only_offered_for_tasks(snapshot) -> None:
+    task_ids = {a.id for a in applicable_actions(snapshot.get("/flow1/task3"))}
+    container_ids = {a.id for a in applicable_actions(snapshot.get("/flow1/family1"))}
     assert "run" in task_ids
     assert "run" not in container_ids
     # Non-filtered actions stay available on containers.

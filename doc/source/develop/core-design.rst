@@ -197,8 +197,7 @@ checkpoint v2 另行校验完整 runtime。内建 ``Node`` 负责公共字段，
   （ ``State`` 为 ``unknown`` ， ``begun`` 为 ``False`` ，日历字
   段为空）。 ``load`` 命令用它：载入的是一份新定义，不是一段历史。
 * ``Status`` —— 定义之外再恢复 **运行状态** ： ``State`` 、
-  ``begun`` 、日历、 complete 触发器的闩、限额占用等。快照文件与
-  ``show`` 响应用它，见 :doc:`/operation/checkpoint` 。
+  ``begun`` 、日历、 complete 触发器的闩、限额占用等。快照恢复使用此模式；``show`` 使用独立查询投影。见 :doc:`/operation/checkpoint` 。
 
 **受信任类型注册**：节点记录稳定 ``type_id``；``Node.from_dict`` 与
 ``Bunch.from_dict`` 只查询启动代码建立的注册表，不按输入导入模块。
@@ -208,7 +207,7 @@ checkpoint v2 另行校验完整 runtime。内建 ``Node`` 负责公共字段，
 会使整份快照失败，并尝试备份。
 
 **什么不进序列化** 与进了一样重要： ``Task.job_password`` 被刻意
-排除 —— ``to_dict`` 供 ``show`` 读取，口令只由 checkpoint 独立映射保存。
+排除。``show`` 使用独立安全投影，客户端解析为纯数据；口令只由 checkpoint 独立映射保存。
 checkpoint 的允许字段投影也不会把口令放入节点树。它由
 ``increment_try_no`` 与 ``requeue`` 两个写入点维护，不变式是
 「 ``job_password`` 为空当且仅当 ``try_no == 0`` 」。同理，

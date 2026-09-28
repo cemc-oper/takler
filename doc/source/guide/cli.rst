@@ -334,3 +334,33 @@ unknown 表示无法可靠判断副作用。run 成功不承诺外部作业最�
 所有变更命令（含 child、load、replace）在 HTTP/gRPC 下均只发送一次。
 网络失败不能证明变更未发生；收到 outcome unknown 时先查询状态再决定是否重发。
 TLS/配置错误、非法响应及业务失败不重试。
+
+安全查询视图
+------------
+
+``show`` 返回用于展示的纯数据树。Python CLI 和 TUI 不根据
+``type_id``、``module``、``class`` 或 ``class_type`` 导入插件，也不重建
+可执行节点。未知执行类型仍可展示名称、路径和状态；任务菜单按服务端的
+``node_kind`` 决定是否显示 Run，操作仍通过节点路径发送给服务端。
+Go CLI 保留 JSON 输出，并透传同一安全视图。
+
+服务端输出根用户参数、安全的 ``generated_parameters`` 和节点级
+``redacted_parameters``。参数继承依次查询本节点 user、generated、逐级父节点，
+最后查询根 user 和服务器 generated。null 和脱敏值都会占据优先级，不回退到
+祖先同名值。查询不会更新生成参数、触发 repeat 或加载执行对象。
+
+部署配置可扩充脱敏参数名称（大小写不敏感）：
+
+.. code-block:: yaml
+
+   security:
+     query_redacted_parameters:
+       - BUSINESS_TOKEN
+       - API_KEY
+
+内置敏感名称 ``TAKLER_PASS``、``TAKLER_SECRET``、``job_password``、
+``operator_secret``、``takler-pass``、``takler-secret`` 始终受保护，不能通过
+配置移除。值显示为 ``<redacted>``，并在 ``redacted_parameters`` 中列出名称，
+以区别真实字符串值。客户端对内置名称再次防御性脱敏。
+查询投影不导出插件私有字段、执行凭据或完整部署配置，不可用作定义或恢复输入。
+用户业务参数的其它机密名称需要部署者显式配置。
