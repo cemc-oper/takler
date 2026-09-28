@@ -221,15 +221,17 @@ flow 执行会被拒绝（退出码 ``1`` ）。
 ``load``
 ~~~~~~~~
 
-**仅 ``takler-client-py`` 提供。**
+Python 与 Go 客户端均提供。
 
 ::
 
     takler-client-py load [--flow-type json] FLOW_FILE_PATH
 
 把文件中的 flow 定义加载进服务的 bunch 。目前 ``--flow-type``
-仅支持 ``json`` （ :py:meth:`Flow.to_dict <takler.core.Flow.to_dict>`
-序列化格式）。
+仅支持 ``json``：``export_definition`` 导出的版本 1 DefinitionDocument，
+root 必须为单个 Flow。同名已存在返回 flow_state（flag=14），非法定义返回
+invalid_request（flag=15）；两种失败均非零退出且旧树不变。
+成功加载后需显式 ``begin``。Go 客户端支持相同文件与命令语义。
 
 ``begin``
 ~~~~~~~~~

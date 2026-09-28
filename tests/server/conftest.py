@@ -31,6 +31,7 @@ from unittest import mock
 
 import pytest
 
+from takler.serialization import export_definition
 from takler.core import Bunch, Flow, NodeStatus
 from takler.protocol.commands import (
     REQUEST_TYPE_BY_COMMAND,
@@ -105,7 +106,7 @@ class HandlerCase:
 def _new_flow_bytes() -> bytes:
     flow = Flow("flow3")
     flow.add_task("task1")
-    return json.dumps(flow.to_dict()).encode("utf-8")
+    return json.dumps(export_definition(flow).model_dump(mode="json")).encode("utf-8")
 
 
 HANDLER_CASES: List[HandlerCase] = [

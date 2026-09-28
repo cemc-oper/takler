@@ -57,6 +57,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import pytest
 
 import takler.logging
+from takler.serialization import export_definition
 from takler.core import Bunch, Flow
 from takler.core.state import NodeStatus
 from takler.exceptions import ZombieError
@@ -295,7 +296,7 @@ def call(service: GrpcTransport, method: str, request: Any) -> Any:
 # is keyed by method name so :func:`test_every_control_command_is_covered` can
 # hold it against the service's own classification -- a ninth Control_Command
 # added later arrives together with a failing test.
-_LOADED_FLOW = json.dumps(Flow("flow2").to_dict()).encode("utf-8")
+_LOADED_FLOW = export_definition(Flow("flow2")).model_dump_json().encode("utf-8")
 
 CONTROL_CASES: "Dict[str, Tuple[Callable[[], Any], Callable[[], Any], List[str]]]" = {
     "RunCommandRequeue": (

@@ -39,6 +39,7 @@ import json
 from pathlib import Path
 from typing import List
 
+from takler.serialization import export_definition
 from takler.core import Flow, NodeStatus
 
 
@@ -93,7 +94,9 @@ def write_flow_definition(directory: Path) -> Path:
     flow.add_task("task3")
 
     flow_file = directory / "flow1.json"
-    flow_file.write_text(json.dumps(flow.to_dict()), encoding="utf-8")
+    flow_file.write_text(
+        json.dumps(export_definition(flow).model_dump(mode="json")), encoding="utf-8"
+    )
     return flow_file
 
 

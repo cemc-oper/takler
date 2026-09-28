@@ -779,13 +779,14 @@ def test_step13_run_skips_a_submitted_task():
 def test_step13_load_registers_a_flow_without_beginning_it():
     """``load`` registers a JSON flow definition; the flow starts un-begun.
 
-    controlling-the-flow.rst loads ``Flow.to_dict`` output and stresses that an
+    controlling-the-flow.rst loads ``export_definition`` output and stresses that an
     explicit ``begin`` is still required before the scheduler touches the flow.
     """
     import json
 
     from takler.core import Bunch
     from takler.exceptions import InvalidRequestError
+    from takler.serialization import export_definition
     from takler.protocol.commands import LoadCommand
     from takler.server.scheduler import Scheduler
 
@@ -794,7 +795,11 @@ def test_step13_load_registers_a_flow_without_beginning_it():
 
     scheduler = Scheduler(bunch=Bunch(name="bunch"))
     scheduler.run_command_load(
-        LoadCommand(flow_bytes=json.dumps(flow.to_dict()).encode())
+        LoadCommand(
+            flow_bytes=json.dumps(
+                export_definition(flow).model_dump(mode="json")
+            ).encode()
+        )
     )
 
     loaded = scheduler.bunch.find_flow("test")
@@ -1083,7 +1088,7 @@ def test_guide_serialization_tree_restores_definition_status_restores_state():
     """``Tree`` restores the definition only, ``Status`` also the runtime state.
 
     defining-flows.rst documents the two ``SerializationType`` modes: the
-    client ``load`` command uses ``Tree`` (fresh definition, un-begun), the
+    internal ``Tree`` mode resets runtime fields; the
     server checkpoint uses ``Status`` (status, begun flag and calendar all
     restored).
     """

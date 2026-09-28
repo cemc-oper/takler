@@ -267,7 +267,9 @@ class FreeDepCommand(ProtocolModel):
 
 
 class LoadCommand(ProtocolModel):
-    """``load``: add a flow definition to the bunch.
+    """``load``: add a new single Flow DefinitionDocument (version 1).
+
+    Existing names and legacy mixed definition/runtime documents are rejected.
 
     ``flow_bytes`` is raw bytes, like the proto field. In the JSON envelope
     it travels base64-encoded (the model config below), which keeps the

@@ -65,7 +65,7 @@ per-node ``zombie`` 属性
     没有。工作流只能用 Python API 定义（
     :doc:`/guide/defining-flows` ）；与文本定义最接近的是
     ``takler-client-py load`` ，可把
-    :py:meth:`Flow.to_dict <takler.core.Flow.to_dict>` 序列化出的
+    ``export_definition`` 导出的版本 1 纯定义
     JSON 文件加载进服务（见 :doc:`/guide/cli` ）。
 
 ``%VAR%`` 变量替换与 ``%include``

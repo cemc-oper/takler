@@ -64,7 +64,8 @@ Bunch 与多 flow
 几点注意：
 
 * 一个服务进程持有一个 ``Bunch`` ，其中可以同时存在多个 flow
-* flow 按名字索引， ``add_flow`` 同名 flow 会覆盖已有定义
+* flow 按名字索引，内部 ``add_flow`` 同名 flow 会覆盖已有定义；
+  网络 ``load`` 在服务端拒绝重名，不能用它覆盖在线 flow
 * ``Bunch`` 持有服务级参数（ ``TAKLER_HOST`` 、 ``TAKLER_PORT`` 、
   ``TAKLER_HOME`` ），沿参数继承链对所有节点可见
 * 节点路径的第一段就是 flow 名， ``bunch.find_node("/test/t1")`` 可以
@@ -78,26 +79,22 @@ Bunch 与多 flow
 .. code-block:: python
 
     import json
-
-    from takler.core import Flow, SerializationType
+    from takler.serialization import export_definition, build_definition
 
     # 导出定义
     with open("my_flow.json", "w") as f:
-        json.dump(flow.to_dict(), f)
+        json.dump(export_definition(flow).model_dump(mode="json"), f)
 
     # 从 JSON 重建
     with open("my_flow.json") as f:
-        flow2 = Flow.from_dict(json.load(f), method=SerializationType.Tree)
+        flow2 = build_definition(f.read())
 
-反序列化有两种模式（ ``SerializationType`` 枚举）：
+网络 ``load`` 只接受上述版本化纯定义且 root 必须为单个 Flow。
+重复名称、旧混合格式及运行字段均被拒绝，旧树保持不变。
+成功后 flow 未 begun，需要显式 ``begin`` 才会开始运行。
 
-* ``Tree`` ：只恢复定义（结构、参数、依赖、属性），所有节点回到初始
-  状态 ``unknown`` ， flow 未 begun、日历为空。客户端的 ``load`` 命令
-  用这种模式——加载得到的是一份全新定义，需要显式 ``begin`` 才会开始
-  运行（见 :doc:`/tutorial/advanced-topics/controlling-the-flow` ）
-* ``Status`` ：连同运行时状态一起恢复（节点状态、 ``suspended`` 、
-  事件与标尺取值、 ``try_no`` 、日历、 begun 标记等）。服务端的
-  checkpoint 用这种模式（见 :doc:`/tutorial/advanced-topics/restart` ）
+内部 ``to_dict/from_dict`` 的 ``SerializationType.Tree`` / ``Status``
+用于树投影和状态恢复，不是网络 load 的输入格式；Status 供 checkpoint 使用。
 
 Tree 模式在调用 ``begin`` 之前已经完成运行字段隔离，不依赖 begin/requeue
 清理旧数据。Task 和 ShellScriptTask 的 ``task_id`` / ``aborted_reason``
@@ -109,7 +106,7 @@ trigger/complete-trigger free、完成触发锁存及 time free 均为 false。
 
 Status 仍读取完整运行字段；作业口令不从节点字典读取，而由 checkpoint
 的独立 ``job_passwords`` 映射恢复。当前 Tree 仅是现有反序列化入口的模式，
-不等于已建立安全的纯定义格式或受信任类型注册边界。
+网络输入请使用 :doc:`/develop/definition` 的严格纯定义格式与受信任注册器。
 
 ``Bunch.to_dict()`` 把整个 :py:class:`~takler.core.Bunch`
 （所有 flow 加上服务参数）序列化为一个 dict ，是 checkpoint 文件的

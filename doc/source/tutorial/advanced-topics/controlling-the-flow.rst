@@ -210,16 +210,16 @@
 --------------------
 
 ``load`` 把工作流定义文件加载进运行中的服务，无需重启服务。目前支持
-JSON 格式（:py:meth:`Flow.to_dict <takler.core.Flow.to_dict>` 的
-输出）。先用 Python 把工作流导出成 JSON 文件：
+版本 1 的纯定义 JSON（``export_definition`` 的输出，单个 Flow 根）。先用 Python 把工作流导出成 JSON 文件：
 
 .. code-block:: python
 
     import json
+    from takler.serialization import export_definition
 
     # flow 是构造好的 Flow 对象
     with open("my_flow.json", "w") as f:
-        json.dump(flow.to_dict(), f)
+        json.dump(export_definition(flow).model_dump(mode="json"), f)
 
 然后加载并启动：
 
@@ -229,7 +229,8 @@ JSON 格式（:py:meth:`Flow.to_dict <takler.core.Flow.to_dict>` 的
     takler-client-py begin my_flow
 
 ``load`` 只注册定义：加载进来的 flow 尚未 begun，调度器不会处理它，
-需要显式 ``begin`` 才会开始运行。
+需要显式 ``begin`` 才会开始运行。同名 flow 已存在时拒绝加载并保留旧树；
+旧混合格式、运行字段及未知类型均被拒绝。
 
 使用 takler-tui
 ------------------

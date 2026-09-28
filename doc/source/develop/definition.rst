@@ -54,5 +54,8 @@ Bunch 只导出 name、user_parameters、flows；根上配置未支持的调度�
 也不更改在线缓存或占用。构造失败不会替换在线节点。
 
 现有 ``to_dict`` / ``from_dict`` 改用受信任 ``type_id``；checkpoint 格式为 2，
-完整校验后才恢复。网络 load 的纯定义切换留给 R0-12；查询只读化留给 R0-15。
+完整校验后才恢复。网络 load 只接受版本 1 的单个 Flow 纯定义；Bunch 根、
+旧混合格式、运行字段和未知类型均拒绝（invalid_request，flag=15）。
+同名 flow 已存在时拒绝（flow_state，flag=14），保留原树及运行进度。
+加载成功不自动 begin；显式执行 begin 后才参与调度。查询只读化留给 R0-15。
 不提供旧 module/class 别名或历史格式转换器。

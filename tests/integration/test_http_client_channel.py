@@ -36,6 +36,7 @@ pytest.importorskip(
 
 from takler.client.http_transport import HttpTransport
 from takler.client.service_client import TaklerServiceClient
+from takler.serialization import export_definition
 from takler.core import Flow, NodeStatus
 from takler.exceptions import PermissionDeniedError
 from takler.server.connect_config import (
@@ -103,7 +104,9 @@ def _write_flow_definition(directory: Path) -> Path:
     flow.add_task("task3")
 
     flow_file = directory / "flow_client.json"
-    flow_file.write_text(json.dumps(flow.to_dict()), encoding="utf-8")
+    flow_file.write_text(
+        json.dumps(export_definition(flow).model_dump(mode="json")), encoding="utf-8"
+    )
     return flow_file
 
 

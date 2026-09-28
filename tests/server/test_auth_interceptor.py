@@ -70,6 +70,7 @@ from typer.testing import CliRunner
 
 import takler.logging
 from takler.client import cli
+from takler.serialization import export_definition
 from takler.core import Flow, NodeStatus
 from takler.core.task_node import Task
 from takler.server import TaklerServer
@@ -269,7 +270,7 @@ def flow_definition_bytes() -> bytes:
     """A serialized flow definition for ``load``, under a second name."""
     flow = Flow("flow2")
     flow.add_task("task1")
-    return json.dumps(flow.to_dict()).encode("utf-8")
+    return json.dumps(export_definition(flow).model_dump(mode="json")).encode("utf-8")
 
 
 NodeSnapshot = Tuple[Any, Any, Any, Any, Any]

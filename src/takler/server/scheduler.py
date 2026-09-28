@@ -5,7 +5,7 @@ import json
 from queue import Queue
 from typing import Callable, Optional
 
-from takler.core import Bunch, Task, NodeStatus, Event, Flow, SerializationType
+from takler.core import Bunch, Task, NodeStatus, Event, Flow
 from takler.core.node import Node
 from takler.exceptions import (
     FlowStateError,
@@ -15,6 +15,8 @@ from takler.exceptions import (
     NodeTypeError,
     UnsupportedValueError,
 )
+from takler.schema.definition import DefinitionError
+from takler.serialization import build_definition
 from takler.logging import get_logger
 from takler.protocol.commands import (
     AbortCommand,
@@ -721,30 +723,27 @@ class Scheduler:
         UnsupportedValueError
             If ``flow_type`` is not supported.
         InvalidRequestError
-            If the flow definition is not valid json.
+            If the input is not a valid single Flow DefinitionDocument.
+        FlowStateError
+            If a flow with the same name already exists.
         """
-        logger.info("Load flow from bytes...")
-        if command.flow_type == "json":
-            logger.info("load json flow...")
-            try:
-                flow_dict = json.loads(command.flow_bytes)
-            except json.JSONDecodeError as exc:
-                raise InvalidRequestError(
-                    f"flow definition is not valid json: {exc}"
-                ) from exc
-            flow: Flow = Flow.from_dict(d=flow_dict, method=SerializationType.Tree)
-            self.bunch.add_flow(flow)
-            # The flow is deliberately left un-begun (Requirement 8.8): loading
-            # only registers the definition, ``run_command_begin`` starts it.
-            logger.info(f"load json flow...done [flow name: {flow.name}]")
-        else:
-            logger.warning(
-                f"flow type {command.flow_type} is not supported for command load."
-            )
+        if command.flow_type != "json":
             raise UnsupportedValueError(
-                f"flow type {command.flow_type} is not supported for command load.",
+                "flow type is not supported for command load.",
                 value=command.flow_type,
             )
+        try:
+            flow = build_definition(command.flow_bytes, existing_bunch=self.bunch)
+        except DefinitionError as exc:
+            raise InvalidRequestError(f"invalid flow definition: {exc.code}") from None
+        if not isinstance(flow, Flow):
+            raise InvalidRequestError("load requires a single Flow definition root")
+        # Check and attach without yielding; construction only touched a candidate.
+        if self.bunch.find_flow(flow.name) is not None:
+            raise FlowStateError("flow already exists", flow_name=flow.name)
+        self.bunch.add_flow(flow)
+        # Loading registers the definition; only an explicit begin starts it.
+        logger.info(f"load json flow...done [flow name: {flow.name}]")
 
     @batch_targets("flow_name")
     def run_command_begin(self, command: BeginCommand):

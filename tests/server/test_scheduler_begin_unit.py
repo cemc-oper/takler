@@ -8,6 +8,7 @@ import json
 
 import pytest
 
+from takler.serialization import export_definition
 from takler.core import Bunch, Flow, NodeStatus
 from takler.protocol.commands import BeginCommand, LoadCommand
 from takler.server.scheduler import Scheduler
@@ -136,7 +137,7 @@ def test_begin_all_on_empty_bunch_is_noop(scheduler):
 
 def test_load_leaves_flow_not_begun(scheduler):
     """Requirement 8.8: load registers the flow but leaves it un-begun."""
-    flow_dict = build_flow("flow1").to_dict()
+    flow_dict = export_definition(build_flow("flow1")).model_dump(mode="json")
 
     scheduler.run_command_load(
         LoadCommand(flow_bytes=json.dumps(flow_dict).encode("utf-8"))
@@ -151,7 +152,7 @@ def test_load_leaves_flow_not_begun(scheduler):
 
 def test_load_then_begin_starts_flow(scheduler):
     """A loaded flow becomes runnable once begin is called."""
-    flow_dict = build_flow("flow1").to_dict()
+    flow_dict = export_definition(build_flow("flow1")).model_dump(mode="json")
     scheduler.run_command_load(
         LoadCommand(flow_bytes=json.dumps(flow_dict).encode("utf-8"))
     )

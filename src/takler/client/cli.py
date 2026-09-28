@@ -448,7 +448,9 @@ def load(
     flow_file_path: str = typer.Argument(..., help="flow file path"),
 ):
     """
-    [control] load flow from file to server.
+    [control] load a new Flow DefinitionDocument v1; rejects existing names.
+
+    Loading does not begin the flow. Run begin explicitly.
     """
     _run_client_command(
         host,

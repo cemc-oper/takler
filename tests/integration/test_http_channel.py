@@ -32,6 +32,7 @@ httpx = pytest.importorskip(
     "httpx", reason="the HTTP end-to-end probe posts through httpx"
 )
 
+from takler.serialization import export_definition
 from takler.core import Flow
 from takler.server.connect_config import (
     Address,
@@ -76,7 +77,9 @@ def test_server_serves_grpc_and_http_in_one_process(
         # A command over HTTP mutates the bunch the gRPC side reads.
         flow = Flow("flow_http")
         flow.add_task("task1")
-        flow_bytes = json.dumps(flow.to_dict()).encode("utf-8")
+        flow_bytes = json.dumps(export_definition(flow).model_dump(mode="json")).encode(
+            "utf-8"
+        )
         load = http.post(
             "/v1/commands/load",
             json={
