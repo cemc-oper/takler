@@ -216,10 +216,10 @@ class ShellScriptTask(Task):
 
             job_script_path = shell_script.render_script(script_path)
             # Only add the owner execute bit, and leave the read/write bits as
-            # they were created, i.e. decided by the process umask. A job script
+            # they were created by the default ACL/umask or already existed. A job script
             # may carry ``TAKLER_PASS``, so takler must not widen its read
             # permission by setting an explicit mode such as ``0o755``: who may
-            # read the job password is a deployment decision expressed by umask.
+            # read the job password is a deployment permission decision.
             mode = job_script_path.stat().st_mode
             job_script_path.chmod(mode | stat.S_IXUSR)
             logger.info(f"Job generation success: {job_script_path}")

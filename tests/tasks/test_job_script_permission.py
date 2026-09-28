@@ -27,18 +27,24 @@ import contextlib
 import io
 import os
 import stat
+import struct
+import subprocess
 import sys
 from pathlib import Path
 from typing import Iterator
+from unittest.mock import Mock
 
 import pytest
 
 import takler.logging
-from takler.core import Bunch, Flow
+from takler.core import Bunch, Flow, NodeStatus
 from takler.server import TaklerServer
 from takler.server.connect_config import generate_connect_config
+from takler.exceptions import JobSubmissionError
 from takler.tasks import ShellScriptTask
 from takler.tasks.shell.constant import TAKLER_JOB
+from takler.tasks.shell import shell_render
+from takler.tasks.shell.shell_runner import ShellRunner
 
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="tests for linux only")
@@ -109,6 +115,139 @@ def test_job_script_is_owner_executable_and_keeps_umask_read_write_bits(
 
     assert job_mode & _RW_BITS == reference_mode & _RW_BITS
     assert job_mode & stat.S_IXUSR
+
+
+@pytest.mark.parametrize("mode", [0o640, 0o664, 0o755])
+def test_overwrite_keeps_inode_and_only_adds_owner_execute(tmp_path, mode):
+    task = _make_task(tmp_path)
+    task.create_job_script()
+    job = Path(task.find_parameter(TAKLER_JOB).value)
+    job.write_text("old content")
+    job.chmod(mode)
+    before = job.stat()
+
+    task.create_job_script()
+
+    after = job.stat()
+    assert (after.st_dev, after.st_ino) == (before.st_dev, before.st_ino)
+    assert (after.st_uid, after.st_gid) == (before.st_uid, before.st_gid)
+    assert stat.S_IMODE(after.st_mode) == mode | stat.S_IXUSR
+    assert job.read_text() == "echo hello"
+    assert list(job.parent.iterdir()) == [job]
+
+
+def _default_acl(mask):
+    # Linux POSIX ACL xattr encoding, used only by tests. Include named user
+    # and group entries so chmod must preserve both entries and the mask.
+    entries = [
+        (1, 7, 0xFFFFFFFF),
+        (2, 4, 65534),
+        (4, 5, 0xFFFFFFFF),
+        (8, 6, 65534),
+        (16, mask, 0xFFFFFFFF),
+        (32, 0, 0xFFFFFFFF),
+    ]
+    return struct.pack("<I", 2) + b"".join(
+        struct.pack("<HHI", *entry) for entry in entries
+    )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux POSIX ACL encoding")
+@pytest.mark.parametrize("with_umask", [0o022, 0o077, 0o002], indirect=True)
+def test_default_acl_inheritance_and_overwrite(tmp_path, with_umask):
+    task = _make_task(tmp_path)
+    task.update_generated_parameters()
+    job = Path(task.find_parameter(TAKLER_JOB).value)
+    job.parent.mkdir(parents=True)
+    os.setxattr(job.parent, "system.posix_acl_default", _default_acl(7))
+    reference = job.parent / "reference"
+    reference.write_text("")
+    expected_acl = bytearray(os.getxattr(reference, "system.posix_acl_access"))
+    owner = struct.unpack_from("<H", expected_acl, 6)[0]
+    struct.pack_into("<H", expected_acl, 6, owner | 1)
+
+    task.create_job_script()
+
+    assert os.getxattr(job, "system.posix_acl_access") == bytes(expected_acl)
+    assert stat.S_IMODE(job.stat().st_mode) == (
+        stat.S_IMODE(reference.stat().st_mode) | stat.S_IXUSR
+    )
+    inode = job.stat().st_ino
+    os.setxattr(job.parent, "system.posix_acl_default", _default_acl(4))
+    task.create_job_script()
+    assert job.stat().st_ino == inode
+    assert os.getxattr(job, "system.posix_acl_access") == bytes(expected_acl)
+
+
+def test_generation_uses_final_path_without_acl_queries(tmp_path, monkeypatch):
+    task = _make_task(tmp_path)
+    task.update_generated_parameters()
+    job = Path(task.find_parameter(TAKLER_JOB).value)
+    (tmp_path / "scripts" / "task1.takler").write_text(
+        "#!/bin/sh\nprintf '你好\\n'\n", encoding="utf-8"
+    )
+    real_open = open
+    calls = []
+
+    def direct_open(path, mode, **kwargs):
+        calls.append((Path(path), mode, kwargs))
+        return real_open(path, mode, **kwargs)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("job generation must not query/copy ACLs or rename files")
+
+    monkeypatch.setattr(shell_render, "open", direct_open, raising=False)
+    for name in ("getxattr", "setxattr", "listxattr", "rename", "replace"):
+        monkeypatch.setattr(os, name, unexpected, raising=False)
+    task.create_job_script()
+    assert calls == [(job, "w", {"encoding": "utf-8"})]
+    assert list(job.parent.iterdir()) == [job]
+    result = subprocess.run([str(job)], capture_output=True, check=True)
+    assert result.stdout.decode("utf-8") == "你好\n"
+
+
+@pytest.mark.parametrize("failure", ["render", "write", "chmod"])
+def test_generation_failure_does_not_spawn(tmp_path, monkeypatch, failure):
+    task = _make_task(tmp_path)
+    task.create_job_script()
+    job = Path(task.find_parameter(TAKLER_JOB).value)
+    job.write_text("old content")
+    spawn = Mock()
+    monkeypatch.setattr(ShellRunner, "spawn", spawn)
+
+    if failure == "render":
+        (tmp_path / "scripts" / "task1.takler").write_text("{% if %}")
+    elif failure == "write":
+        real_open = open
+
+        @contextlib.contextmanager
+        def partial_write(path, mode, **kwargs):
+            with real_open(path, mode, **kwargs) as stream:
+
+                class FailingWriter:
+                    def write(self, content):
+                        stream.write(content[:4])
+                        raise OSError("injected write failure")
+
+                yield FailingWriter()
+
+        monkeypatch.setattr(shell_render, "open", partial_write, raising=False)
+    else:
+
+        def fail_chmod(*args, **kwargs):
+            raise OSError("injected chmod failure")
+
+        monkeypatch.setattr(Path, "chmod", fail_chmod)
+
+    with pytest.raises(JobSubmissionError, match="/flow1/task1"):
+        task.submit()
+    spawn.assert_not_called()
+    assert task.do_run() is False
+    assert task.state.node_status is NodeStatus.aborted
+    spawn.assert_not_called()
+    assert list(job.parent.iterdir()) == [job]
+    if failure == "write":
+        assert job.read_text() == "echo"
 
 
 # ---------------------------------------------------------------------------
