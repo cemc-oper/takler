@@ -74,7 +74,7 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 
 本地 ``pyproject.toml`` **故意不设** ``fail_under`` —— 门槛只针对特
 定模块，且 ``pytest tests/some_file.py`` 这类局部运行不应因门槛失
-败。门槛在 CI （ ``.github/workflows/test.yml`` ）的两个独立步骤里，
+败。门槛在 CI （ ``.github/workflows/ci.yml`` ）的两个独立步骤里，
 复用 pytest 步骤写出的同一份覆盖率数据：
 
 * ``takler/client/*`` 、 ``server/transport.py`` 、
@@ -149,8 +149,47 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 CI
 --
 
-``.github/workflows/test.yml`` 在 Python 3.11 与 3.12 矩阵上执行：
+``.github/workflows/ci.yml`` 在 Python 3.11 与 3.12 矩阵上执行：
 ``uv sync --locked --all-groups`` 还原环境 → ``ruff check`` → ``ruff
 format --check`` → ``pytest --cov`` → 两道覆盖率门。所有命令都走
 ``uv run`` ，与本地完全一致 —— 本地按本页命令跑过， CI 就不会给出不
 同的结论。
+
+Paired repository CI
+~~~~~~~~~~~~~~~~~~~~
+
+takler 与 takler-client 的常规 CI 会配对检查另一个仓库的 ``main`` 分
+支。协议改动尚未合并时，可在当前候选分支手动运行 `takler CI
+workflow <https://github.com/cemc-oper/takler/actions/workflows/ci.yml>`_ 或
+`takler-client CI workflow
+<https://github.com/cemc-oper/takler-client/actions/workflows/ci.yml>`_，并把
+``peer_sha`` 设置为另一个仓库候选提交的完整小写 SHA；留空时使用对方
+仓库的 ``main``。配对检查会在日志和 GitHub Actions 摘要中记录两个实
+际提交 SHA。需要复现同一组代码时，使用记录下来的 SHA，因为默认重跑
+可能会检出更新后的 ``main``。
+
+本地联调时，把两个仓库检出到同一父目录，并从 ``takler-client/`` 运
+行以下命令：
+
+.. code-block:: bash
+
+    export TAKLER_REPO=../takler
+    (
+      cd "$TAKLER_REPO"
+      uv sync --locked --all-groups --extra http
+      TAKLER_CLIENT_REPO=../takler-client bash scripts/check_proto.sh
+    )
+    make proto-check wire-check
+    make http-contract load-contract replace-contract show-contract
+
+这些命令不会切换分支，可检查 Python proto 是否最新、共享 schema 与
+向量、HTTP 命令，以及 Python/Go 客户端在 gRPC 和 HTTP 上的 load、
+replace、show 行为。
+
+协议变更先重新生成 Python bindings，再切换到 Go 仓库，针对该 Python
+checkout 运行 ``make proto-sync`` 并提交生成文件。合并前用本地检查或
+``peer_sha`` 验证两边候选改动。建议先合并兼容性的服务端改动，再合并
+客户端改动，然后重新运行默认 CI。常规 PR 检查仍使用对方 ``main``；
+手动候选检查不会代替必需的 PR 检查。若变更不兼容，需要协调合并顺序。squash 或
+rebase 后，回放时使用实际合并提交的 SHA。手动运行要求默认分支上已
+存在该 workflow；首次上线前先做本地检查。

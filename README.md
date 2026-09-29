@@ -4,7 +4,7 @@
 ![GitHub Release](https://img.shields.io/github/v/release/cemc-oper/takler)
 ![PyPI - Version](https://img.shields.io/pypi/v/takler)
 [![Documentation Status](https://readthedocs.org/projects/takler/badge/?version=latest)](https://takler.readthedocs.io/zh_CN/latest/?badge=latest)
-![test](https://github.com/cemc-oper/takler/actions/workflows/test.yml/badge.svg)
+![ci](https://github.com/cemc-oper/takler/actions/workflows/ci.yml/badge.svg)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/9900bc93e2a540d0926aca37a62c4a62)](https://app.codacy.com/gh/cemc-oper/takler/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 > :construction: takler is under construction.
@@ -121,41 +121,6 @@ takler-client-py show
 ```
 
 For events, meters, time dependencies, families and more, see the [documentation](https://takler.readthedocs.io/) (中文文档).
-
-## Paired repository CI
-
-CI checks the other repository's `main` by default. For an unmerged protocol
-change, manually run the workflow on the current candidate ref with `peer_sha`
-set to the other candidate's full commit SHA. Empty input uses `main`.
-Both actual SHAs appear in the job log and GitHub Actions summary. Default
-reruns may pick up newer peer code; use the recorded SHAs for exact replay.
-
-Locally, prepare both checkouts and run from `takler-client/`:
-
-```sh
-export TAKLER_REPO=../takler
-(
-  cd "$TAKLER_REPO"
-  uv sync --locked --all-groups --extra http
-  TAKLER_CLIENT_REPO=../takler-client bash scripts/check_proto.sh
-)
-make proto-check wire-check
-make http-contract load-contract replace-contract show-contract
-```
-
-These commands allow local edits and do not switch branches. They check proto
-freshness, shared schema/vectors, HTTP commands, and Python/Go × gRPC/HTTP
-load, replace and show behavior. No separate runner or JSON report is needed.
-
-For protocol changes, regenerate Python bindings first, then run `make proto-sync`
-in Go against that Python checkout and commit the generated files. Validate both
-candidates locally or with the manual SHA override before merging. Prefer an
-additive server change followed by its client change, then rerun default CI.
-Regular PR checks still use peer main; a manual candidate run does not replace
-required PR checks. Incompatible changes require coordinating merge order.
-After squash/rebase, use actual merged SHAs for replay. Manual dispatch requires
-the workflow to exist on the default branch; use local checks before initial rollout.
-
 
 ## LICENSE
 

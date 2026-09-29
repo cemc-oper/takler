@@ -11,7 +11,7 @@
 #
 # 关于 uv 的用法见 https://docs.astral.sh/uv/guides/integration/github/
 
-name: test
+name: ci
 
 on:
   push:
@@ -32,7 +32,7 @@ permissions:
 jobs:
   build:
 
-    name: test (Python ${{ matrix.python-version }})
+    name: ci (Python ${{ matrix.python-version }})
 
     runs-on: ubuntu-latest
 

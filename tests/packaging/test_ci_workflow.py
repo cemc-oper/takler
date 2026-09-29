@@ -1,4 +1,4 @@
-"""Structural tests for the CI workflow ``.github/workflows/test.yml``.
+"""Structural tests for the CI workflow ``.github/workflows/ci.yml``.
 
 The workflow itself cannot run here, so what is pinned down is its *intent*: the
 Python versions the test job fans out over, the fact that one failing version
@@ -44,7 +44,7 @@ import yaml
 
 # ``tests/packaging/test_ci_workflow.py`` -> project root.
 WORKFLOW_PATH = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "test.yml"
+    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
 )
 
 EXPECTED_PYTHON_VERSIONS = {"3.11", "3.12"}
