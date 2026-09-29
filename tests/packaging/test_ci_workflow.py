@@ -43,9 +43,7 @@ import yaml
 
 
 # ``tests/packaging/test_ci_workflow.py`` -> project root.
-WORKFLOW_PATH = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
-)
+WORKFLOW_PATH = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
 
 EXPECTED_PYTHON_VERSIONS = {"3.11", "3.12"}
 
