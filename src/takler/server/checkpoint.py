@@ -953,9 +953,9 @@ class CheckpointManager:
                     logger.warning(
                         "checkpoint deployment parameter conflict: using current deployment."
                     )
-        deployment = self.bunch.server_state
+        deployment = self.bunch.server_config
         self.bunch.__dict__.update(vars(candidate))
-        self.bunch.server_state = deployment
+        self.bunch.server_config = deployment
         self.bunch.in_limit_manager.node = self.bunch
         for limit in self.bunch.limits:
             limit.node = self.bunch
@@ -1032,11 +1032,11 @@ class CheckpointManager:
         Args:
             snapshot: The snapshot dictionary that was just restored from.
         """
-        server_state = (snapshot.get("bunch") or {}).get("server_state") or {}
-        snapshot_host = server_state.get("host")
-        snapshot_port = server_state.get("port")
-        current_host = self.bunch.server_state.host
-        current_port = self.bunch.server_state.port
+        server_config = (snapshot.get("bunch") or {}).get("server_config") or {}
+        snapshot_host = server_config.get("host")
+        snapshot_port = server_config.get("port")
+        current_host = self.bunch.server_config.host
+        current_port = self.bunch.server_config.port
 
         if snapshot_host == current_host and snapshot_port == current_port:
             logger.info(  # requirement 6.18

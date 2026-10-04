@@ -157,7 +157,7 @@ def test_job_passwords_survive_a_snapshot_round_trip(bunch: Bunch) -> None:
         assert source.write_checkpoint() is True
 
         target = CheckpointManager(
-            bunch=Bunch(host=bunch.server_state.host, port=bunch.server_state.port),
+            bunch=Bunch(host=bunch.server_config.host, port=bunch.server_config.port),
             checkpoint_file=checkpoint_file,
         )
         # The restore logs one INFO per flow plus the password count; swallowing

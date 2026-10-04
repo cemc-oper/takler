@@ -12,6 +12,8 @@ State
 
    takler.core.State
    takler.core.NodeStatus
+   takler.core.ServerStatus
+   takler.core.HaltCause
 
 Parameter
 ----------

@@ -79,23 +79,14 @@
         "free": true
       }
     ],
-    "server_state": {
+    "server_config": {
       "host": "old.invalid",
-      "port": "33083",
-      "parameters": [
-        {
-          "name": "TAKLER_HOST",
-          "value": "old.invalid"
-        },
-        {
-          "name": "TAKLER_PORT",
-          "value": "33083"
-        },
-        {
-          "name": "TAKLER_HOME",
-          "value": "."
-        }
-      ]
+      "port": "33083"
+    },
+    "server_state": {
+      "status": "running",
+      "status_reason": null,
+      "halt_causes": []
     },
     "flows": [
       {

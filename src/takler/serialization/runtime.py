@@ -1,13 +1,13 @@
 """Registered mixed-tree codecs and strict checkpoint runtime validation."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from takler.core import Bunch, Flow, Task, NodeStatus, SerializationType
 from takler.core.node import Node
-from takler.core.bunch import ServerState
+from takler.core.bunch import ServerConfig, ServerState
 from takler.schema.definition import (
     DefinitionModel,
     DefinitionError,
@@ -108,10 +108,22 @@ class RuntimeParameter(DefinitionModel):
     value: str | int | float | bool | None
 
 
-class RuntimeServer(DefinitionModel):
-    host: str | None
-    port: str | None
-    parameters: list[RuntimeParameter]
+class RuntimeServerConfig(DefinitionModel):
+    host: str
+    port: str
+
+
+class RuntimeServerState(DefinitionModel):
+    status: Literal["running", "halted"]
+    status_reason: (
+        Literal["manual pause", "recovery pending", "checkpoint failure"] | None
+    )
+    halt_causes: list[Literal["manual", "recovery", "checkpoint_failure"]]
+
+    @model_validator(mode="after")
+    def consistent(self):
+        ServerState.model_validate(self.model_dump(mode="json"))
+        return self
 
 
 class RuntimeNode(DefinitionModel):
@@ -136,7 +148,8 @@ class RuntimeNode(DefinitionModel):
     times: list[RuntimeTime] = Field(default_factory=list)
     # Conditional fields are required/forbidden by the registered kind below.
     flows: list["RuntimeNode"] = Field(default_factory=list)
-    server_state: RuntimeServer | None = None
+    server_config: RuntimeServerConfig | None = None
+    server_state: RuntimeServerState | None = None
     begun: bool | None = None
     calendar: RuntimeCalendar | None = None
     task_id: str | None = None
@@ -179,13 +192,14 @@ class RuntimeNode(DefinitionModel):
             ):
                 raise ValueError("invalid trigger runtime")
         required = {
-            "bunch": {"flows", "server_state"},
+            "bunch": {"flows", "server_config", "server_state"},
             "flow": {"begun", "calendar"},
             "task": {"task_id", "try_no", "aborted_reason"},
             "container": set(),
         }[entry.kind]
         conditional = {
             "flows",
+            "server_config",
             "server_state",
             "begun",
             "calendar",
@@ -206,7 +220,9 @@ class RuntimeNode(DefinitionModel):
             raise ValueError("invalid task runtime")
         if entry.kind == "flow" and (self.begun is None or self.calendar is None):
             raise ValueError("incomplete flow runtime")
-        if entry.kind == "bunch" and self.server_state is None:
+        if entry.kind == "bunch" and (
+            self.server_config is None or self.server_state is None
+        ):
             raise ValueError("incomplete bunch runtime")
         if any(
             registry.by_id(child.type_id).kind not in {"container", "task"}
@@ -249,6 +265,7 @@ def restore_node(data, method=SerializationType.Status):
         runtime = entry.runtime_schema.model_validate(data.get("runtime_data", {}))
         entry.restore_runtime(node, runtime)
     if isinstance(node, Bunch):
+        node.server_config = ServerConfig.from_dict(data["server_config"])
         node.server_state = ServerState.from_dict(data["server_state"])
         for flow in data["flows"]:
             restored = restore_node(flow, method)
@@ -306,6 +323,7 @@ def export_runtime(root):
             item["children"] = [project(child) for child in node.children]
         if entry.kind == "bunch":
             item["flows"] = [project(flow) for flow in node.flows.values()]
+            item["server_config"] = node.server_config.to_dict()
             item["server_state"] = node.server_state.to_dict()
         if entry.kind == "flow":
             item.update(begun=node.begun, calendar=node.calendar.to_dict())

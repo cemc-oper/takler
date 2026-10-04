@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from takler.serialization.runtime import export_runtime
-from takler.core import Bunch
+from takler.core import Bunch, ServerStatus
 from takler.server.checkpoint import CheckpointManager
 
 from .test_checkpoint_restore_unit import _capturing_stderr
@@ -17,14 +17,16 @@ FIXTURE = Path(__file__).parents[1] / "fixtures" / "checkpoint_root_v2.json"
 def test_checkpoint_restores_root_storage_without_restoring_deployment(tmp_path):
     data = json.loads(FIXTURE.read_text())
     bunch = Bunch(host="current.invalid", port="9000")
+    server_config = bunch.server_config
     server_state = bunch.server_state
     manager = CheckpointManager(bunch, checkpoint_file=tmp_path / "checkpoint")
     manager.checkpoint_file.write_text(json.dumps(data))
     assert manager.restore() is True
     assert manager.bunch is bunch
-    assert bunch.server_state is server_state
+    assert bunch.server_config is server_config
+    assert bunch.server_state is not server_state
     expected = data["bunch"]
-    expected["server_state"] = server_state.to_dict()
+    expected["server_config"] = server_config.to_dict()
     assert export_runtime(bunch) == expected
     task = bunch.find_node("/f/t")
     assert task.get_bunch() is bunch
@@ -40,6 +42,40 @@ def test_checkpoint_restores_root_storage_without_restoring_deployment(tmp_path)
     # Verify the independent fixture survives the real checkpoint writer too.
     assert manager.write_checkpoint() is True
     assert json.loads(manager.checkpoint_file.read_text())["bunch"] == expected
+
+
+def test_address_changes_but_checkpoint_service_state_is_restored(tmp_path):
+    data = json.loads(FIXTURE.read_text())
+    data["bunch"]["server_state"] = {
+        "status": "halted",
+        "status_reason": "manual pause",
+        "halt_causes": ["manual"],
+    }
+    bunch = Bunch(host="current.invalid", port="9000")
+    manager = CheckpointManager(bunch, checkpoint_file=tmp_path / "checkpoint")
+    manager.checkpoint_file.write_text(json.dumps(data))
+
+    assert manager.restore() is True
+    assert bunch.server_config.host == "current.invalid"
+    assert bunch.server_config.port == "9000"
+    assert bunch.server_state.status is ServerStatus.halted
+    assert bunch.server_state.status_reason == "manual pause"
+    assert [cause.value for cause in bunch.server_state.halt_causes] == ["manual"]
+    assert (
+        bunch.find_node("/f/t").find_parent_parameter("TAKLER_HOST").value
+        == "current.invalid"
+    )
+
+
+def test_unknown_snapshot_service_status_falls_back_to_backup(tmp_path):
+    data = json.loads(FIXTURE.read_text())
+    manager = CheckpointManager(Bunch(), checkpoint_file=tmp_path / "checkpoint")
+    manager.backup_file.write_text(json.dumps(data))
+    data["bunch"]["server_state"]["status"] = "complete"
+    manager.checkpoint_file.write_text(json.dumps(data))
+
+    assert manager.restore() is True
+    assert manager.bunch.server_state.status is ServerStatus.running
 
 
 def test_address_overrides_at_every_level_are_removed_and_reported(tmp_path):

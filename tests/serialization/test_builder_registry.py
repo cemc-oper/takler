@@ -268,11 +268,11 @@ def test_checkpoint_invalid_primary_falls_back_atomically(tmp_path, corrupt):
     writer.checkpoint_file.write_text(json.dumps(bad))
     live = Bunch("live", host="current", port="9000")
     live.add_flow("old")
-    deployment = live.server_state
+    deployment = live.server_config
     reader = CheckpointManager(live, checkpoint_file=writer.checkpoint_file)
     assert reader.restore()
     assert live.name == "good" and list(live.flows) == ["f"]
-    assert live.server_state is deployment
+    assert live.server_config is deployment
     restored = live.find_node("/f/t")
     assert restored.get_bunch() is live
     assert restored.job_password == task.job_password

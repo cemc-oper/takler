@@ -252,6 +252,7 @@ def parse_definition(
             "node_path",
             "class_type",
             "server_state",
+            "server_config",
             "server_parameters",
             "generated_parameters",
             "auth",

@@ -21,7 +21,7 @@ Why the restore target is a *different* address
 -----------------------------------------------
 Requirements 6.5 and 6.22 do not merely ask for a resolvable address, they ask
 for the address of the process doing the restoring: the snapshot's
-``server_state`` is deliberately dropped. Restoring into a bunch that already
+``server_config`` is deliberately replaced by the current deployment. Restoring into a bunch that already
 listens somewhere else is the only setup that can tell the two apart, so the
 snapshot is always written with one address and restored into another, and every
 assertion checks both directions (new address present, snapshot address absent).
@@ -241,7 +241,7 @@ def test_restored_shell_task_resolves_the_current_server_address(
     """Requirements 6.5, 6.12, 6.22: the chain reaches *this* bunch.
 
     The restored flow must hold a back reference to the bunch that restored it,
-    so ``find_parent_parameter`` walks past the flow into the server state --
+    so ``find_parent_parameter`` walks past the flow into the server config --
     and what it finds there is the current process's host and port, not the
     values the snapshot recorded.
     """
@@ -250,8 +250,8 @@ def test_restored_shell_task_resolves_the_current_server_address(
     # Guard the scenario: an assertion that the address is "current" proves
     # nothing if the snapshot happened to record the same one.
     snapshot = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-    assert snapshot["bunch"]["server_state"]["host"] == SNAPSHOT_HOST
-    assert snapshot["bunch"]["server_state"]["port"] == SNAPSHOT_PORT
+    assert snapshot["bunch"]["server_config"]["host"] == SNAPSHOT_HOST
+    assert snapshot["bunch"]["server_config"]["port"] == SNAPSHOT_PORT
     assert (SNAPSHOT_HOST, SNAPSHOT_PORT) != (CURRENT_HOST, CURRENT_PORT)
 
     assert task.get_bunch() is bunch, "the restored flow lost its bunch"

@@ -1,6 +1,7 @@
-from typing import Optional, Dict, Union, List
+from typing import Optional, Dict, Union, List, Literal
 
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel, field_validator, model_validator, ConfigDict, Field
+from pydantic_core import PydanticCustomError
 
 from takler import constant
 from takler.exceptions import (
@@ -12,7 +13,7 @@ from takler.exceptions import (
 from .node_container import NodeContainer
 from .flow import Flow
 from .node import Node
-from .state import NodeStatus
+from .state import NodeStatus, ServerStatus, HaltCause
 from .util import SerializationType
 from .event import Event
 from .meter import Meter
@@ -23,15 +24,16 @@ class Bunch(NodeContainer):
     def __init__(self, name: str = "", host: str = None, port: str = None):
         super(Bunch, self).__init__(name=name)
         self.flows: Dict[str, Flow] = dict()
-        self.server_state: ServerState = ServerState(host=host, port=port)
-        self.server_state.setup()
+        self.server_config: ServerConfig = ServerConfig(host=host, port=port)
+        self.server_state: ServerState = ServerState()
 
     # Serialization ---------------------------------------
 
     def to_dict(self) -> Dict:
-        """Serialize the bunch: the node tree, every flow, and the server state."""
+        """Serialize the node tree, deployment address, and service state."""
         result = super().to_dict()
         result["flows"] = [flow.to_dict() for key, flow in self.flows.items()]
+        result["server_config"] = self.server_config.to_dict()
         result["server_state"] = self.server_state.to_dict()
 
         return result
@@ -55,9 +57,8 @@ class Bunch(NodeContainer):
         """
         root = NodeContainer(name=d["name"])
         Node.fill_from_dict(d, root, method=SerializationType.Status)
-        # Only Node state is copied; the temporary container has neither
-        # server_state nor flows. Decode uses parse=False, so no AST retains
-        # a reference to the temporary root.
+        # Only Node state is copied; the temporary container has no service
+        # config, service state, or flows. No AST retains the temporary root.
         self.__dict__.update(vars(root))
         self.in_limit_manager.node = self
         for limit in self.limits:
@@ -173,20 +174,21 @@ class Bunch(NodeContainer):
     # Parameter ------------------------------------------------
 
     def find_generated_parameter(self, name: str) -> Optional[Parameter]:
-        p = self.server_state.find_parameter(name)
+        p = self.server_config.find_parameter(name)
         return p
 
     def generated_parameters_only(self) -> Dict[str, Parameter]:
-        return self.server_state.generated_parameters()
+        return self.server_config.generated_parameters()
 
 
-class ServerState(BaseModel):
-    server_parameters: List[Parameter] = []
+class ServerConfig(BaseModel):
+    """Deployment address and generated defaults for this server process."""
+
     host: Optional[str] = constant.DEFAULT_HOST
     port: Optional[str] = constant.DEFAULT_PORT
 
     model_config = ConfigDict(
-        arbitrary_types_allowed=True,
+        extra="forbid",
         validate_assignment=True,
     )
 
@@ -202,45 +204,86 @@ class ServerState(BaseModel):
             p = constant.DEFAULT_PORT
         return p
 
-    def setup(self):
-        self.setup_default_server_parameters()
-
-    def setup_default_server_parameters(self):
-        self.server_parameters.append(Parameter(TAKLER_HOST, self.host))
-        self.server_parameters.append(Parameter(TAKLER_PORT, self.port))
-        self.server_parameters.append(Parameter(TAKLER_HOME, "."))
-
     def find_parameter(self, name: str) -> Optional[Parameter]:
-        for p in self.server_parameters:
-            if p.name == name:
-                return p
-
-        return None
+        return self.generated_parameters().get(name)
 
     def generated_parameters(self) -> Dict[str, Parameter]:
-        params = dict()
-        for p in self.server_parameters:
-            params[p.name] = p
-        return params
+        return {
+            TAKLER_HOST: Parameter(TAKLER_HOST, self.host),
+            TAKLER_PORT: Parameter(TAKLER_PORT, self.port),
+            TAKLER_HOME: Parameter(TAKLER_HOME, "."),
+        }
 
     def to_dict(self) -> Dict:
-        params = list()
-        for param in self.server_parameters:
-            params.append(param.to_dict())
-        result = dict(
-            parameters=params,
-            host=self.host,
-            port=self.port,
-        )
-        return result
+        return {"host": self.host, "port": self.port}
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> "ServerConfig":
+        if not isinstance(d, dict) or set(d) != {"host", "port"}:
+            raise InvalidRequestError("invalid server config")
+        return cls.model_validate(d)
+
+
+class ServerState(BaseModel):
+    """Runtime scheduling state; each halt cause is released independently."""
+
+    status: ServerStatus = ServerStatus.running
+    status_reason: Optional[
+        Literal["manual pause", "recovery pending", "checkpoint failure"]
+    ] = None
+    halt_causes: List[HaltCause] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    @model_validator(mode="after")
+    def consistent(self):
+        if len(self.halt_causes) != len(set(self.halt_causes)):
+            raise PydanticCustomError(
+                "invalid_server_state", "duplicate service halt cause"
+            )
+        if self.status is ServerStatus.running:
+            if self.halt_causes or self.status_reason is not None:
+                raise PydanticCustomError(
+                    "invalid_server_state", "running service cannot have a halt reason"
+                )
+        else:
+            reasons = {
+                HaltCause.manual: "manual pause",
+                HaltCause.recovery: "recovery pending",
+                HaltCause.checkpoint_failure: "checkpoint failure",
+            }
+            expected = next(
+                (
+                    reasons[cause]
+                    for cause in (
+                        HaltCause.checkpoint_failure,
+                        HaltCause.recovery,
+                        HaltCause.manual,
+                    )
+                    if cause in self.halt_causes
+                ),
+                None,
+            )
+            if self.status_reason != expected:
+                raise PydanticCustomError(
+                    "invalid_server_state",
+                    "halted service reason does not match causes",
+                )
+        return self
+
+    def to_dict(self) -> Dict:
+        return {
+            "status": self.status.value,
+            "status_reason": self.status_reason,
+            "halt_causes": [cause.value for cause in self.halt_causes],
+        }
 
     @classmethod
     def from_dict(cls, d: Dict) -> "ServerState":
-        params = list()
-        for p in d["parameters"]:
-            params.append(Parameter.from_dict(p))
-        return cls(
-            host=d["host"],
-            port=d["port"],
-            server_parameters=params,
-        )
+        if not isinstance(d, dict) or set(d) != {
+            "status",
+            "status_reason",
+            "halt_causes",
+        }:
+            raise InvalidRequestError("invalid server state")
+        return cls.model_validate(d)

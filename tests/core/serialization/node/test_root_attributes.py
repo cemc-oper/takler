@@ -34,12 +34,12 @@ def test_bunch_restores_all_stored_root_attributes_and_references():
 def test_restore_root_replaces_attributes_and_preserves_deployment_and_flows():
     bunch = Bunch(host="current.invalid", port="9000")
     flow = bunch.add_flow("existing")
-    deployment = bunch.server_state
+    deployment = bunch.server_config
     data = json.loads(FIXTURE.read_text())["bunch"]
     for _ in range(2):
         bunch.restore_root_attributes(data)
         assert len(bunch.events) == len(bunch.limits) == len(bunch.times) == 1
-        assert bunch.server_state is deployment
+        assert bunch.server_config is deployment
         assert bunch.flows == {"existing": flow}
         assert flow.bunch is bunch
     bunch.restore_root_attributes(

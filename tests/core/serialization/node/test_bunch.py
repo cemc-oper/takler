@@ -58,15 +58,8 @@ def test_bunch_to_dict(bunch_case):
         name="bunch1",
         type_id="takler.bunch",
         state=dict(status=1, suspended=False),
-        server_state=dict(
-            host="host1",
-            port="port1",
-            parameters=[
-                dict(name="TAKLER_HOST", value="host1"),
-                dict(name="TAKLER_PORT", value="port1"),
-                dict(name="TAKLER_HOME", value="."),
-            ],
-        ),
+        server_config=dict(host="host1", port="port1"),
+        server_state=dict(status="running", status_reason=None, halt_causes=[]),
         flows=[
             dict(
                 name="flow1",
@@ -156,15 +149,8 @@ def test_bunch_from_dict(bunch_case):
         name="bunch1",
         type_id="takler.bunch",
         state=dict(status=1, suspended=False),
-        server_state=dict(
-            host="host1",
-            port="port1",
-            parameters=[
-                dict(name="TAKLER_HOST", value="host1"),
-                dict(name="TAKLER_PORT", value="port1"),
-                dict(name="TAKLER_HOME", value="."),
-            ],
-        ),
+        server_config=dict(host="host1", port="port1"),
+        server_state=dict(status="running", status_reason=None, halt_causes=[]),
         flows=[
             dict(
                 name="flow1",

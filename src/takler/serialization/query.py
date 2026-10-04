@@ -57,8 +57,12 @@ def project_show(bunch, redacted_parameters=()):
         )
         generated = {}
         if isinstance(node, Bunch):
+            result["server_state"] = node.server_state.to_dict()
             generated.update(
-                {p.name: p.value for p in node.server_state.server_parameters}
+                {
+                    name: p.value
+                    for name, p in node.server_config.generated_parameters().items()
+                }
             )
         if node.repeat is not None:
             r = node.repeat.r

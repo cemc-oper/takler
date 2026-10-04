@@ -419,8 +419,8 @@ def test_restarting_on_the_same_address_reports_a_matching_address(
     assert len(address_lines) == 1, f"expected one address record, got {address_lines}"
     assert "INFO" in address_lines[0]
     assert HOST in address_lines[0]
-    assert str(server.bunch.server_state.port) in address_lines[0]
+    assert str(server.bunch.server_config.port) in address_lines[0]
 
     # Requirement 6.5 / 6.22: the address announced to jobs is this process's,
     # not a value read back out of the snapshot.
-    assert server.bunch.server_state.host == HOST
+    assert server.bunch.server_config.host == HOST

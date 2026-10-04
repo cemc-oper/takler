@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from takler.core import Bunch, Flow, Task
-from takler.core.parameter import Parameter
+from takler.core import Bunch, Flow, Task, HaltCause, ServerStatus
+from takler.core.bunch import ServerState
 from takler.core.repeat import RepeatDate
 from takler.query import parse_show
 from takler.server.connect_config import ConnectConfig
@@ -24,9 +24,7 @@ def test_projection_filters_all_parameter_sources_without_mutation(
     bunch = Bunch()
     bunch.add_parameter("ROOT", "retained")
     bunch.add_parameter("TAKLER_PASS", "ROOT_SECRET")
-    bunch.server_state.server_parameters.append(
-        Parameter("operator_secret", "SERVER_SECRET")
-    )
+    bunch.add_parameter("operator_secret", "SERVER_SECRET")
     flow = bunch.add_flow(Flow("flow"))
     task = ShellScriptTask("task", script_path=tmp_path / "task.takler")
     flow.append_child(task)
@@ -101,6 +99,28 @@ def test_custom_type_does_not_require_query_or_definition_codec():
     snapshot = parse_show(output)
     assert snapshot.get("/f/t").type_id == "acme.custom"
     assert snapshot.get("/f/t").node_kind == "task"
+
+
+def test_show_separates_service_status_from_node_status_and_keeps_root_parameters():
+    bunch = Bunch(host="login02", port="44084")
+    bunch.add_parameter("TAKLER_HOME", "/jobs")
+    bunch.server_state = ServerState(
+        status=ServerStatus.halted,
+        status_reason="manual pause",
+        halt_causes=[HaltCause.manual],
+    )
+    bunch.add_flow(Flow("f")).add_task("t")
+
+    payload = project_show(bunch)
+    assert payload["server_state"] == {
+        "status": "halted",
+        "status_reason": "manual pause",
+        "halt_causes": ["manual"],
+    }
+    assert payload["state"]["status"] == 1
+    snapshot = parse_show(json.dumps(payload))
+    assert snapshot.lookup_parameter("/f/t", "TAKLER_HOST") == "login02"
+    assert snapshot.lookup_parameter("/f/t", "TAKLER_HOME") == "/jobs"
 
 
 def test_unregistered_local_task_still_has_generic_view():

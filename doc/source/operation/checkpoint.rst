@@ -31,7 +31,8 @@ takler 服务把整棵节点树的状态定期快照到**检查点文件**，重
       - 整棵节点树的状态序列化：节点状态、 ``suspended`` 、event 与
         meter 的当前值、limit 的计数、repeat 计数、时间属性的 free
         闩锁、task 的 ``task_id`` / ``try_no`` / ``aborted_reason``
-        、flow 的 ``begun`` 标志与 calendar
+        、flow 的 ``begun`` 标志与 calendar；根节点的 ``server_config``
+        仅记录历史 host/port， ``server_state`` 记录独立的服务运行状态
     * - ``job_passwords``
       - 「节点路径 → 作业一次性口令」映射，只收录状态为 submitted 或
         active 且口令非空的 task
@@ -46,8 +47,11 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 （见 :doc:`/operation/zombie` ）。complete 与 aborted 任务的口令不持久化
 ——它们的运行已结束，对口令的上报无论如何都会命中 ``Z2`` 。
 
-快照中的服务地址（ ``server_state`` ）在恢复时被丢弃， ``TAKLER_HOST`` /
-``TAKLER_PORT`` 始终宣告当前进程，而不是写快照的那个进程。
+快照中的历史服务地址（ ``server_config`` ）在恢复时被丢弃，
+``TAKLER_HOST`` / ``TAKLER_PORT`` 始终宣告当前进程。快照中的
+``server_state`` 则恢复为服务运行状态，其 ``status`` 是独立于节点
+状态的 ``running`` 或 ``halted`` ，并带安全的原因摘要与暂停原因集合。
+服务状态转换和恢复启动暂停的完整行为将在 R1 后续任务接入。
 
 原子写与备份文件
 ----------------
@@ -119,11 +123,13 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 ``trigger_free`` / ``complete_trigger_free`` 保存 free-dep 的运行效果，
 v2 必须显式保存这两个字段及完成触发锁存；缺失时拒绝恢复。
 
-checkpoint 恢复保留当前 ``server_state`` 对象及部署配置，不使用快照旧值替换
-host/port、服务器参数或当前 TLS/auth 等配置。快照中根或子节点的用户参数
+checkpoint 恢复保留当前 ``server_config`` 对象及部署配置，从快照恢复
+``server_state``；不使用快照旧值替换 host/port 或当前 TLS/auth 等配置。
+快照中根或子节点的用户参数
 ``TAKLER_HOST`` / ``TAKLER_PORT`` 覆盖项被移除并记录不含值的冲突警告，
 使继承得到当前服务地址；显式用户 ``TAKLER_HOME`` 和其他业务参数保持原值。
-独立 ``Bunch.from_dict`` 没有在线部署上下文，仍恢复其字典中的 server_state。
+独立 ``Bunch.from_dict`` 没有在线部署上下文，恢复字典中的
+``server_config`` 和 ``server_state`` 。
 
 在途口令完整性在提交临时树之前强制校验，不因关闭认证而跳过。
 恢复之后还会进行地址诊断：

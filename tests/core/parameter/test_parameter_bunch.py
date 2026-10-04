@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from takler.core import Parameter, parameter, Bunch
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
-from takler.core.bunch import ServerState
+from takler.core.bunch import ServerConfig
 from .conftest import FlowWithParameter
 
 
@@ -26,22 +26,20 @@ def bunch_with_parameter(flow_with_parameter) -> BunchWithParameter:
 
 
 # ----------------------
-# ServerState
+# ServerConfig
 # ----------------------
 
 
-def test_server_state_create_default():
-    server_state = ServerState()
-    assert server_state.host == DEFAULT_HOST
-    assert server_state.port == DEFAULT_PORT
-    assert server_state.server_parameters == []
+def test_server_config_create_default():
+    config = ServerConfig()
+    assert config.host == DEFAULT_HOST
+    assert config.port == DEFAULT_PORT
 
 
-def test_server_state_create_with_options():
-    server_state = ServerState(host="192.168.1.2", port="8080")
-    assert server_state.host == "192.168.1.2"
-    assert server_state.port == "8080"
-    assert server_state.server_parameters == []
+def test_server_config_create_with_options():
+    config = ServerConfig(host="192.168.1.2", port="8080")
+    assert config.host == "192.168.1.2"
+    assert config.port == "8080"
 
 
 @pytest.mark.parametrize(
@@ -52,59 +50,53 @@ def test_server_state_create_with_options():
         (127, 8080),
     ],
 )
-def test_server_state_create_with_invalid_type(host, port):
+def test_server_config_create_with_invalid_type(host, port):
     with pytest.raises(ValidationError):
-        ServerState(host=host, port=port)
+        ServerConfig(host=host, port=port)
 
 
-def test_server_state_set_host():
-    server_state = ServerState()
-    server_state.host = "192.168.1.2"
-    assert server_state.host == "192.168.1.2"
+def test_server_config_set_host():
+    config = ServerConfig()
+    config.host = "192.168.1.2"
+    assert config.host == "192.168.1.2"
 
-    server_state.host = None
-    assert server_state.host == DEFAULT_HOST
-
-    with pytest.raises(ValidationError):
-        server_state.host = 12345
-
-
-def test_server_state_set_port():
-    server_state = ServerState()
-    server_state.port = "8080"
-    assert server_state.port == "8080"
-
-    server_state.port = None
-    assert server_state.port == DEFAULT_PORT
+    config.host = None
+    assert config.host == DEFAULT_HOST
 
     with pytest.raises(ValidationError):
-        server_state.port = 8080
+        config.host = 12345
 
 
-def test_server_state_setup():
-    server_state = ServerState()
-    server_state.setup()
+def test_server_config_set_port():
+    config = ServerConfig()
+    config.port = "8080"
+    assert config.port == "8080"
 
-    assert len(server_state.server_parameters) == 3
-    assert server_state.server_parameters[0] == Parameter(
-        parameter.TAKLER_HOST, server_state.host
+    config.port = None
+    assert config.port == DEFAULT_PORT
+
+    with pytest.raises(ValidationError):
+        config.port = 8080
+
+
+def test_server_config_generated_parameters():
+    config = ServerConfig()
+    assert config.generated_parameters() == {
+        parameter.TAKLER_HOST: Parameter(parameter.TAKLER_HOST, config.host),
+        parameter.TAKLER_PORT: Parameter(parameter.TAKLER_PORT, config.port),
+        parameter.TAKLER_HOME: Parameter(parameter.TAKLER_HOME, "."),
+    }
+
+
+def test_server_config_find_parameter():
+    config = ServerConfig(host="192.168.1.2", port="8080")
+    assert config.find_parameter(parameter.TAKLER_HOST) == Parameter(
+        parameter.TAKLER_HOST, config.host
     )
-    assert server_state.server_parameters[1] == Parameter(
-        parameter.TAKLER_PORT, server_state.port
+    assert config.find_parameter(parameter.TAKLER_PORT) == Parameter(
+        parameter.TAKLER_PORT, config.port
     )
-    assert server_state.server_parameters[2] == Parameter(parameter.TAKLER_HOME, ".")
-
-
-def test_server_state_find_parameter():
-    server_state = ServerState(host="192.168.1.2", port="8080")
-    server_state.setup()
-    assert server_state.find_parameter(parameter.TAKLER_HOST) == Parameter(
-        parameter.TAKLER_HOST, server_state.host
-    )
-    assert server_state.find_parameter(parameter.TAKLER_PORT) == Parameter(
-        parameter.TAKLER_PORT, server_state.port
-    )
-    assert server_state.find_parameter(parameter.TAKLER_HOME) == Parameter(
+    assert config.find_parameter(parameter.TAKLER_HOME) == Parameter(
         parameter.TAKLER_HOME, "."
     )
 

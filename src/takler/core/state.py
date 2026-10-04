@@ -60,6 +60,21 @@ class NodeStatus(OrderedEnum):
     aborted = 6
 
 
+class ServerStatus(Enum):
+    """Service scheduling status, independent of ordered node statuses."""
+
+    running = "running"
+    halted = "halted"
+
+
+class HaltCause(str, Enum):
+    """Reasons that must be cleared independently before scheduling resumes."""
+
+    manual = "manual"
+    recovery = "recovery"
+    checkpoint_failure = "checkpoint_failure"
+
+
 class State:
     """
     The state of a Node, include node status and other attributes.

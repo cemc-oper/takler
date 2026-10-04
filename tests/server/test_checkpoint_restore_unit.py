@@ -3,7 +3,7 @@
 Task 8.5 of the *m1-operational-baseline* spec adds ``restore`` /
 ``_load_snapshot`` / ``_restore_into_bunch``. This file pins what is restored
 (status and runtime state of every node, ``begun`` plus the calendar of every
-flow), what is deliberately *not* restored (the snapshot's ``server_state``),
+flow), what is deliberately *not* restored (the snapshot's ``server_config``),
 the fallback chain Checkpoint_File -> Checkpoint_Backup_File -> empty bunch, the
 format-version rules and the "skip one broken flow, keep the rest" behaviour.
 
@@ -255,7 +255,7 @@ def test_restore_does_not_requeue(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The snapshot's server_state is discarded (Requirements 6.5, 6.22)
+# The snapshot's server_config is discarded (Requirements 6.5, 6.22)
 # ---------------------------------------------------------------------------
 
 
@@ -265,8 +265,8 @@ def test_restore_keeps_the_current_process_host_and_port(tmp_path):
 
     manager.restore()
 
-    assert manager.bunch.server_state.host == "login02"
-    assert manager.bunch.server_state.port == "44084"
+    assert manager.bunch.server_config.host == "login02"
+    assert manager.bunch.server_config.port == "44084"
     flow1 = manager.bunch.find_flow("flow1")
     assert flow1.find_parent_parameter(TAKLER_HOST).value == "login02"
     assert flow1.find_parent_parameter(TAKLER_PORT).value == "44084"

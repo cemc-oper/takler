@@ -189,8 +189,8 @@ def test_verification_never_writes_the_snapshot_address_back(tmp_path):
 
     manager.restore()
 
-    assert manager.bunch.server_state.host == "login02"
-    assert manager.bunch.server_state.port == "44084"
+    assert manager.bunch.server_config.host == "login02"
+    assert manager.bunch.server_config.port == "44084"
     flow = manager.bunch.find_flow("flow1")
     assert flow.find_parent_parameter(TAKLER_HOST).value == "login02"
     assert flow.find_parent_parameter(TAKLER_PORT).value == "44084"
@@ -206,7 +206,7 @@ def test_verification_does_not_change_any_node_status(tmp_path):
     assert manager.bunch.find_flow("flow1").to_dict() == before
 
 
-def test_a_snapshot_without_a_server_state_does_not_raise(tmp_path):
+def test_a_snapshot_without_a_server_config_does_not_raise(tmp_path):
     """Requirement 6.21: a missing address is reported, never a startup failure."""
     manager = _restore_into(tmp_path, in_flight=False, host="login02", port="44084")
 
