@@ -23,8 +23,9 @@ validating locally would diverge the two clients -- a job script's
 
 Conversions worth knowing about:
 
-* The proto's ``ChildCommandOptions`` wrapper is flattened: its ``node_path``
-  becomes the DTO's own field, and is rebuilt on the way out.
+* The proto's ``ChildCommandOptions`` wrapper is flattened: ``node_path``,
+  ``attempt_id`` and ``source_task_path`` become DTO fields and are rebuilt
+  on the way out.
 * ``MeterCommand.meter_value`` travels as a string on the wire; handing it to
   the DTO unchanged lets pydantic's ``int`` coercion reproduce the ``int()``
   call the scheduler used to do.
@@ -93,17 +94,22 @@ GRPC_METHOD_BY_COMMAND: Dict[Command, str] = {
 def _init(message) -> commands.InitCommand:
     return commands.InitCommand(
         node_path=message.child_options.node_path,
+        attempt_id=message.child_options.attempt_id,
         task_id=message.task_id,
     )
 
 
 def _complete(message) -> commands.CompleteCommand:
-    return commands.CompleteCommand(node_path=message.child_options.node_path)
+    return commands.CompleteCommand(
+        node_path=message.child_options.node_path,
+        attempt_id=message.child_options.attempt_id,
+    )
 
 
 def _abort(message) -> commands.AbortCommand:
     return commands.AbortCommand(
         node_path=message.child_options.node_path,
+        attempt_id=message.child_options.attempt_id,
         reason=message.reason,
     )
 
@@ -111,6 +117,8 @@ def _abort(message) -> commands.AbortCommand:
 def _event(message) -> commands.EventCommand:
     return commands.EventCommand(
         node_path=message.child_options.node_path,
+        attempt_id=message.child_options.attempt_id,
+        source_task_path=message.child_options.source_task_path,
         event_name=message.event_name,
     )
 
@@ -121,6 +129,8 @@ def _meter(message) -> commands.MeterCommand:
     decimal(message.meter_value)
     return commands.MeterCommand(
         node_path=message.child_options.node_path,
+        attempt_id=message.child_options.attempt_id,
+        source_task_path=message.child_options.source_task_path,
         meter_name=message.meter_name,
         meter_value=message.meter_value,
     )
@@ -264,7 +274,11 @@ def response_to_pb2(response: ProtocolModel):
 
 def _child_options(payload: Mapping[str, Any]):
     """Rebuild the proto's ``ChildCommandOptions`` wrapper from the payload."""
-    return takler_pb2.ChildCommandOptions(node_path=payload["node_path"])
+    return takler_pb2.ChildCommandOptions(
+        node_path=payload["node_path"],
+        attempt_id=payload["attempt_id"],
+        source_task_path=payload.get("source_task_path", ""),
+    )
 
 
 def _init_to_pb2(payload):

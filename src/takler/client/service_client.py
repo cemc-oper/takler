@@ -312,72 +312,142 @@ class TaklerServiceClient:
 
     # Child command -------------------------------------------------
 
-    def init(self, node_path: str, task_id: str):
+    def init(self, node_path: str, task_id: str, attempt_id: str = ""):
+        self._check_attempt_id(attempt_id)
         return self._guarded(
-            lambda: self.run_command_init(node_path=node_path, task_id=task_id)
+            lambda: self.run_command_init(
+                node_path=node_path, task_id=task_id, attempt_id=attempt_id
+            )
         )
 
-    def run_command_init(self, node_path: str, task_id: str):
+    def run_command_init(self, node_path: str, task_id: str, attempt_id: str = ""):
+        self._check_attempt_id(attempt_id)
         response = self.transport.call(
             Command.INIT,
-            {"node_path": node_path, "task_id": task_id},
+            {"node_path": node_path, "task_id": task_id, "attempt_id": attempt_id},
         )
         self._print_response(response)
         return response
 
-    def complete(self, node_path: str):
-        return self._guarded(lambda: self.run_command_complete(node_path=node_path))
+    @staticmethod
+    def _check_attempt_id(attempt_id: str) -> None:
+        from uuid import UUID
 
-    def run_command_complete(self, node_path: str):
+        from takler.exceptions import InvalidRequestError
+
+        try:
+            if not attempt_id or str(UUID(attempt_id)) != attempt_id:
+                raise ValueError
+        except (ValueError, AttributeError):
+            raise InvalidRequestError("invalid or missing attempt_id") from None
+
+    def complete(self, node_path: str, attempt_id: str = ""):
+        self._check_attempt_id(attempt_id)
+        return self._guarded(
+            lambda: self.run_command_complete(
+                node_path=node_path, attempt_id=attempt_id
+            )
+        )
+
+    def run_command_complete(self, node_path: str, attempt_id: str = ""):
+        self._check_attempt_id(attempt_id)
         response = self.transport.call(
             Command.COMPLETE,
-            {"node_path": node_path},
+            {"node_path": node_path, "attempt_id": attempt_id},
         )
         self._print_response(response)
         return response
 
-    def abort(self, node_path: str, reason: str):
+    def abort(self, node_path: str, reason: str, attempt_id: str = ""):
+        self._check_attempt_id(attempt_id)
         return self._guarded(
-            lambda: self.run_command_abort(node_path=node_path, reason=reason)
+            lambda: self.run_command_abort(
+                node_path=node_path, reason=reason, attempt_id=attempt_id
+            )
         )
 
-    def run_command_abort(self, node_path: str, reason: str):
+    def run_command_abort(self, node_path: str, reason: str, attempt_id: str = ""):
+        self._check_attempt_id(attempt_id)
         response = self.transport.call(
             Command.ABORT,
-            {"node_path": node_path, "reason": reason},
+            {"node_path": node_path, "reason": reason, "attempt_id": attempt_id},
         )
         self._print_response(response)
         return response
 
-    def event(self, node_path: str, event_name: str):
+    def event(
+        self,
+        node_path: str,
+        event_name: str,
+        attempt_id: str = "",
+        source_task_path: str = "",
+    ):
+        self._check_attempt_id(attempt_id)
         return self._guarded(
-            lambda: self.run_command_event(node_path=node_path, event_name=event_name)
+            lambda: self.run_command_event(
+                node_path=node_path,
+                event_name=event_name,
+                attempt_id=attempt_id,
+                source_task_path=source_task_path,
+            )
         )
 
-    def run_command_event(self, node_path: str, event_name: str):
+    def run_command_event(
+        self,
+        node_path: str,
+        event_name: str,
+        attempt_id: str = "",
+        source_task_path: str = "",
+    ):
+        self._check_attempt_id(attempt_id)
         response = self.transport.call(
             Command.EVENT,
-            {"node_path": node_path, "event_name": event_name},
+            {
+                "node_path": node_path,
+                "event_name": event_name,
+                "attempt_id": attempt_id,
+                "source_task_path": source_task_path or node_path,
+            },
         )
         self._print_response(response)
         return response
 
-    def meter(self, node_path: str, meter_name: str, meter_value: str):
+    def meter(
+        self,
+        node_path: str,
+        meter_name: str,
+        meter_value: str,
+        attempt_id: str = "",
+        source_task_path: str = "",
+    ):
+        self._check_attempt_id(attempt_id)
         return self._guarded(
             lambda: self.run_command_meter(
                 node_path=node_path,
                 meter_name=meter_name,
                 meter_value=meter_value,
+                attempt_id=attempt_id,
+                source_task_path=source_task_path,
             )
         )
 
-    def run_command_meter(self, node_path: str, meter_name: str, meter_value: str):
+    def run_command_meter(
+        self,
+        node_path: str,
+        meter_name: str,
+        meter_value: str,
+        attempt_id: str = "",
+        source_task_path: str = "",
+    ):
+        self._check_attempt_id(attempt_id)
         response = self.transport.call(
             Command.METER,
             {
                 "node_path": node_path,
                 "meter_name": meter_name,
                 "meter_value": meter_value,
+                "attempt_id": attempt_id,
+                "source_task_path": source_task_path or node_path,
             },
         )
         self._print_response(response)

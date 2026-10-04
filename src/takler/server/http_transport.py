@@ -49,6 +49,7 @@ than degrading to plaintext.
 from __future__ import annotations
 
 import socket
+import json
 from typing import Callable, Dict, Optional
 
 import uvicorn
@@ -57,7 +58,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from takler.logging import get_logger
 from takler.protocol.commands import Command
 from takler.protocol.envelope import Envelope
-from takler.protocol.wire import decode_envelope, is_json_content_type, WireError
+from takler.protocol.wire import (
+    decode_envelope,
+    is_json_content_type,
+    strict_json,
+    WireError,
+)
 from takler.server.audit import AuditLogger
 from takler.server.auth import (
     SERVICE_METHOD_PREFIX,
@@ -211,7 +217,20 @@ def create_app(
         if not is_json_content_type(request.headers.get("content-type", "")):
             raise HTTPException(status_code=415, detail="expected application/json")
         try:
-            data = decode_envelope(await request.body(), direction="request")
+            raw = await request.body()
+            # Preserve strict wire validation for every other field, while a
+            # missing child identity reaches the business error code 32.
+            document = strict_json(raw)
+            if (
+                type(document) is dict
+                and document.get("command")
+                in {"init", "complete", "abort", "event", "meter"}
+                and type(document.get("payload")) is dict
+                and "attempt_id" not in document["payload"]
+            ):
+                document["payload"]["attempt_id"] = ""
+                raw = json.dumps(document).encode("utf-8")
+            data = decode_envelope(raw, direction="request")
             envelope = Envelope.model_validate(data)
             parsed = envelope.parse_request()
         except (WireError, ValueError):

@@ -60,18 +60,15 @@ import takler.logging
 from takler.serialization import export_definition
 from takler.core import Bunch, Flow
 from takler.core.state import NodeStatus
-from takler.exceptions import ZombieError
 from takler.logging import backends as logging_backends
 from takler.server.audit import (
     AUDIT_FILE_MODE,
     DENIED_ERROR_CODE,
     EVENT_CONTROL,
     EVENT_DENIED,
-    EVENT_ZOMBIE,
     OUTCOME_DENIED,
     OUTCOME_ERROR,
     OUTCOME_SUCCESS,
-    OUTCOME_ZOMBIE,
     UNKNOWN_USER,
     AuditLogger,
 )
@@ -658,7 +655,7 @@ def test_rejection_writes_exactly_one_denied_record(
 
 
 def make_zombie_scheduler(audit_file: str, policy: ZombiePolicy) -> Scheduler:
-    """A scheduler whose ``/flow1/task3`` is queued, so ``complete`` hits Z2."""
+    """A scheduler whose ``/flow1/task3`` can be submitted for a child report."""
     detector = ZombieDetector(
         auth_mode=AuthMode.DISABLED,
         zombie_policy=policy,
@@ -667,46 +664,30 @@ def make_zombie_scheduler(audit_file: str, policy: ZombiePolicy) -> Scheduler:
     return make_scheduler(zombie_detector=detector)
 
 
-@pytest.mark.parametrize(
-    "policy, expected_error_code, raises",
-    [
-        pytest.param(ZombiePolicy.FAIL, 31, True, id="fail"),
-        pytest.param(ZombiePolicy.FOB, 0, False, id="fob"),
-        pytest.param(ZombiePolicy.ADOPT, 0, False, id="adopt"),
-    ],
-)
-def test_zombie_disposition_writes_exactly_one_record(
+@pytest.mark.parametrize("policy", list(ZombiePolicy))
+def test_stale_attempt_is_rejected_before_zombie_disposition(
     logging_backend,
     tmp_path: Path,
     policy: ZombiePolicy,
-    expected_error_code: int,
-    raises: bool,
 ) -> None:
-    """Every disposition leaves one ``zombie`` record, whichever policy applied.
-
-    ``fob`` is why this matters: the client is answered ``flag=0`` and has no
-    way to learn its report was dropped, so the record is the only place the
-    disposition is visible.
-
-    Validates: Requirements 11.4, 11.6, 11.7, 11.9
-    """
+    """Neither fob nor adopt may consume a report of an unknown attempt."""
     audit_file = str(tmp_path / "audit.jsonl")
     scheduler = make_zombie_scheduler(audit_file, policy)
+    task3 = scheduler.bunch.find_node(TASK3)
+    task3.run()
 
     def action() -> None:
-        scheduler.run_command_complete(CompleteCommand(node_path=TASK3))
+        scheduler.run_command_complete(
+            CompleteCommand(
+                node_path=TASK3, attempt_id="123e4567-e89b-42d3-a456-426614174000"
+            )
+        )
 
-    captured = capture(
-        raising(action, ZombieError) if raises else action, audit_file=audit_file
-    )
+    from takler.exceptions import AttemptMismatchError
 
-    record = captured.record
-    assert record["event"] == EVENT_ZOMBIE
-    assert record["outcome"] == OUTCOME_ZOMBIE
-    assert record["error_code"] == expected_error_code
-    assert record["command"] == "complete"
-    assert record["target"] == [TASK3]
-    assert record["user"] == UNKNOWN_USER
+    captured = capture(raising(action, AttemptMismatchError), audit_file=audit_file)
+    assert captured.audit_lines == []
+    assert task3.state.node_status is NodeStatus.submitted
 
 
 def test_a_clean_child_command_writes_no_record(
@@ -722,7 +703,9 @@ def test_a_clean_child_command_writes_no_record(
     task3.run()  # -> submitted, so ``complete`` hits nothing
 
     captured = capture(
-        lambda: scheduler.run_command_complete(CompleteCommand(node_path=TASK3)),
+        lambda: scheduler.run_command_complete(
+            CompleteCommand(node_path=TASK3, attempt_id=task3.attempt_id)
+        ),
         audit_file=audit_file,
     )
 
@@ -743,13 +726,19 @@ def test_the_zombie_record_carries_no_job_password(
     node_password = task3.job_password
     assert node_password  # the run generated one; only read inside assertions
     call_password = "call-password-0123456789abcdef"
-    # Back to complete, so the stale ``complete`` below hits Z2.
-    task3.set_node_status(NodeStatus.complete)
+    # A password mismatch on this same live attempt is still a zombie.
+    scheduler.zombie_detector = ZombieDetector(
+        auth_mode=AuthMode.ENABLED,
+        zombie_policy=ZombiePolicy.ADOPT,
+        audit_logger=AuditLogger(audit_file),
+    )
     token = set_call_credentials(CallCredentials(job_password=call_password))
 
     try:
         captured = capture(
-            lambda: scheduler.run_command_complete(CompleteCommand(node_path=TASK3)),
+            lambda: scheduler.run_command_complete(
+                CompleteCommand(node_path=TASK3, attempt_id=task3.attempt_id)
+            ),
             audit_file=audit_file,
         )
     finally:

@@ -200,13 +200,24 @@ def test_all_commands_over_the_wire(takler_server, tmp_path: Path):
         assert task1.state.node_status == NodeStatus.submitted
 
         # -- Child: init ------------------------------------------------
-        log.command("init", client.run_command_init(node_path=TASK1, task_id="job-42"))
+        log.command(
+            "init",
+            client.run_command_init(
+                node_path=TASK1, task_id="job-42", attempt_id=task1.attempt_id
+            ),
+        )
         assert task1.state.node_status == NodeStatus.active
         assert task1.task_id == "job-42"
 
         # -- Child: event -----------------------------------------------
         log.command(
-            "event", client.run_command_event(node_path=TASK1, event_name="event_a")
+            "event",
+            client.run_command_event(
+                node_path=TASK1,
+                event_name="event_a",
+                attempt_id=task1.attempt_id,
+                source_task_path=TASK1,
+            ),
         )
         assert task1.find_event("event_a").value is True
 
@@ -214,13 +225,20 @@ def test_all_commands_over_the_wire(takler_server, tmp_path: Path):
         log.command(
             "meter",
             client.run_command_meter(
-                node_path=TASK1, meter_name="meter_a", meter_value="5"
+                node_path=TASK1,
+                meter_name="meter_a",
+                meter_value="5",
+                attempt_id=task1.attempt_id,
+                source_task_path=TASK1,
             ),
         )
         assert task1.find_meter("meter_a").value == 5
 
         # -- Child: complete --------------------------------------------
-        log.command("complete", client.run_command_complete(node_path=TASK1))
+        log.command(
+            "complete",
+            client.run_command_complete(node_path=TASK1, attempt_id=task1.attempt_id),
+        )
         assert task1.state.node_status == NodeStatus.complete
 
         # -- Child: abort -----------------------------------------------
@@ -228,7 +246,12 @@ def test_all_commands_over_the_wire(takler_server, tmp_path: Path):
         # Child_Command, so it only belongs to a task that has a job.
         log.command("run", client.run_command_run(node_path=[TASK3], force=False))
         assert task3.state.node_status == NodeStatus.submitted
-        log.command("abort", client.run_command_abort(node_path=TASK3, reason="boom"))
+        log.command(
+            "abort",
+            client.run_command_abort(
+                node_path=TASK3, reason="boom", attempt_id=task3.attempt_id
+            ),
+        )
         assert task3.state.node_status == NodeStatus.aborted
         assert task3.aborted_reason == "boom"
 

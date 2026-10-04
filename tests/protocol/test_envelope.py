@@ -74,13 +74,21 @@ def test_unknown_envelope_field_is_rejected():
 def test_for_request_builds_the_payload():
     envelope = Envelope.for_request(
         Command.METER,
-        MeterCommand(node_path="/flow1/task1", meter_name="step", meter_value=10),
+        MeterCommand(
+            node_path="/flow1/task1",
+            meter_name="step",
+            meter_value=10,
+            attempt_id="123e4567-e89b-42d3-a456-426614174000",
+            source_task_path="/flow1/task1",
+        ),
     )
     assert envelope.command is Command.METER
     assert envelope.payload == {
         "node_path": "/flow1/task1",
         "meter_name": "step",
         "meter_value": "10",
+        "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+        "source_task_path": "/flow1/task1",
     }
 
 

@@ -319,7 +319,10 @@ async def drive(service: GrpcTransport, password: str) -> Tuple[List[str], str]:
         The ``message`` of every command issued, and the ``show`` output.
     """
     messages: List[str] = []
-    options = takler_pb2.ChildCommandOptions(node_path=TASK_PATH)
+    options = takler_pb2.ChildCommandOptions(
+        node_path=TASK_PATH,
+        attempt_id=service.scheduler.bunch.find_node(TASK_PATH).attempt_id,
+    )
     context = FakeContext()
 
     with credentials_of(password=password):
@@ -336,14 +339,13 @@ async def drive(service: GrpcTransport, password: str) -> Tuple[List[str], str]:
         NodeStatus.complete
     )
 
-    # The refusal path: the task is complete, so a further report hits ``Z2``
-    # and the ``fail`` policy answers with a message built from the exception.
+    # A completed attempt rejects a further report before zombie policy.
     with credentials_of(password=STALE_PASSWORD):
         refused = await service.RunCommandComplete(
             takler_pb2.CompleteCommand(child_options=options), context
         )
     messages.append(refused.message)
-    assert refused.flag == ZOMBIE_FLAG
+    assert refused.flag == 32
 
     with credentials_of(secret=OPERATOR_SECRET, user=OPERATOR_USER):
         suspend = await service.RunCommandSuspend(
@@ -423,10 +425,7 @@ def test_no_surface_contains_the_job_password(password: str) -> None:
 
     # Non-vacuity: every surface really carries this run.
     assert TASK_PATH in surfaces.log_file
-    assert [record["outcome"] for record in surfaces.audit_records] == [
-        "zombie",
-        "success",
-    ]
+    assert [record["outcome"] for record in surfaces.audit_records] == ["success"]
     assert USER_PARAMETER_VALUE in surfaces.show_output
     assert TASK_ID in surfaces.serialized_task
     assert TASK_PATH in surfaces.messages[2]

@@ -494,8 +494,8 @@ def call_credentials(credentials: CallCredentials):
         reset_call_credentials(token)
 
 
-def test_adopt_of_a_z3_init_adopts_the_job_id_and_the_password():
-    """Requirement 10.7: the ``init`` runs, so it records the new job id."""
+def test_adopt_cannot_override_a_same_attempt_rid_conflict():
+    """A conflicting RID is rejected even when zombie policy is adopt."""
     # ``Auth_Mode=disabled`` is what isolates ``Z3`` here: with authentication
     # on, the stale password of the second job would hit ``Z1`` first, which is
     # the order test above.
@@ -512,14 +512,17 @@ def test_adopt_of_a_z3_init_adopts_the_job_id_and_the_password():
             scheduler.zombie_detector.detect(task, "init", "job-2")
             is ZombieCondition.Z3
         )
-        asyncio.run(
-            scheduler.run_command_init(
-                InitCommand(node_path=TASK_PATH, task_id="job-2")
+        with pytest.raises(ZombieError):
+            asyncio.run(
+                scheduler.run_command_init(
+                    InitCommand(
+                        node_path=TASK_PATH, task_id="job-2", attempt_id=task.attempt_id
+                    )
+                )
             )
-        )
 
-    assert task.task_id == "job-2"
-    assert task.job_password == CALL_PASSWORD
+    assert task.task_id == "job-1"
+    assert task.job_password == NODE_PASSWORD
     assert task.state.node_status is NodeStatus.active
 
 
@@ -540,7 +543,9 @@ def test_a_command_of_the_current_run_executes_and_keeps_the_password():
 
     with call_credentials(CallCredentials(job_password=NODE_PASSWORD)):
         # No exception: the RPC boundary answers a returning handler ``flag=0``.
-        scheduler.run_command_complete(CompleteCommand(node_path=TASK_PATH))
+        scheduler.run_command_complete(
+            CompleteCommand(node_path=TASK_PATH, attempt_id=task.attempt_id)
+        )
 
     assert task.state.node_status is NodeStatus.complete
     assert task.job_password == NODE_PASSWORD

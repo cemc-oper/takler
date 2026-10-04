@@ -246,7 +246,14 @@ def test_a_business_failure_is_200_with_the_error_code_in_flag() -> None:
     response payload carries the Error_Code, exactly as on gRPC."""
     app = build_app()
 
-    response = post_envelope(app, "complete", {"node_path": "/no/such/node"})
+    response = post_envelope(
+        app,
+        "complete",
+        {
+            "node_path": "/no/such/node",
+            "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+        },
+    )
 
     assert response.status_code == 200
     payload = response.json()["payload"]
@@ -370,7 +377,7 @@ def test_child_command_with_any_job_password_passes(store: CredentialStore) -> N
     response = post_envelope(
         app,
         "complete",
-        {"node_path": TASK1},
+        {"node_path": TASK1, "attempt_id": "123e4567-e89b-42d3-a456-426614174000"},
         headers={"takler-pass": JOB_PASSWORD},
     )
 
@@ -521,7 +528,7 @@ def test_a_zombie_child_command_is_disposed_like_on_grpc(
     stale = post_envelope(
         app,
         "complete",
-        {"node_path": TASK1},
+        {"node_path": TASK1, "attempt_id": task1.attempt_id},
         headers={"takler-pass": OTHER_PASSWORD},
     )
 
@@ -534,7 +541,7 @@ def test_a_zombie_child_command_is_disposed_like_on_grpc(
     current = post_envelope(
         app,
         "complete",
-        {"node_path": TASK1},
+        {"node_path": TASK1, "attempt_id": task1.attempt_id},
         headers={"takler-pass": JOB_PASSWORD},
     )
 

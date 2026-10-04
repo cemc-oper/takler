@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Dict, Type
 
 from takler.exceptions import (
+    AttemptMismatchError,
     ClientConnectionError,
     ExpressionSyntaxError,
     FlowStateError,
@@ -70,6 +71,7 @@ ERROR_CODE_BY_TYPE: Dict[Type[BaseException], int] = {
     ExpressionSyntaxError: 20,
     JobSubmissionError: 30,
     ZombieError: 31,
+    AttemptMismatchError: 32,
     TransportError: 40,
     ClientConnectionError: 41,
     ServerResponseError: 42,
@@ -90,6 +92,7 @@ ERROR_NAME_BY_CODE: Dict[int, str] = {
     20: "expression_syntax",
     30: "job_submission",
     31: "zombie",
+    32: "attempt_mismatch",
     40: "transport",
     41: "client_connection",
     42: "server_response",

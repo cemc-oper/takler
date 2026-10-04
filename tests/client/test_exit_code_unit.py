@@ -68,6 +68,7 @@ def test_constants():
         (20, EXIT_REQUEST_ERROR),
         (30, EXIT_SERVER_ERROR),
         (31, EXIT_SERVER_ERROR),
+        (32, EXIT_REQUEST_ERROR),
         (40, EXIT_UNREACHABLE),
         (41, EXIT_UNREACHABLE),
         (42, EXIT_SERVER_ERROR),

@@ -56,6 +56,7 @@ CODE_UNSUPPORTED_VALUE = 13
 CODE_FLOW_STATE = 14
 CODE_INVALID_REQUEST = 15
 CODE_INTERNAL_ERROR = 99
+TEST_ATTEMPT_ID = "123e4567-e89b-42d3-a456-426614174000"
 
 
 def build_scheduler() -> Scheduler:
@@ -78,6 +79,19 @@ def build_scheduler() -> Scheduler:
     scheduler.bunch.add_flow(flow2)
     scheduler.run_command_begin(BeginCommand(flow_name=FLOW1))
     return scheduler
+
+
+def prepare_child(scheduler: Scheduler, case: "HandlerCase") -> None:
+    if case.command in {
+        Command.INIT,
+        Command.COMPLETE,
+        Command.ABORT,
+        Command.EVENT,
+        Command.METER,
+    }:
+        task = scheduler.bunch.find_node(TASK1)
+        task.attempt_id = TEST_ATTEMPT_ID
+        task.set_node_status(NodeStatus.submitted)
 
 
 @dataclass(frozen=True)
@@ -124,7 +138,7 @@ HANDLER_CASES: List[HandlerCase] = [
     HandlerCase(
         "init",
         Command.INIT,
-        {"node_path": TASK1, "task_id": "job-42"},
+        {"node_path": TASK1, "task_id": "job-42", "attempt_id": TEST_ATTEMPT_ID},
         check=lambda bunch: (
             _assert_status(bunch, TASK1, NodeStatus.active),
             _assert_task_id(bunch, TASK1, "job-42"),
@@ -133,13 +147,13 @@ HANDLER_CASES: List[HandlerCase] = [
     HandlerCase(
         "complete",
         Command.COMPLETE,
-        {"node_path": TASK1},
+        {"node_path": TASK1, "attempt_id": TEST_ATTEMPT_ID},
         check=lambda bunch: _assert_status(bunch, TASK1, NodeStatus.complete),
     ),
     HandlerCase(
         "abort",
         Command.ABORT,
-        {"node_path": TASK1, "reason": "boom"},
+        {"node_path": TASK1, "reason": "boom", "attempt_id": TEST_ATTEMPT_ID},
         check=lambda bunch: (
             _assert_status(bunch, TASK1, NodeStatus.aborted),
             _assert_aborted_reason(bunch, TASK1, "boom"),
@@ -148,19 +162,36 @@ HANDLER_CASES: List[HandlerCase] = [
     HandlerCase(
         "event",
         Command.EVENT,
-        {"node_path": TASK1, "event_name": "event1"},
+        {
+            "node_path": TASK1,
+            "event_name": "event1",
+            "attempt_id": TEST_ATTEMPT_ID,
+            "source_task_path": TASK1,
+        },
         check=lambda bunch: _assert_event(bunch, TASK1, "event1", True),
     ),
     HandlerCase(
         "meter",
         Command.METER,
-        {"node_path": TASK1, "meter_name": "meter1", "meter_value": 50},
+        {
+            "node_path": TASK1,
+            "meter_name": "meter1",
+            "meter_value": 50,
+            "attempt_id": TEST_ATTEMPT_ID,
+            "source_task_path": TASK1,
+        },
         check=lambda bunch: _assert_meter(bunch, TASK1, "meter1", 50),
     ),
     HandlerCase(
         "meter-rejects-a-non-numeric-value",
         Command.METER,
-        {"node_path": TASK1, "meter_name": "meter1", "meter_value": "abc"},
+        {
+            "node_path": TASK1,
+            "meter_name": "meter1",
+            "meter_value": "abc",
+            "attempt_id": TEST_ATTEMPT_ID,
+            "source_task_path": TASK1,
+        },
         # The DTO's ``int`` coercion fails; a ValidationError is a foreign
         # exception, classified as internal_error exactly like the ValueError
         # the scheduler's own ``int()`` used to raise.
@@ -171,7 +202,7 @@ HANDLER_CASES: List[HandlerCase] = [
     HandlerCase(
         "complete-an-unknown-node",
         Command.COMPLETE,
-        {"node_path": "/flow1/no_such"},
+        {"node_path": "/flow1/no_such", "attempt_id": TEST_ATTEMPT_ID},
         expected_flag=CODE_NODE_NOT_FOUND,
         message_part="NodeNotFoundError",
     ),
@@ -323,6 +354,7 @@ def run_via_handlers(case: HandlerCase) -> Tuple[Any, Bunch]:
     failure is answered by the boundary like a wire-level parse failure is.
     """
     scheduler = build_scheduler()
+    prepare_child(scheduler, case)
     handlers = CommandHandlers(scheduler)
     request_type = REQUEST_TYPE_BY_COMMAND[case.command]
     response = asyncio.run(
@@ -334,6 +366,7 @@ def run_via_handlers(case: HandlerCase) -> Tuple[Any, Bunch]:
 def run_via_grpc(case: HandlerCase) -> Tuple[Any, Bunch]:
     """Run one case through the gRPC boundary: pb2 in, pb2 out."""
     scheduler = build_scheduler()
+    prepare_child(scheduler, case)
     service = GrpcTransport(scheduler=scheduler)
     method = getattr(service, METHOD_NAME_BY_COMMAND[case.command])
     request = to_pb2(case.command, case.kwargs)
@@ -356,6 +389,7 @@ def run_via_http(case: HandlerCase) -> Tuple[Any, Bunch]:
     from takler.server.http_transport import API_PREFIX, create_app
 
     scheduler = build_scheduler()
+    prepare_child(scheduler, case)
     app = create_app(CommandHandlers(scheduler))
 
     async def post():
@@ -424,28 +458,31 @@ def assert_case(case: HandlerCase, response, bunch: Bunch) -> None:
 
 def to_pb2(command: Command, kwargs: Dict[str, Any]):
     """Build the pb2 request message of ``command`` from case kwargs."""
+    options = takler_pb2.ChildCommandOptions(
+        node_path=kwargs.get("node_path", ""),
+        attempt_id=kwargs.get("attempt_id", ""),
+        source_task_path=kwargs.get("source_task_path", ""),
+    )
     if command is Command.INIT:
         return takler_pb2.InitCommand(
-            child_options=takler_pb2.ChildCommandOptions(node_path=kwargs["node_path"]),
+            child_options=options,
             task_id=kwargs["task_id"],
         )
     if command is Command.COMPLETE:
-        return takler_pb2.CompleteCommand(
-            child_options=takler_pb2.ChildCommandOptions(node_path=kwargs["node_path"])
-        )
+        return takler_pb2.CompleteCommand(child_options=options)
     if command is Command.ABORT:
         return takler_pb2.AbortCommand(
-            child_options=takler_pb2.ChildCommandOptions(node_path=kwargs["node_path"]),
+            child_options=options,
             reason=kwargs.get("reason", ""),
         )
     if command is Command.EVENT:
         return takler_pb2.EventCommand(
-            child_options=takler_pb2.ChildCommandOptions(node_path=kwargs["node_path"]),
+            child_options=options,
             event_name=kwargs["event_name"],
         )
     if command is Command.METER:
         return takler_pb2.MeterCommand(
-            child_options=takler_pb2.ChildCommandOptions(node_path=kwargs["node_path"]),
+            child_options=options,
             meter_name=kwargs["meter_name"],
             meter_value=str(kwargs["meter_value"]),
         )

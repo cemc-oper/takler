@@ -34,6 +34,7 @@ __all__ = [
     "ExpressionSyntaxError",
     "JobSubmissionError",
     "ZombieError",
+    "AttemptMismatchError",
     "TransportError",
     "ClientConnectionError",
     "ServerResponseError",
@@ -149,6 +150,10 @@ class ZombieError(TaklerError):
 
     M1 only defines the type; the detection logic belongs to M2.
     """
+
+
+class AttemptMismatchError(TaklerError):
+    """The child command does not belong to the task's current attempt."""
 
 
 class TransportError(TaklerError):

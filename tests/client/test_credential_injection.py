@@ -147,7 +147,9 @@ def child_metadata(client: TaklerServiceClient) -> list:
     """Run one Child_Command through the Call_Wrapper, return its metadata."""
     spy = SpyRpc()
     client.stub = SimpleNamespace(RunCommandComplete=spy)
-    client.run_command_complete(node_path="/flow1/task1")
+    client.run_command_complete(
+        node_path="/flow1/task1", attempt_id="123e4567-e89b-42d3-a456-426614174000"
+    )
     assert len(spy.metadata_calls) == 1
     return spy.metadata_calls[0]
 

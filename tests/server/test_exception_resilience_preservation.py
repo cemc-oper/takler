@@ -233,7 +233,7 @@ def test_error_free_iteration_processes_all_flows_and_continues(flow_names):
     ),
 )
 def test_valid_complete_then_init_execute_and_return_success(task_name, task_id):
-    """``RunCommandComplete`` / ``RunCommandInit`` on a valid Task succeed.
+    """``RunCommandInit`` then ``RunCommandComplete`` on one attempt succeed.
 
     Preservation -- Requirements 3.2, 3.3: a command targeting a valid node path
     pointing to a :class:`Task` performs the requested operation and returns
@@ -241,43 +241,41 @@ def test_valid_complete_then_init_execute_and_return_success(task_name, task_id)
     """
     service = _make_service_with_tasks([task_name])
     node_path = f"/flow1/{task_name}"
+    node = service.scheduler.bunch.find_node(node_path)
+    node.attempt_id = "123e4567-e89b-42d3-a456-426614174000"
+    node.set_node_status(NodeStatus.submitted)
+    context = mock.MagicMock()
+
+    init_req = mock.MagicMock()
+    init_req.child_options.node_path = node_path
+    init_req.child_options.attempt_id = node.attempt_id
+    init_req.task_id = task_id
+    init_resp = asyncio.run(service.RunCommandInit(init_req, context))
+    assert init_resp.flag == 0
+    assert node.state.node_status == NodeStatus.active
 
     # --- RunCommandComplete: operation executes, node becomes complete. ---
     complete_req = mock.MagicMock()
     complete_req.child_options.node_path = node_path
-    context = mock.MagicMock()
+    complete_req.child_options.attempt_id = node.attempt_id
 
     complete_resp = asyncio.run(service.RunCommandComplete(complete_req, context))
 
     assert isinstance(complete_resp, takler_pb2.ServiceResponse)
     assert complete_resp.flag == 0
     assert complete_resp.message == ""
-    node = service.scheduler.bunch.find_node(node_path)
     assert node.state.node_status == NodeStatus.complete, (
         "Complete command did not execute the operation"
     )
 
-    # --- RunCommandInit: operation executes, node becomes active with task_id. ---
-    init_req = mock.MagicMock()
-    init_req.child_options.node_path = node_path
-    init_req.task_id = task_id
-
-    init_resp = asyncio.run(service.RunCommandInit(init_req, context))
-
     assert isinstance(init_resp, takler_pb2.ServiceResponse)
-    assert init_resp.flag == 0
     assert init_resp.message == ""
-    assert node.state.node_status == NodeStatus.active, (
-        "Init command did not execute the operation"
-    )
     assert node.task_id == task_id, "Init command did not record the task id"
 
 
 # A command sequence applied to valid tasks must keep returning flag=0 / "".
 # Each command is a no-throw operation against an existing Task node.
-_VALID_COMMANDS = st.sampled_from(
-    ["complete", "init", "abort", "suspend", "resume", "requeue"]
-)
+_VALID_COMMANDS = st.sampled_from(["suspend", "resume", "requeue"])
 
 
 @settings(
@@ -360,6 +358,8 @@ def test_valid_meter_value_executes_and_returns_success(data):
     flow = Flow("flow1")
     task = flow.add_task(task_name)
     task.add_meter("m", min_value, max_value)
+    task.attempt_id = "123e4567-e89b-42d3-a456-426614174000"
+    task.set_node_status(NodeStatus.submitted)
     bunch.add_flow(flow)
     scheduler = Scheduler(bunch=bunch)
     service = GrpcTransport(scheduler=scheduler, host="[::]", port=33999)
@@ -367,6 +367,8 @@ def test_valid_meter_value_executes_and_returns_success(data):
     node_path = f"/flow1/{task_name}"
     request = mock.MagicMock()
     request.child_options.node_path = node_path
+    request.child_options.attempt_id = task.attempt_id
+    request.child_options.source_task_path = node_path
     request.meter_name = "m"
     request.meter_value = str(meter_value)
     context = mock.MagicMock()

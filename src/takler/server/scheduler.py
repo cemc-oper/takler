@@ -4,16 +4,19 @@ import datetime
 import json
 from queue import Queue
 from typing import Callable, Optional
+from uuid import UUID
 
 from takler.core import Bunch, Task, NodeStatus, Event, Flow
 from takler.core.node import Node
 from takler.exceptions import (
+    AttemptMismatchError,
     FlowStateError,
     JobSubmissionError,
     InvalidRequestError,
     NodeNotFoundError,
     NodeTypeError,
     UnsupportedValueError,
+    ZombieError,
 )
 from takler.schema.definition import DefinitionError
 from takler.serialization import build_definition
@@ -57,9 +60,9 @@ class Scheduler:
     interval_main_loop : float
         time interval to check flow dependencies, unit is seconds.
     zombie_detector : Optional[ZombieDetector]
-        judges every Child_Command against the run instance the server records
-        for the target task. ``None`` disables the judgement, which is the
-        M1 behaviour and what a directly driven scheduler gets.
+        judges Child_Commands against the run instance the server records for
+        the reporting task. ``None`` disables zombie policy only; attempt
+        identity is always checked.
     """
 
     def __init__(
@@ -89,10 +92,8 @@ class Scheduler:
         self.fatal_shutdown: Optional[Callable[[], None]] = fatal_shutdown
         # Zombie detection is a server-level feature: ``TaklerServer`` builds the
         # detector from the resolved Auth_Mode and Zombie_Policy and passes it
-        # in. ``None`` means "no policy configured", which is the case for a
-        # scheduler driven directly -- by the TUI, by a unit test, or by an
-        # in-process run -- and leaves every Child_Command with its M1
-        # behaviour. See :meth:`_guard_child_command`.
+        # in. ``None`` means no zombie policy for a directly driven scheduler;
+        # the separate attempt guard still applies to every child report.
         self.zombie_detector: Optional[ZombieDetector] = zombie_detector
 
     async def start(self):
@@ -280,17 +281,15 @@ class Scheduler:
     def _guard_child_command(
         self, node: Task, command: str, task_id: Optional[str] = None
     ) -> ChildAction:
-        """Judge a Child_Command against the target task's run instance.
+        """Judge a Child_Command against the reporting Task's run instance.
 
-        This is the single zombie decision point of the scheduler. Each of the
-        five Child_Commands calls it on one line, **after** the node is located
-        and type-checked and **before** anything is written to the node
-        (Requirement 9.1), so "no state is changed by a rejected command" holds
-        by construction rather than by rollback.
+        This is the scheduler's zombie decision point. The five Child_Commands
+        normally call it after identity validation and before anything is
+        written to the node (Requirement 9.1), so rejected commands leave
+        node state unchanged without rollback.
 
-        Five explicit call sites rather than a decorator: ``init`` has to pass
-        its ``task_id`` for the ``Z3`` check, and the "judge before writing"
-        ordering is worth being able to read off the method body.
+        A duplicate ``init`` with the same RID takes an earlier no-op path
+        after a read-only credential check; conflicting RIDs are rejected.
 
         Control_Commands and Query_Commands do not call this at all
         (Requirement 9.10): a zombie is a job instance that disagrees with the
@@ -303,9 +302,8 @@ class Scheduler:
         Parameters
         ----------
         node
-            the target task, already located and type-checked. A missing node or
-            a non-task node is not a zombie: it keeps the M1 outcome of the
-            command in question (Requirement 9.9).
+            the reporting task, already located and identity-checked. For
+            event/meter this may differ from the target node.
         command
             short name of the Child_Command: ``init``, ``complete``, ``abort``,
             ``event`` or ``meter``.
@@ -343,6 +341,42 @@ class Scheduler:
             raise NodeTypeError(f"node must be Task: {node_path}", node_path=node_path)
         return node
 
+    @staticmethod
+    def _validate_attempt_id(attempt_id: str) -> None:
+        if not attempt_id:
+            raise AttemptMismatchError("attempt_mismatch: missing attempt_id")
+        try:
+            canonical = str(UUID(attempt_id))
+        except (ValueError, AttributeError):
+            raise InvalidRequestError("invalid attempt_id") from None
+        if canonical != attempt_id:
+            raise InvalidRequestError("invalid attempt_id")
+
+    def _guard_attempt(self, node: Task, attempt_id: str) -> None:
+        """Reject stale or finished reports before zombie policy can fob/adopt them."""
+        self._validate_attempt_id(attempt_id)
+        if (
+            self.bunch.find_node(node.node_path) is not node
+            or node.attempt_id != attempt_id
+            or node.state.node_status not in (NodeStatus.submitted, NodeStatus.active)
+        ):
+            raise AttemptMismatchError(f"attempt_mismatch: {node.node_path}")
+
+    def _guard_child_target(
+        self, command: EventCommand | MeterCommand, target: Node
+    ) -> Task:
+        """Bind event/meter ownership to a live Task in the target's Flow."""
+        source_path = command.source_task_path
+        if not source_path:
+            raise InvalidRequestError("source_task_path is required")
+        source = self.bunch.find_node(source_path)
+        if not isinstance(source, Task):
+            raise InvalidRequestError("source_task_path must identify a current Task")
+        if source.get_flow() is None or source.get_flow() is not target.get_flow():
+            raise InvalidRequestError("source and target must belong to the same flow")
+        self._guard_attempt(source, command.attempt_id)
+        return source
+
     # Child command -------------------------------------------------
 
     async def run_command_init(self, command: InitCommand):
@@ -367,7 +401,23 @@ class Scheduler:
             ``fail`` (see :meth:`_guard_child_command`).
         """
         logger.info(f"Init: {command.node_path} with {command.task_id}")
+        self._validate_attempt_id(command.attempt_id)
         node = self._find_task_or_raise(command.node_path)
+
+        self._guard_attempt(node, command.attempt_id)
+        if node.state.node_status is NodeStatus.active:
+            if node.task_id != command.task_id:
+                raise ZombieError(f"conflicting task_id: {node.node_path}")
+            # A duplicate is a strict no-op. In particular, the adopt policy
+            # must not rotate its password while acknowledging a duplicate.
+            if self.zombie_detector is not None and isinstance(
+                self.zombie_detector, ZombieDetector
+            ):
+                if self.zombie_detector.detect(node, "init", command.task_id):
+                    raise ZombieError(
+                        f"duplicate init credential mismatch: {node.node_path}"
+                    )
+            return
 
         if self._guard_child_command(node, "init", command.task_id) is ChildAction.SKIP:
             # fob: answer success without touching the node.
@@ -395,7 +445,10 @@ class Scheduler:
             ``fail`` (see :meth:`_guard_child_command`).
         """
         logger.info(f"Complete: {command.node_path}")
+        self._validate_attempt_id(command.attempt_id)
         node = self._find_task_or_raise(command.node_path)
+
+        self._guard_attempt(node, command.attempt_id)
 
         if self._guard_child_command(node, "complete") is ChildAction.SKIP:
             # fob: answer success without touching the node.
@@ -424,7 +477,10 @@ class Scheduler:
             ``fail`` (see :meth:`_guard_child_command`).
         """
         logger.info(f"Abort: {command.node_path}")
+        self._validate_attempt_id(command.attempt_id)
         node = self._find_task_or_raise(command.node_path)
+
+        self._guard_attempt(node, command.attempt_id)
 
         if self._guard_child_command(node, "abort") is ChildAction.SKIP:
             # fob: answer success without touching the node.
@@ -451,15 +507,11 @@ class Scheduler:
             the Zombie_Policy is ``fail`` (see :meth:`_guard_child_command`).
         """
         logger.info(f"Event set: {command.node_path}:{command.event_name}")
+        self._validate_attempt_id(command.attempt_id)
         node = self._find_node_or_raise(command.node_path)
-
-        # A non-task target keeps its M1 behaviour: ``event`` accepts any node
-        # which owns the event, and such a node has no job instance to judge
-        # (Requirement 9.9).
-        if isinstance(node, Task):
-            if self._guard_child_command(node, "event") is ChildAction.SKIP:
-                # fob: answer success without touching the node.
-                return
+        source = self._guard_child_target(command, node)
+        if self._guard_child_command(source, "event") is ChildAction.SKIP:
+            return
 
         node.set_event(command.event_name, True)
 
@@ -485,14 +537,11 @@ class Scheduler:
         logger.info(
             f"Meter set: {command.node_path}:{command.meter_name} {command.meter_value}"
         )
+        self._validate_attempt_id(command.attempt_id)
         node = self._find_node_or_raise(command.node_path)
-
-        # Same as ``event``: a non-task target has no job instance, so it keeps
-        # its M1 behaviour (Requirement 9.9).
-        if isinstance(node, Task):
-            if self._guard_child_command(node, "meter") is ChildAction.SKIP:
-                # fob: answer success without touching the node.
-                return
+        source = self._guard_child_target(command, node)
+        if self._guard_child_command(source, "meter") is ChildAction.SKIP:
+            return
 
         node.set_meter(command.meter_name, command.meter_value)
 

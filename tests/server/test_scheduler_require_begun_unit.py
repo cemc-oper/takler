@@ -213,28 +213,45 @@ def test_suspend_and_resume_not_guarded(scheduler, flow):
 
 
 def test_child_commands_not_guarded(scheduler, flow):
-    """Child commands stay accepted: zombie semantics belong to M2."""
-    scheduler.run_command_complete(CompleteCommand(node_path="/flow1/container1/task1"))
+    """A current attempt may report even when the Flow is not begun."""
     task1 = scheduler.bunch.find_node("/flow1/container1/task1")
-    assert task1.state.node_status is NodeStatus.complete
+    task1.attempt_id = "123e4567-e89b-42d3-a456-426614174000"
+    task1.set_node_status(NodeStatus.submitted)
 
-    scheduler.run_command_abort(
-        AbortCommand(node_path="/flow1/container1/task2", reason="some reason")
-    )
     task2 = scheduler.bunch.find_node("/flow1/container1/task2")
-    assert task2.state.node_status is NodeStatus.aborted
+    task2.attempt_id = "123e4567-e89b-42d3-a456-426614174001"
+    task2.set_node_status(NodeStatus.submitted)
 
     scheduler.run_command_event(
-        EventCommand(node_path="/flow1/container1/task1", event_name="event1")
+        EventCommand(
+            node_path="/flow1/container1/task1",
+            event_name="event1",
+            attempt_id=task1.attempt_id,
+            source_task_path=task1.node_path,
+        )
     )
     assert task1.find_variable("event1").value is True
 
     scheduler.run_command_meter(
         MeterCommand(
-            node_path="/flow1/container1/task1", meter_name="meter1", meter_value=50
+            node_path="/flow1/container1/task1",
+            meter_name="meter1",
+            meter_value=50,
+            attempt_id=task1.attempt_id,
+            source_task_path=task1.node_path,
         )
     )
     assert task1.find_variable("meter1").value == 50
+    scheduler.run_command_complete(
+        CompleteCommand(node_path=task1.node_path, attempt_id=task1.attempt_id)
+    )
+    assert task1.state.node_status is NodeStatus.complete
+    scheduler.run_command_abort(
+        AbortCommand(
+            node_path=task2.node_path, reason="some reason", attempt_id=task2.attempt_id
+        )
+    )
+    assert task2.state.node_status is NodeStatus.aborted
 
 
 # nodes outside of a flow ----------------------------------------------

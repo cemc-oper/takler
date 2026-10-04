@@ -200,28 +200,51 @@ def test_python_client_runs_all_sixteen_commands_over_http(
         log.command("run", client.run_command_run(node_path=[TASK1], force=False))
         assert task1.state.node_status == NodeStatus.submitted
 
-        log.command("init", client.run_command_init(node_path=TASK1, task_id="job-42"))
+        log.command(
+            "init",
+            client.run_command_init(
+                node_path=TASK1, task_id="job-42", attempt_id=task1.attempt_id
+            ),
+        )
         assert task1.state.node_status == NodeStatus.active
 
         log.command(
-            "event", client.run_command_event(node_path=TASK1, event_name="event_a")
+            "event",
+            client.run_command_event(
+                node_path=TASK1,
+                event_name="event_a",
+                attempt_id=task1.attempt_id,
+                source_task_path=TASK1,
+            ),
         )
         assert task1.find_event("event_a").value is True
 
         log.command(
             "meter",
             client.run_command_meter(
-                node_path=TASK1, meter_name="meter_a", meter_value="5"
+                node_path=TASK1,
+                meter_name="meter_a",
+                meter_value="5",
+                attempt_id=task1.attempt_id,
+                source_task_path=TASK1,
             ),
         )
         assert task1.find_meter("meter_a").value == 5
 
-        log.command("complete", client.run_command_complete(node_path=TASK1))
+        log.command(
+            "complete",
+            client.run_command_complete(node_path=TASK1, attempt_id=task1.attempt_id),
+        )
         assert task1.state.node_status == NodeStatus.complete
 
         # -- Child: abort (against a second submitted task) -------------
         log.command("run", client.run_command_run(node_path=[TASK3], force=False))
-        log.command("abort", client.run_command_abort(node_path=TASK3, reason="boom"))
+        log.command(
+            "abort",
+            client.run_command_abort(
+                node_path=TASK3, reason="boom", attempt_id=task3.attempt_id
+            ),
+        )
         assert task3.state.node_status == NodeStatus.aborted
         assert task3.aborted_reason == "boom"
 
@@ -382,7 +405,11 @@ def test_http_client_auth_is_refused_and_accepted_like_grpc(
     childless = make_client(secret_file=str(secret_file))
     try:
         with pytest.raises(PermissionDeniedError):
-            childless.run_command_init(node_path=TASK1, task_id="job-1")
+            childless.run_command_init(
+                node_path=TASK1,
+                task_id="job-1",
+                attempt_id=runner.server.bunch.find_node(TASK1).attempt_id,
+            )
     finally:
         childless.close_channel()
 
@@ -393,7 +420,12 @@ def test_http_client_auth_is_refused_and_accepted_like_grpc(
     monkeypatch.setenv("TAKLER_PASS", task1.job_password)
     child = make_client(secret_file=str(secret_file))
     try:
-        assert child.run_command_init(node_path=TASK1, task_id="job-1").flag == 0
+        assert (
+            child.run_command_init(
+                node_path=TASK1, task_id="job-1", attempt_id=task1.attempt_id
+            ).flag
+            == 0
+        )
         assert task1.state.node_status == NodeStatus.active
     finally:
         child.close_channel()
@@ -403,7 +435,9 @@ def test_http_client_auth_is_refused_and_accepted_like_grpc(
     monkeypatch.setenv("TAKLER_PASS", "stale-password")
     stale = make_client(secret_file=str(secret_file))
     try:
-        zombie = stale.run_command_complete(node_path=TASK1)
+        zombie = stale.run_command_complete(
+            node_path=TASK1, attempt_id=task1.attempt_id
+        )
         assert zombie.flag != 0
         assert "ZombieError" in zombie.message
     finally:

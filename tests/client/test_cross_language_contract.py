@@ -63,6 +63,7 @@ CONTRACT_ERROR_NAME_BY_CODE = {
     20: "expression_syntax",
     30: "job_submission",
     31: "zombie",
+    32: "attempt_mismatch",
     40: "transport",
     41: "client_connection",
     42: "server_response",
@@ -86,6 +87,7 @@ CONTRACT_EXIT_CODE_BY_ERROR_CODE = {
     20: 1,
     30: 3,
     31: 3,
+    32: 1,
     40: 4,
     41: 4,
     42: 3,
@@ -103,7 +105,6 @@ CONTRACT_UNREGISTERED_CODES = [
     19,
     21,
     29,
-    32,
     39,
     44,
     98,
@@ -241,7 +242,7 @@ def test_error_name_by_code_matches_contract(code, name):
 def test_error_name_by_code_has_no_key_outside_the_contract():
     """And nothing else: the key sets must be equal in both directions."""
     assert set(ERROR_NAME_BY_CODE) == set(CONTRACT_ERROR_NAME_BY_CODE)
-    assert len(ERROR_NAME_BY_CODE) == 17
+    assert len(ERROR_NAME_BY_CODE) == 18
 
 
 # Feature: m2-security, Property 9: 跨语言常量一致性
@@ -260,7 +261,7 @@ def test_exit_code_by_error_code_matches_contract(code, exit_code):
 # Validates: Requirements 14.14, 15.6, 16.17
 def test_exit_code_by_error_code_has_no_key_outside_the_contract():
     assert set(EXIT_CODE_BY_ERROR_CODE) == set(CONTRACT_EXIT_CODE_BY_ERROR_CODE)
-    assert len(EXIT_CODE_BY_ERROR_CODE) == 17
+    assert len(EXIT_CODE_BY_ERROR_CODE) == 18
 
 
 # Feature: m2-security, Property 9: 跨语言常量一致性

@@ -49,7 +49,6 @@ from typer.testing import CliRunner
 from takler.client import cli
 from takler.core import Flow, NodeStatus
 from takler.core.task_node import Task
-from takler.exceptions import ZombieError
 from takler.protocol.commands import CompleteCommand, RequeueCommand
 from takler.server import TaklerServer
 from takler.server.auth import (
@@ -314,6 +313,7 @@ def test_old_job_complete_after_requeue_is_rejected(
     server.bunch.add_flow(build_flow())
     task: Task = server.bunch.find_node(TASK_PATH)
     old_password = start_a_job(task)
+    old_attempt_id = task.attempt_id
 
     requeue_under_the_running_job(server)
     assert task.state.node_status is NodeStatus.queued
@@ -326,8 +326,12 @@ def test_old_job_complete_after_requeue_is_rejected(
     token = set_call_credentials(CallCredentials(job_password=old_password))
     try:
         assert server.zombie_detector.detect(task, "complete") is expected_condition
-        with pytest.raises(ZombieError) as excinfo:
-            server.scheduler.run_command_complete(CompleteCommand(node_path=TASK_PATH))
+        from takler.exceptions import AttemptMismatchError
+
+        with pytest.raises(AttemptMismatchError) as excinfo:
+            server.scheduler.run_command_complete(
+                CompleteCommand(node_path=TASK_PATH, attempt_id=old_attempt_id)
+            )
     finally:
         reset_call_credentials(token)
 
@@ -337,7 +341,7 @@ def test_old_job_complete_after_requeue_is_rejected(
     assert task.state.node_status is NodeStatus.queued
 
     message = str(excinfo.value)
-    assert expected_condition.value in message
+    assert "attempt_mismatch" in message
     assert TASK_PATH in message
     assert old_password not in message
 
@@ -360,7 +364,9 @@ def test_a_report_of_the_current_job_is_not_a_zombie(monkeypatch, tmp_path):
 
     token = set_call_credentials(CallCredentials(job_password=new_password))
     try:
-        server.scheduler.run_command_complete(CompleteCommand(node_path=TASK_PATH))
+        server.scheduler.run_command_complete(
+            CompleteCommand(node_path=TASK_PATH, attempt_id=task.attempt_id)
+        )
     finally:
         reset_call_credentials(token)
 
@@ -378,7 +384,7 @@ def stderr_lines(result) -> list:
 
 
 @pytest.mark.parametrize("served", [AuthMode.DISABLED, AuthMode.ENABLED], indirect=True)
-def test_client_cli_exits_three_and_names_the_zombie_classification(served):
+def test_client_cli_exits_one_and_names_attempt_mismatch(served):
     """The whole path, from the job script's command to its exit code.
 
     Requirements 10.2, 10.10: the ``fail`` policy answers the old job with
@@ -390,6 +396,7 @@ def test_client_cli_exits_three_and_names_the_zombie_classification(served):
     server.bunch.add_flow(build_flow())
     task: Task = server.bunch.find_node(TASK_PATH)
     old_password = start_a_job(task)
+    old_attempt_id = task.attempt_id
 
     requeue_under_the_running_job(server)
     before = snapshot(task)
@@ -400,6 +407,8 @@ def test_client_cli_exits_three_and_names_the_zombie_classification(served):
             "complete",
             "--node-path",
             TASK_PATH,
+            "--attempt-id",
+            old_attempt_id,
             "--host",
             LOCALHOST,
             "--port",
@@ -411,10 +420,10 @@ def test_client_cli_exits_three_and_names_the_zombie_classification(served):
         env={"TAKLER_PASS": old_password},
     )
 
-    assert result.exit_code == 3
+    assert result.exit_code == 1
     lines = stderr_lines(result)
     assert len(lines) == 1
-    assert "zombie" in lines[0]
+    assert "attempt_mismatch" in lines[0]
     assert old_password not in result.stderr
     assert "Traceback" not in result.stderr
 

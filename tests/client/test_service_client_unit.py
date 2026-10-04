@@ -374,7 +374,9 @@ def test_command_prints_error_classification_name(fake_clock, capsys):
         {"RunCommandComplete": FakeRpc(FakeResponse(flag=10, message="no such node"))},
     )()
 
-    response = client.run_command_complete(node_path="/flow1/task1")
+    response = client.run_command_complete(
+        node_path="/flow1/task1", attempt_id="123e4567-e89b-42d3-a456-426614174000"
+    )
 
     assert response.flag == 10
     assert "node_not_found" in capsys.readouterr().out

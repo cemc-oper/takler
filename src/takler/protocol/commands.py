@@ -13,8 +13,8 @@ Two encodings of this model exist, and this module belongs to neither:
   classes deliberately carry the same names as their proto messages -- the
   mapping is one to one, so ``takler.protocol.InitCommand`` is the model and
   ``takler_pb2.InitCommand`` is one encoding of it. The proto's
-  ``ChildCommandOptions`` wrapper is a gRPC encoding detail and is flattened
-  into each child command's ``node_path`` field here.
+  ``ChildCommandOptions`` wrapper is a gRPC encoding detail and its identity
+  fields are flattened into each child command here.
 * HTTP: the JSON envelope of :class:`~takler.protocol.envelope.Envelope`, whose
   ``payload`` is a request or response DTO serialized with
   ``model_dump(mode="json")``.
@@ -169,14 +169,15 @@ class DepType(str, Enum):
 
 
 class ChildCommand(ProtocolModel):
-    """Base of the five Child_Commands: the shared ``node_path`` field.
+    """Base of the five Child_Commands: target path and current attempt.
 
     This is the flattened form of the proto's ``ChildCommandOptions``
-    wrapper; the wrapper exists in the proto for historical reasons and is
-    rebuilt by the gRPC adapter.
+    wrapper; the adapter rebuilds it for gRPC. An empty ``attempt_id`` is the
+    proto3 absent-field sentinel; the scheduler classifies it as code 32.
     """
 
     node_path: str
+    attempt_id: str = ""
 
 
 class InitCommand(ChildCommand):
@@ -199,6 +200,7 @@ class EventCommand(ChildCommand):
     """``event``: a job sets one of its node's events."""
 
     event_name: str
+    source_task_path: str = ""
 
 
 class MeterCommand(ChildCommand):
@@ -214,6 +216,7 @@ class MeterCommand(ChildCommand):
 
     meter_name: str
     meter_value: int
+    source_task_path: str = ""
 
 
 # ---------------------------------------------------------------------------

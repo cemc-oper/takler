@@ -240,11 +240,16 @@ def test_command_handling_emits_info_record() -> None:
     flow = Flow("flow1")
     flow.add_task("task1")
     bunch.add_flow(flow)
+    task = bunch.find_node("/flow1/task1")
+    task.attempt_id = "123e4567-e89b-42d3-a456-426614174000"
+    task.set_node_status(NodeStatus.submitted)
     scheduler = Scheduler(bunch=bunch)
     service = GrpcTransport(scheduler=scheduler, host="[::]", port=33999)
 
     request = takler_pb2.CompleteCommand(
-        child_options=takler_pb2.ChildCommandOptions(node_path="/flow1/task1")
+        child_options=takler_pb2.ChildCommandOptions(
+            node_path="/flow1/task1", attempt_id=task.attempt_id
+        )
     )
     context = mock.MagicMock()
 

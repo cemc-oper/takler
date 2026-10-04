@@ -102,6 +102,10 @@ child 命令
 
 * ``--node-path`` 省略时取环境变量 ``TAKLER_NAME`` （作业文件中已
   导出，通常无需显式给出）
+* ``--attempt-id`` 省略时取 ``TAKLER_ATTEMPT_ID`` ；缺失或非法 UUID
+  在客户端拒绝（退出码 ``1`` ）
+* ``event`` / ``meter`` 的 ``--source-task-path`` 标识上报者 Task，
+  省略时依次取 ``TAKLER_NAME`` 与目标 Task 路径；源与目标须在同一 Flow
 * 上报凭据从环境变量 ``TAKLER_PASS`` 读取（启用鉴权时服务端校验，
   见 :doc:`/guide/job-management` 与 :doc:`/operation/security` ）
 * 环境变量 ``NO_TAKLER`` 已设置时立即成功返回，不发起任何网络
@@ -120,6 +124,8 @@ child 命令
       - 本次运行的作业标识，作业脚本中取 ``$TAKLER_RID`` （必填）
     * - ``--node-path``
       - 节点路径，缺省取 ``TAKLER_NAME``
+    * - ``--attempt-id``
+      - 当前任务执行身份，缺省取 ``TAKLER_ATTEMPT_ID``
     * - ``--host`` / ``--port``
       - 服务地址，按「地址解析」一节回退
 
@@ -127,7 +133,7 @@ child 命令
 ~~~~~~~~~~~~
 
 把任务标记为 ``complete`` ，通常由 ``tail.takler`` 调用。选项为
-``--node-path`` 、 ``--host`` 、 ``--port`` ，含义同上。
+``--node-path`` 、 ``--attempt-id`` 、 ``--host`` 、 ``--port`` ，含义同上。
 
 ``abort``
 ~~~~~~~~~
@@ -140,7 +146,8 @@ child 命令
 ~~~~~~~~~
 
 把任务上的指定 event 置为 set （触发依赖该 event 的下游节点）。
-在 ``complete`` 的选项之外另有 ``--event-name`` （必填）。事件与
+在 ``complete`` 的选项之外另有 ``--event-name`` （必填）和
+``--source-task-path`` （上报者 Task）。事件与
 meter 的入门示例见 :doc:`/tutorial/going-further/meters` 。
 
 ``meter``
@@ -148,7 +155,8 @@ meter 的入门示例见 :doc:`/tutorial/going-further/meters` 。
 
 把任务上的指定 meter 更新为给定取值，取值越界会被服务端拒绝
 （退出码 ``1`` ）。在 ``complete`` 的选项之外另有
-``--meter-name`` 与 ``--meter-value`` （均必填）。
+``--meter-name`` 与 ``--meter-value`` （均必填），以及
+``--source-task-path`` （上报者 Task）。
 
 控制命令
 --------

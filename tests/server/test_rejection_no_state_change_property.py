@@ -326,12 +326,13 @@ def _zombie_child_commands(draw: st.DrawFn) -> _ZombieCall:
     tasks = [node for node in _all_nodes(bunch) if isinstance(node, Task)]
     target: Task = draw(st.sampled_from(tasks))
 
-    auth_mode = draw(st.sampled_from([AuthMode.ENABLED, AuthMode.DISABLED]))
-    if auth_mode is AuthMode.ENABLED:
-        presented: Optional[str] = draw(st.sampled_from([FOREIGN_PASSWORD, None]))
-    else:
-        target.set_node_status_only(draw(st.sampled_from(_STALE_STATUSES)))
-        presented = draw(st.sampled_from([target.job_password, None]))
+    # Stale attempts are now rejected before zombie policy; this property
+    # exercises the remaining same-attempt Z1 password rejection.
+    auth_mode = AuthMode.ENABLED
+    target.attempt_id = "123e4567-e89b-42d3-a456-426614174000"
+    target.set_node_status_only(NodeStatus.submitted)
+    target.job_password = secrets.token_urlsafe(PASSWORD_NBYTES)
+    presented: Optional[str] = draw(st.sampled_from([FOREIGN_PASSWORD, None]))
 
     commands: List[str] = ["init", "complete", "abort"]
     if target.events:
@@ -466,18 +467,35 @@ def _run_child_command(scheduler: Scheduler, case: _ZombieCall) -> None:
     if case.command == "init":
         asyncio.run(
             scheduler.run_command_init(
-                InitCommand(node_path=path, task_id=case.args["task_id"])
+                InitCommand(
+                    node_path=path,
+                    task_id=case.args["task_id"],
+                    attempt_id=scheduler.bunch.find_node(path).attempt_id,
+                )
             )
         )
     elif case.command == "complete":
-        scheduler.run_command_complete(CompleteCommand(node_path=path))
+        scheduler.run_command_complete(
+            CompleteCommand(
+                node_path=path, attempt_id=scheduler.bunch.find_node(path).attempt_id
+            )
+        )
     elif case.command == "abort":
         scheduler.run_command_abort(
-            AbortCommand(node_path=path, reason=case.args["reason"])
+            AbortCommand(
+                node_path=path,
+                reason=case.args["reason"],
+                attempt_id=scheduler.bunch.find_node(path).attempt_id,
+            )
         )
     elif case.command == "event":
         scheduler.run_command_event(
-            EventCommand(node_path=path, event_name=case.args["name"])
+            EventCommand(
+                node_path=path,
+                event_name=case.args["name"],
+                attempt_id=scheduler.bunch.find_node(path).attempt_id,
+                source_task_path=path,
+            )
         )
     else:
         scheduler.run_command_meter(
@@ -485,6 +503,8 @@ def _run_child_command(scheduler: Scheduler, case: _ZombieCall) -> None:
                 node_path=path,
                 meter_name=case.args["name"],
                 meter_value=case.args["value"],
+                attempt_id=scheduler.bunch.find_node(path).attempt_id,
+                source_task_path=path,
             )
         )
 

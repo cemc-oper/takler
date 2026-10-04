@@ -24,16 +24,21 @@ def test_force_token_accounting(recursive, target):
     assert limit.node_paths == set()
 
 
-def test_adopt_init_without_submission_reserves_once():
+def test_duplicate_init_reserves_once():
     scheduler = make_scheduler(
         ZombieDetector(auth_mode=AuthMode.DISABLED, zombie_policy=ZombiePolicy.ADOPT)
     )
     task = scheduler.bunch.find_node(TASK_PATH)
     limit = task.add_limit("slots", 1)
     task.add_in_limit("slots")
+    task.run()
     for _ in range(2):
         asyncio.run(
-            scheduler.run_command_init(InitCommand(node_path=TASK_PATH, task_id="job"))
+            scheduler.run_command_init(
+                InitCommand(
+                    node_path=TASK_PATH, task_id="job", attempt_id=task.attempt_id
+                )
+            )
         )
         assert task.state.node_status == NodeStatus.active
         assert limit.value == 1

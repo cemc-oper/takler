@@ -60,6 +60,7 @@ head.takler 头文件放在 takler 脚本的开头，用于：
             export TAKLER_HOST={{ TAKLER_HOST }}
             export TAKLER_PORT={{ TAKLER_PORT }}
             export TAKLER_NAME={{ TAKLER_NAME }}
+            export TAKLER_ATTEMPT_ID={{ TAKLER_ATTEMPT_ID }}
             export TAKLER_PASS={{ TAKLER_PASS }}
 
             # 若在作业调度系统（如 Slurm、PBS）中运行，可以用调度系统提供的作业号作为

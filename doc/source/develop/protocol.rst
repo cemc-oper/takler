@@ -243,7 +243,8 @@ child、load 与 replace 命令返回 ``ServiceResponse{flag, message}``；七�
   求与节点树（ ``node_not_found`` 、 ``invalid_node_path`` 、
   ``node_type`` 、 ``unsupported_value`` 、 ``flow_state`` 、
   ``invalid_request`` ）； ``20`` 是 ``expression_syntax`` ；
-  ``30`` / ``31`` 是 ``job_submission`` 与 ``zombie`` ； ``40`` ~
+  ``30`` / ``31`` / ``32`` 是 ``job_submission`` 、 ``zombie`` 与
+  ``attempt_mismatch`` ； ``40`` ~
   ``43`` 是传输与鉴权（ ``transport`` 、 ``client_connection`` 、
   ``server_response`` 、 ``permission_denied`` ）—— 其中 ``40`` /
   ``41`` / ``42`` 只由客户端本地抛出，永远不会出现在服务端返回的

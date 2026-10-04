@@ -12,12 +12,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "task_id": "123"
+          "task_id": "123",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"task_id\":\"123\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"task_id\":\"123\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": true,
       "expected_rejection_status": null
     },
@@ -31,12 +32,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "task_id": "123"
+          "task_id": "123",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"task_id\":\"123\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"task_id\":\"123\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -50,12 +52,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "task_id": "123"
+          "task_id": "123",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"task_id\":\"123\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"task_id\":\"123\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -69,12 +72,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "task_id": "123"
+          "task_id": "123",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -88,12 +92,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "task_id": "123"
+          "task_id": "123",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"task_id\":null}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"init\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"task_id\":null,\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -106,12 +111,13 @@
         "command": "complete",
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
-          "node_path": "/f/t"
+          "node_path": "/f/t",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": true,
       "expected_rejection_status": null
     },
@@ -124,12 +130,13 @@
         "command": "complete",
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
-          "node_path": "/f/t"
+          "node_path": "/f/t",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -142,12 +149,13 @@
         "command": "complete",
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
-          "node_path": "/f/t"
+          "node_path": "/f/t",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"complete\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -161,12 +169,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "reason": ""
+          "reason": "",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"reason\":\"\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"reason\":\"\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": true,
       "expected_rejection_status": null
     },
@@ -180,12 +189,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "reason": ""
+          "reason": "",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"reason\":\"\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"reason\":\"\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -199,12 +209,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "reason": ""
+          "reason": "",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"reason\":\"\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"reason\":\"\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -218,12 +229,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "reason": ""
+          "reason": "",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -237,12 +249,13 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "reason": ""
+          "reason": "",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"reason\":null}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"abort\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"reason\":null,\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -256,12 +269,14 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "event_name": "ready"
+          "event_name": "ready",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"event_name\":\"ready\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"event_name\":\"ready\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": true,
       "expected_rejection_status": null
     },
@@ -275,12 +290,14 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "event_name": "ready"
+          "event_name": "ready",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"event_name\":\"ready\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"event_name\":\"ready\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -294,12 +311,14 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "event_name": "ready"
+          "event_name": "ready",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"event_name\":\"ready\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"event_name\":\"ready\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -313,12 +332,14 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "event_name": "ready"
+          "event_name": "ready",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -332,12 +353,14 @@
         "trace_id": "0123456789abcdef0123456789abcdef",
         "payload": {
           "node_path": "/f/t",
-          "event_name": "ready"
+          "event_name": "ready",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"event_name\":null}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"event\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"event_name\":null,\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -352,12 +375,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"50\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"50\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": true,
       "expected_rejection_status": null
     },
@@ -372,12 +397,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"meter_name\":\"progress\",\"meter_value\":\"50\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"meter_name\":\"progress\",\"meter_value\":\"50\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -392,12 +419,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"meter_name\":\"progress\",\"meter_value\":\"50\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":null,\"meter_name\":\"progress\",\"meter_value\":\"50\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -412,12 +441,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_value\":\"50\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_value\":\"50\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -432,12 +463,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":null,\"meter_value\":\"50\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":null,\"meter_value\":\"50\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -452,12 +485,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -472,12 +507,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":null}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":null,\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -2500,12 +2537,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":50}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":50,\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -2520,12 +2559,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"01\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"01\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },
@@ -2540,12 +2581,14 @@
         "payload": {
           "node_path": "/f/t",
           "meter_name": "progress",
-          "meter_value": "50"
+          "meter_value": "50",
+          "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+          "source_task_path": "/f/t"
         }
       },
       "http_status": 200,
       "content_type": "application/json",
-      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"9223372036854775808\"}}",
+      "raw_body": "{\"version\":\"1\",\"command\":\"meter\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"node_path\":\"/f/t\",\"meter_name\":\"progress\",\"meter_value\":\"9223372036854775808\",\"attempt_id\":\"123e4567-e89b-42d3-a456-426614174000\",\"source_task_path\":\"/f/t\"}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
     },

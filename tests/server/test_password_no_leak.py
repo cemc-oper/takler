@@ -361,9 +361,15 @@ def test_a_full_child_command_sequence_leaks_no_password(monkeypatch, harness) -
     monkeypatch.setenv(ENV_JOB_PASSWORD, password)
 
     init = harness.record(
-        harness.client.run_command_init(node_path=TASK_PATH, task_id=TASK_ID)
+        harness.client.run_command_init(
+            node_path=TASK_PATH, task_id=TASK_ID, attempt_id=harness.task.attempt_id
+        )
     )
-    complete = harness.record(harness.client.run_command_complete(node_path=TASK_PATH))
+    complete = harness.record(
+        harness.client.run_command_complete(
+            node_path=TASK_PATH, attempt_id=harness.task.attempt_id
+        )
+    )
     assert init.flag == 0
     assert complete.flag == 0
     assert harness.task.state.node_status is NodeStatus.complete
@@ -397,7 +403,9 @@ def test_the_serialized_task_carries_no_password(monkeypatch, harness) -> None:
     password = harness.wait_for_submitted()
     monkeypatch.setenv(ENV_JOB_PASSWORD, password)
 
-    harness.client.run_command_init(node_path=TASK_PATH, task_id=TASK_ID)
+    harness.client.run_command_init(
+        node_path=TASK_PATH, task_id=TASK_ID, attempt_id=harness.task.attempt_id
+    )
     task = harness.task
     assert task.state.node_status is NodeStatus.active
 
@@ -426,7 +434,11 @@ def test_a_refused_child_command_leaks_neither_password(monkeypatch, harness) ->
     password = harness.wait_for_submitted()
     monkeypatch.setenv(ENV_JOB_PASSWORD, STALE_PASSWORD)
 
-    refused = harness.record(harness.client.run_command_complete(node_path=TASK_PATH))
+    refused = harness.record(
+        harness.client.run_command_complete(
+            node_path=TASK_PATH, attempt_id=harness.task.attempt_id
+        )
+    )
 
     assert refused.flag == 31
     # The refusal changed nothing: the current try is still the one in flight.

@@ -35,6 +35,8 @@ message ServiceResponse{
 
 message ChildCommandOptions {
   string node_path = 1;
+  string attempt_id = 2;
+  string source_task_path = 3;
 }
 
 message InitCommand {

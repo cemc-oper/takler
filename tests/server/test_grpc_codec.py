@@ -38,6 +38,8 @@ from takler.server.protocol import adapter, takler_pb2
 #: The canonical payload of every command: every field the command's request
 #: DTO declares, in wire shape (enum fields as names, ``meter_value`` as the
 #: string the caller passed).
+ATTEMPT_ID = "123e4567-e89b-42d3-a456-426614174000"
+
 PAYLOAD_BY_COMMAND = {
     Command.INIT: {"node_path": "/flow1/task1", "task_id": "12345"},
     Command.COMPLETE: {"node_path": "/flow1/task1"},
@@ -71,6 +73,16 @@ PAYLOAD_BY_COMMAND = {
     Command.PING: {},
     Command.COROUTINE: {},
 }
+for _child in (
+    Command.INIT,
+    Command.COMPLETE,
+    Command.ABORT,
+    Command.EVENT,
+    Command.METER,
+):
+    PAYLOAD_BY_COMMAND[_child]["attempt_id"] = ATTEMPT_ID
+for _child in (Command.EVENT, Command.METER):
+    PAYLOAD_BY_COMMAND[_child]["source_task_path"] = "/flow1/task1"
 
 
 # -- coverage of the tables ---------------------------------------------------
@@ -98,7 +110,8 @@ def test_method_names_match_the_service_descriptor_and_the_handler_table():
 
 def test_request_to_pb2_rebuilds_the_child_options_wrapper():
     message = adapter.request_to_pb2(
-        Command.INIT, {"node_path": "/flow1/task1", "task_id": "12345"}
+        Command.INIT,
+        {"node_path": "/flow1/task1", "task_id": "12345", "attempt_id": ATTEMPT_ID},
     )
 
     assert message.child_options.node_path == "/flow1/task1"
@@ -111,7 +124,13 @@ def test_request_to_pb2_passes_a_non_numeric_meter_value_untouched():
     message itself."""
     message = adapter.request_to_pb2(
         Command.METER,
-        {"node_path": "/f/t", "meter_name": "m", "meter_value": "abc"},
+        {
+            "node_path": "/f/t",
+            "meter_name": "m",
+            "meter_value": "abc",
+            "attempt_id": ATTEMPT_ID,
+            "source_task_path": "/f/t",
+        },
     )
 
     assert message.meter_value == "abc"

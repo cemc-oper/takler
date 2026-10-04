@@ -96,12 +96,27 @@ def stderr_lines(result) -> list:
 def test_successful_command_exits_zero(fake_client):
     fake_client["outcome"] = FakeResponse(flag=0)
 
-    result = runner.invoke(cli.app, ["complete", "--node-path", "/flow1/task1"])
+    result = runner.invoke(
+        cli.app,
+        [
+            "complete",
+            "--node-path",
+            "/flow1/task1",
+            "--attempt-id",
+            "123e4567-e89b-42d3-a456-426614174000",
+        ],
+    )
 
     assert result.exit_code == 0
     assert stderr_lines(result) == []
     assert FakeClient.instances[0].calls == [
-        ("complete", {"node_path": "/flow1/task1"})
+        (
+            "complete",
+            {
+                "node_path": "/flow1/task1",
+                "attempt_id": "123e4567-e89b-42d3-a456-426614174000",
+            },
+        )
     ]
 
 

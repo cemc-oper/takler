@@ -2,23 +2,30 @@
   "request": {
     "init": {
       "node_path": "s",
-      "task_id": "s"
+      "task_id": "s",
+      "attempt_id": "s"
     },
     "complete": {
-      "node_path": "s"
+      "node_path": "s",
+      "attempt_id": "s"
     },
     "abort": {
       "node_path": "s",
-      "reason": "s"
+      "reason": "s",
+      "attempt_id": "s"
     },
     "event": {
       "node_path": "s",
-      "event_name": "s"
+      "event_name": "s",
+      "attempt_id": "s",
+      "source_task_path": "s"
     },
     "meter": {
       "node_path": "s",
       "meter_name": "s",
-      "meter_value": "decimal"
+      "meter_value": "decimal",
+      "attempt_id": "s",
+      "source_task_path": "s"
     },
     "requeue": {
       "node_paths": "as"

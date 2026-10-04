@@ -66,7 +66,18 @@ def test_every_required_payload_field_is_checked_before_dispatch(case):
         value = copy.deepcopy(case["request"])
         del value["payload"][field]
         response, count = asyncio.run(send(json.dumps(value), case["command"]))
-        assert response.status_code == 422 and count == 0
+        if field == "attempt_id" and case["command"] in {
+            "init",
+            "complete",
+            "abort",
+            "event",
+            "meter",
+        }:
+            # Missing identity reaches the handler as an empty attempt so the
+            # real scheduler can return attempt_mismatch after authentication.
+            assert response.status_code == 200 and count == 1
+        else:
+            assert response.status_code == 422 and count == 0
 
 
 @pytest.mark.parametrize("command", [Command.PING, Command.SHOW, Command.COROUTINE])

@@ -335,7 +335,7 @@ def report_complete(monkeypatch, restarted: Restarted, password: str):
         port=restarted.port,
         retry_window=TEST_RETRY_WINDOW,
     )
-    return client.complete(node_path=TASK_PATH)
+    return client.complete(node_path=TASK_PATH, attempt_id=restarted.task.attempt_id)
 
 
 def snapshot_of(task: Task) -> Tuple:

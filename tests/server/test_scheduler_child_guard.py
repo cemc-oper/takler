@@ -25,7 +25,11 @@ import pytest
 
 from takler.core import Bunch, Flow, NodeStatus
 from takler.core.task_node import Task
-from takler.exceptions import NodeNotFoundError, NodeTypeError, ZombieError
+from takler.exceptions import (
+    AttemptMismatchError,
+    NodeNotFoundError,
+    NodeTypeError,
+)
 from takler.server.connect_config import ZombiePolicy
 from takler.protocol.commands import (
     AbortCommand,
@@ -47,6 +51,7 @@ from takler.server.zombie import ChildAction, ZombieDetector
 
 TASK1 = "/flow1/container1/task1"
 CONTAINER1 = "/flow1/container1"
+ATTEMPT_ID = "123e4567-e89b-42d3-a456-426614174000"
 
 
 class RecordingDetector:
@@ -93,6 +98,9 @@ def build_flow(name: str = "flow1") -> Flow:
 def make_scheduler(detector=None) -> Scheduler:
     scheduler = Scheduler(bunch=Bunch(name="bunch"), zombie_detector=detector)
     scheduler.bunch.add_flow(build_flow("flow1"))
+    task = scheduler.bunch.find_node(TASK1)
+    task.attempt_id = ATTEMPT_ID
+    task.set_node_status(NodeStatus.submitted)
     return scheduler
 
 
@@ -109,22 +117,37 @@ def run_child_command(scheduler: Scheduler, command: str, node_path: str = TASK1
     if command == "init":
         return asyncio.run(
             scheduler.run_command_init(
-                InitCommand(node_path=node_path, task_id="job-42")
+                InitCommand(
+                    node_path=node_path, task_id="job-42", attempt_id=ATTEMPT_ID
+                )
             )
         )
     if command == "complete":
-        return scheduler.run_command_complete(CompleteCommand(node_path=node_path))
+        return scheduler.run_command_complete(
+            CompleteCommand(node_path=node_path, attempt_id=ATTEMPT_ID)
+        )
     if command == "abort":
         return scheduler.run_command_abort(
-            AbortCommand(node_path=node_path, reason="boom")
+            AbortCommand(node_path=node_path, reason="boom", attempt_id=ATTEMPT_ID)
         )
     if command == "event":
         return scheduler.run_command_event(
-            EventCommand(node_path=node_path, event_name="event1")
+            EventCommand(
+                node_path=node_path,
+                event_name="event1",
+                attempt_id=ATTEMPT_ID,
+                source_task_path=TASK1,
+            )
         )
     if command == "meter":
         return scheduler.run_command_meter(
-            MeterCommand(node_path=node_path, meter_name="meter1", meter_value=50)
+            MeterCommand(
+                node_path=node_path,
+                meter_name="meter1",
+                meter_value=50,
+                attempt_id=ATTEMPT_ID,
+                source_task_path=TASK1,
+            )
         )
     raise AssertionError(f"unknown child command: {command}")
 
@@ -241,22 +264,33 @@ def test_non_task_node_raises_without_consulting_the_guard(command):
     [("event", "event_c", True), ("meter", "meter_c", 50)],
 )
 def test_event_and_meter_on_a_non_task_keep_m1_behaviour(command, variable, expected):
-    """A container has no job instance, so it is judged by nothing."""
-    detector = RecordingDetector(ChildAction.SKIP)
+    """A container target is authorized through the reporting Task."""
+    detector = RecordingDetector(ChildAction.PROCEED)
     scheduler = make_scheduler(detector)
     container1 = scheduler.bunch.find_node(CONTAINER1)
 
     if command == "event":
         scheduler.run_command_event(
-            EventCommand(node_path=CONTAINER1, event_name="event_c")
+            EventCommand(
+                node_path=CONTAINER1,
+                event_name="event_c",
+                attempt_id=ATTEMPT_ID,
+                source_task_path=TASK1,
+            )
         )
     else:
         scheduler.run_command_meter(
-            MeterCommand(node_path=CONTAINER1, meter_name="meter_c", meter_value=50)
+            MeterCommand(
+                node_path=CONTAINER1,
+                meter_name="meter_c",
+                meter_value=50,
+                attempt_id=ATTEMPT_ID,
+                source_task_path=TASK1,
+            )
         )
 
     assert container1.find_variable(variable).value == expected
-    assert detector.calls == []
+    assert detector.calls == [(TASK1, command, None)]
 
 
 # operator commands are never judged -------------------------------------
@@ -299,7 +333,9 @@ def test_without_a_detector_child_commands_keep_m1_behaviour():
     assert scheduler.zombie_detector is None
     assert scheduler._guard_child_command(task1, "complete") is ChildAction.PROCEED
 
-    scheduler.run_command_complete(CompleteCommand(node_path=TASK1))
+    scheduler.run_command_complete(
+        CompleteCommand(node_path=TASK1, attempt_id=ATTEMPT_ID)
+    )
     assert task1.state.node_status is NodeStatus.complete
 
 
@@ -307,16 +343,19 @@ def test_without_a_detector_child_commands_keep_m1_behaviour():
 
 
 def test_fail_policy_rejects_a_command_against_a_queued_task():
-    """Requeued-then-reporting is the ``Z2`` case, and nothing is written."""
+    """A queued task rejects the report before zombie policy is consulted."""
     scheduler = make_scheduler(
         ZombieDetector(zombie_policy=ZombiePolicy.FAIL),
     )
     flow = scheduler.bunch.find_flow("flow1")
     task1: Task = scheduler.bunch.find_node(TASK1)
+    task1.set_node_status(NodeStatus.queued)
     before = status_map(flow)
 
-    with pytest.raises(ZombieError):
-        scheduler.run_command_complete(CompleteCommand(node_path=TASK1))
+    with pytest.raises(AttemptMismatchError):
+        scheduler.run_command_complete(
+            CompleteCommand(node_path=TASK1, attempt_id=ATTEMPT_ID)
+        )
 
     assert status_map(flow) == before
     assert task1.job_password is None
@@ -332,7 +371,9 @@ def test_a_command_of_the_current_run_proceeds_and_keeps_the_password():
     task1.init("job-42")
     task1.job_password = "password-of-the-current-run"
 
-    scheduler.run_command_complete(CompleteCommand(node_path=TASK1))
+    scheduler.run_command_complete(
+        CompleteCommand(node_path=TASK1, attempt_id=ATTEMPT_ID)
+    )
 
     assert task1.state.node_status is NodeStatus.complete
     assert task1.job_password == "password-of-the-current-run"

@@ -51,6 +51,7 @@ from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 TAKLER_HOST = "TAKLER_HOST"
 TAKLER_PORT = "TAKLER_PORT"
 TAKLER_NAME = "TAKLER_NAME"
+TAKLER_ATTEMPT_ID = "TAKLER_ATTEMPT_ID"
 NO_TAKLER = "NO_TAKLER"
 
 HOST_HELP_STRING = f"takler service host, or use env var {TAKLER_HOST}"
@@ -236,6 +237,9 @@ def _run_client_command(
 def init(
     task_id: str = typer.Option(..., help="task id (TAKLER_RID)."),
     node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    attempt_id: str = typer.Option(
+        None, envvar=TAKLER_ATTEMPT_ID, help="current task attempt UUID."
+    ),
     host: str = typer.Option(None, help=HOST_HELP_STRING),
     port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
@@ -250,13 +254,18 @@ def init(
     _run_client_command(
         host,
         port,
-        lambda client: client.init(node_path=node_path, task_id=task_id),
+        lambda client: client.init(
+            node_path=node_path, task_id=task_id, attempt_id=attempt_id or ""
+        ),
     )
 
 
 @app.command()
 def complete(
     node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    attempt_id: str = typer.Option(
+        None, envvar=TAKLER_ATTEMPT_ID, help="current task attempt UUID."
+    ),
     host: str = typer.Option(None, help=HOST_HELP_STRING),
     port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
@@ -271,13 +280,18 @@ def complete(
     _run_client_command(
         host,
         port,
-        lambda client: client.complete(node_path=node_path),
+        lambda client: client.complete(
+            node_path=node_path, attempt_id=attempt_id or ""
+        ),
     )
 
 
 @app.command()
 def abort(
     node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    attempt_id: str = typer.Option(
+        None, envvar=TAKLER_ATTEMPT_ID, help="current task attempt UUID."
+    ),
     host: str = typer.Option(None, help=HOST_HELP_STRING),
     port: str = typer.Option(None, help=PORT_HELP_STRING),
     reason: str = typer.Option("", help="abort reason"),
@@ -293,13 +307,21 @@ def abort(
     _run_client_command(
         host,
         port,
-        lambda client: client.abort(node_path=node_path, reason=reason),
+        lambda client: client.abort(
+            node_path=node_path, reason=reason, attempt_id=attempt_id or ""
+        ),
     )
 
 
 @app.command()
 def event(
     node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    attempt_id: str = typer.Option(
+        None, envvar=TAKLER_ATTEMPT_ID, help="current task attempt UUID."
+    ),
+    source_task_path: str = typer.Option(
+        None, help="reporting task path (defaults to TAKLER_NAME)."
+    ),
     host: str = typer.Option(None, help=HOST_HELP_STRING),
     port: str = typer.Option(None, help=PORT_HELP_STRING),
     event_name: str = typer.Option(..., help="event name"),
@@ -315,13 +337,24 @@ def event(
     _run_client_command(
         host,
         port,
-        lambda client: client.event(node_path=node_path, event_name=event_name),
+        lambda client: client.event(
+            node_path=node_path,
+            event_name=event_name,
+            attempt_id=attempt_id or "",
+            source_task_path=source_task_path or os.environ.get(TAKLER_NAME, node_path),
+        ),
     )
 
 
 @app.command()
 def meter(
     node_path: str = typer.Option(..., envvar=TAKLER_NAME, help="node path."),
+    attempt_id: str = typer.Option(
+        None, envvar=TAKLER_ATTEMPT_ID, help="current task attempt UUID."
+    ),
+    source_task_path: str = typer.Option(
+        None, help="reporting task path (defaults to TAKLER_NAME)."
+    ),
     host: str = typer.Option(None, help=HOST_HELP_STRING),
     port: str = typer.Option(None, help=PORT_HELP_STRING),
     meter_name: str = typer.Option(..., help="meter name"),
@@ -342,6 +375,8 @@ def meter(
             node_path=node_path,
             meter_name=meter_name,
             meter_value=meter_value,
+            attempt_id=attempt_id or "",
+            source_task_path=source_task_path or os.environ.get(TAKLER_NAME, node_path),
         ),
     )
 

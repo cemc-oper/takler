@@ -90,6 +90,17 @@ PAYLOAD_AND_TYPE_BY_COMMAND: Dict[Command, Tuple[Dict[str, Any], Any]] = {
     Command.PING: ({}, takler_pb2.PingRequest),
     Command.COROUTINE: ({}, takler_pb2.CoroutineRequest),
 }
+TEST_ATTEMPT_ID = "123e4567-e89b-42d3-a456-426614174000"
+for _child in (
+    Command.INIT,
+    Command.COMPLETE,
+    Command.ABORT,
+    Command.EVENT,
+    Command.METER,
+):
+    PAYLOAD_AND_TYPE_BY_COMMAND[_child][0]["attempt_id"] = TEST_ATTEMPT_ID
+for _child in (Command.EVENT, Command.METER):
+    PAYLOAD_AND_TYPE_BY_COMMAND[_child][0]["source_task_path"] = "/flow1/task1"
 
 
 class RecordingStub:
