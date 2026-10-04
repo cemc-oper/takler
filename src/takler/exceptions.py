@@ -35,6 +35,7 @@ __all__ = [
     "JobSubmissionError",
     "ZombieError",
     "AttemptMismatchError",
+    "ServerHaltedError",
     "TransportError",
     "ClientConnectionError",
     "ServerResponseError",
@@ -154,6 +155,10 @@ class ZombieError(TaklerError):
 
 class AttemptMismatchError(TaklerError):
     """The child command does not belong to the task's current attempt."""
+
+
+class ServerHaltedError(TaklerError):
+    """The service still has a fault pause and cannot resume scheduling."""
 
 
 class TransportError(TaklerError):

@@ -546,6 +546,33 @@ def begin(
 # Query command --------------------------------------------------------
 
 
+@app.command("server-status")
+def server_status(
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+):
+    """[query] Show server execution state and halt causes."""
+    _run_client_command(host, port, lambda client: client.server_status())
+
+
+@app.command("server-halt")
+def server_halt(
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+):
+    """[control] Halt new server execution."""
+    _run_client_command(host, port, lambda client: client.server_halt())
+
+
+@app.command("server-resume")
+def server_resume(
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+):
+    """[control] Remove manual and recovery halt causes."""
+    _run_client_command(host, port, lambda client: client.server_resume())
+
+
 @app.command()
 def show(
     host: str = typer.Option(None, help=HOST_HELP_STRING),

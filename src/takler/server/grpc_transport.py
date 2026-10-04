@@ -250,3 +250,12 @@ class GrpcTransport(takler_pb2_grpc.TaklerServerServicer, ServerTransport):
 
     async def QueryCoroutine(self, request, context):
         return await self._dispatch(Command.COROUTINE, request, context)
+
+    async def RunRequestServerStatus(self, request, context):
+        return await self._dispatch(Command.SERVER_STATUS, request, context)
+
+    async def RunCommandServerHalt(self, request, context):
+        return await self._dispatch(Command.SERVER_HALT, request, context)
+
+    async def RunCommandServerResume(self, request, context):
+        return await self._dispatch(Command.SERVER_RESUME, request, context)

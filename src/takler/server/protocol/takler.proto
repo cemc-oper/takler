@@ -1,4 +1,5 @@
 syntax = "proto3";
+import "google/protobuf/struct.proto";
 /*
 This file is the single source of truth of the wire protocol. Both client
 implementations mirror it and gate on drift in CI.
@@ -126,6 +127,9 @@ message BeginCommand {
   bool force = 2;
 }
 
+message ServerHaltCommand {}
+message ServerResumeCommand {}
+
 //----------------------------------------
 // query command
 
@@ -159,6 +163,18 @@ message CoroutineResponse {
   repeated Coroutine coroutines = 1;
 }
 
+message ServerStatusRequest {}
+
+message ServerStatusResponse {
+  int32 flag = 1;
+  string message = 2;
+  string status = 3;
+  optional string status_reason = 4;
+  repeated string halt_causes = 5;
+  optional string last_checkpoint_at = 6;
+  google.protobuf.Struct restore_summary = 7;
+}
+
 //------------------------------------------
 
 service TaklerServer {
@@ -187,6 +203,8 @@ service TaklerServer {
   rpc RunCommandLoad(LoadCommand) returns (ServiceResponse) {}
 
   rpc RunCommandBegin(BeginCommand) returns (BatchResponse) {}
+  rpc RunCommandServerHalt(ServerHaltCommand) returns (ServerStatusResponse) {}
+  rpc RunCommandServerResume(ServerResumeCommand) returns (ServerStatusResponse) {}
 
 
   // query command
@@ -196,6 +214,7 @@ service TaklerServer {
   rpc RunRequestPing(PingRequest) returns (PingResponse){}
 
   rpc QueryCoroutine(CoroutineRequest) returns (CoroutineResponse){}
+  rpc RunRequestServerStatus(ServerStatusRequest) returns (ServerStatusResponse){}
 }
 message BatchItemResult {
   uint32 index = 1;

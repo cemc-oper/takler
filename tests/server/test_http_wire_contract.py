@@ -21,6 +21,13 @@ async def send(raw, command, content_type="application/json"):
                 **(
                     {"flag": 0, "message": "", "results": []}
                     if Command(command) in BATCH_COMMANDS
+                    else {"status": "running", "halt_causes": []}
+                    if Command(command)
+                    in (
+                        Command.SERVER_STATUS,
+                        Command.SERVER_HALT,
+                        Command.SERVER_RESUME,
+                    )
                     else {}
                 )
             )

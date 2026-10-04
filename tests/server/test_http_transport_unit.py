@@ -630,3 +630,26 @@ def test_run_before_start_is_an_error_and_stop_a_no_op() -> None:
     asyncio.run(transport.stop())
     with pytest.raises(RuntimeError, match="start"):
         asyncio.run(transport.run())
+
+
+@pytest.mark.parametrize("command", ["server-status", "server-halt", "server-resume"])
+def test_server_state_commands_require_operator_over_http(
+    store: CredentialStore, command: str
+) -> None:
+    audit_logger = RecordingAuditLogger()
+    app = enabled_app(store, audit_logger)
+    denied = post_envelope(app, command, {})
+    assert denied.status_code == 401
+    refused = post_envelope(
+        app, command, {}, headers=operator_headers(secret=WRONG_SECRET)
+    )
+    assert refused.status_code == 403
+    allowed = post_envelope(app, command, {}, headers=operator_headers())
+    assert allowed.status_code == 200
+    payload = allowed.json()["payload"]
+    assert payload["flag"] == 0
+    assert payload["status"] in {"running", "halted"}
+    assert [record.event for record in audit_logger.records] == [
+        EVENT_DENIED,
+        EVENT_DENIED,
+    ] + ([] if command == "server-status" else ["control"])

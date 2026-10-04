@@ -72,8 +72,11 @@ def test_each_field_rejects_missing_null_and_unknown(direction):
                     del value["payload"][key]
                 else:
                     value["payload"][key] = None
-                with pytest.raises(WireError):
+                if not missing and SCHEMA[direction][command][key] in {"ns", "no"}:
                     decode_envelope(json.dumps(value), direction=direction)
+                else:
+                    with pytest.raises(WireError):
+                        decode_envelope(json.dumps(value), direction=direction)
         original["payload"]["UNKNOWN"] = 1
         with pytest.raises(WireError):
             decode_envelope(json.dumps(original), direction=direction)

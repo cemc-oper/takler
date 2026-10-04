@@ -48,6 +48,7 @@ place allowed to know both ``takler_pb2`` and
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, Mapping
+from google.protobuf import json_format
 
 from takler.protocol import commands
 from takler.protocol.commands import Command, ProtocolModel
@@ -88,6 +89,9 @@ GRPC_METHOD_BY_COMMAND: Dict[Command, str] = {
     Command.SHOW: "RunRequestShow",
     Command.PING: "RunRequestPing",
     Command.COROUTINE: "QueryCoroutine",
+    Command.SERVER_STATUS: "RunRequestServerStatus",
+    Command.SERVER_HALT: "RunCommandServerHalt",
+    Command.SERVER_RESUME: "RunCommandServerResume",
 }
 
 
@@ -223,6 +227,9 @@ _REQUEST_FROM_PB2: Dict[Command, Callable[[object], ProtocolModel]] = {
     Command.SHOW: _show,
     Command.PING: _ping,
     Command.COROUTINE: _coroutine,
+    Command.SERVER_STATUS: lambda m: commands.ServerStatusRequest(),
+    Command.SERVER_HALT: lambda m: commands.ServerHaltCommand(),
+    Command.SERVER_RESUME: lambda m: commands.ServerResumeCommand(),
 }
 
 
@@ -246,6 +253,20 @@ def response_to_pb2(response: ProtocolModel):
         return takler_pb2.BatchResponse(**response.model_dump())
     if isinstance(response, commands.ServiceResponse):
         return takler_pb2.ServiceResponse(flag=response.flag, message=response.message)
+    if isinstance(response, commands.ServerStatusResponse):
+        encoded = takler_pb2.ServerStatusResponse(
+            flag=response.flag,
+            message=response.message,
+            status=response.status,
+            halt_causes=response.halt_causes,
+        )
+        if response.status_reason is not None:
+            encoded.status_reason = response.status_reason
+        if response.last_checkpoint_at is not None:
+            encoded.last_checkpoint_at = response.last_checkpoint_at
+        if response.restore_summary is not None:
+            json_format.ParseDict(response.restore_summary, encoded.restore_summary)
+        return encoded
     if isinstance(response, commands.ShowResponse):
         return takler_pb2.ShowResponse(output=response.output)
     if isinstance(response, commands.PingResponse):
@@ -401,6 +422,9 @@ _REQUEST_TO_PB2: Dict[Command, Callable[[Mapping[str, Any]], Any]] = {
     Command.SHOW: _show_to_pb2,
     Command.PING: _ping_to_pb2,
     Command.COROUTINE: _coroutine_to_pb2,
+    Command.SERVER_STATUS: lambda p: takler_pb2.ServerStatusRequest(),
+    Command.SERVER_HALT: lambda p: takler_pb2.ServerHaltCommand(),
+    Command.SERVER_RESUME: lambda p: takler_pb2.ServerResumeCommand(),
 }
 
 
@@ -449,6 +473,22 @@ def response_from_pb2(command: Command, message) -> ProtocolModel:
         )
     if response_type is commands.ServiceResponse:
         return commands.ServiceResponse(flag=message.flag, message=message.message)
+    if response_type is commands.ServerStatusResponse:
+        return commands.ServerStatusResponse(
+            flag=message.flag,
+            message=message.message,
+            status=message.status,
+            status_reason=message.status_reason
+            if message.HasField("status_reason")
+            else None,
+            halt_causes=list(message.halt_causes),
+            last_checkpoint_at=message.last_checkpoint_at
+            if message.HasField("last_checkpoint_at")
+            else None,
+            restore_summary=json_format.MessageToDict(message.restore_summary)
+            if message.HasField("restore_summary")
+            else None,
+        )
     if response_type is commands.ShowResponse:
         return commands.ShowResponse(output=message.output)
     if response_type is commands.PingResponse:

@@ -89,6 +89,7 @@ _READ_ONLY_OPERATOR_METHODS: "frozenset[str]" = frozenset(
     {
         "RunRequestShow",
         "QueryCoroutine",
+        "RunRequestServerStatus",
     }
 )
 
@@ -143,6 +144,9 @@ METHOD_NAME_BY_COMMAND: Dict[Command, str] = {
     Command.SHOW: "RunRequestShow",
     Command.PING: "RunRequestPing",
     Command.COROUTINE: "QueryCoroutine",
+    Command.SERVER_STATUS: "RunRequestServerStatus",
+    Command.SERVER_HALT: "RunCommandServerHalt",
+    Command.SERVER_RESUME: "RunCommandServerResume",
 }
 
 
@@ -205,6 +209,9 @@ _REQUEST_INFO_BY_COMMAND: Dict[Command, Callable[[ProtocolModel], str]] = {
     Command.SHOW: lambda r: "show",
     Command.PING: lambda r: "ping",
     Command.COROUTINE: lambda r: "coroutine",
+    Command.SERVER_STATUS: lambda r: "server-status",
+    Command.SERVER_HALT: lambda r: "server-halt",
+    Command.SERVER_RESUME: lambda r: "server-resume",
 }
 
 
@@ -334,6 +341,20 @@ class CommandHandlers:
             else (lambda exc: _raise_query_error())
             if query_errors
             and command in (Command.SHOW, Command.PING, Command.COROUTINE)
+            else (
+                lambda exc: self.scheduler.server_status_response(
+                    flag=15
+                    if isinstance(exc, ValidationError)
+                    else error_code_for_exception(exc),
+                    message="invalid request"
+                    if isinstance(exc, ValidationError)
+                    else str(exc)
+                    if error_code_for_exception(exc) == 33
+                    else "command failed",
+                )
+            )
+            if command
+            in (Command.SERVER_STATUS, Command.SERVER_HALT, Command.SERVER_RESUME)
             else _ERROR_RESPONSE_BY_COMMAND.get(command, command_error_response),
             audit_target=audit_target,
             peer=peer,
@@ -393,6 +414,12 @@ class CommandHandlers:
             return PingResponse()
         if command is Command.COROUTINE:
             return self._coroutine()
+        if command is Command.SERVER_STATUS:
+            return self.scheduler.run_request_server_status(request)
+        if command is Command.SERVER_HALT:
+            return self.scheduler.run_command_server_halt(request)
+        if command is Command.SERVER_RESUME:
+            return self.scheduler.run_command_server_resume(request)
         raise UnsupportedCommandError(command)
 
     async def _init(self, request) -> ServiceResponse:

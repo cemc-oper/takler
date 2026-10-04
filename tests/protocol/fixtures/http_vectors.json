@@ -2653,6 +2653,342 @@
       "raw_body": "{\"version\":\"1\",\"command\":\"force\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"paths\":[\"/f/t\"],\"state\":\"bad\",\"recursive\":true}}",
       "expected_wire_valid": false,
       "expected_rejection_status": 422
+    },
+    {
+      "id": "request_valid_server-status",
+      "direction": "request",
+      "command": "server-status",
+      "request": {
+        "version": "1",
+        "command": "server-status",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-status\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_valid_server-status",
+      "direction": "response",
+      "command": "server-status",
+      "request": {
+        "version": "1",
+        "command": "server-status",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-status\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":null,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_server-status_extra",
+      "direction": "request",
+      "command": "server-status",
+      "request": {
+        "version": "1",
+        "command": "server-status",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-status\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"unexpected\":1}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_server-status_null",
+      "direction": "request",
+      "command": "server-status",
+      "request": {
+        "version": "1",
+        "command": "server-status",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-status\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":null}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "response_server-status_bad_status",
+      "direction": "response",
+      "command": "server-status",
+      "request": {
+        "version": "1",
+        "command": "server-status",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-status\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"paused\",\"status_reason\":null,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_server-status_bad_causes",
+      "direction": "response",
+      "command": "server-status",
+      "request": {
+        "version": "1",
+        "command": "server-status",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-status\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":null,\"halt_causes\":[1],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_server-status_bad_reason",
+      "direction": "response",
+      "command": "server-status",
+      "request": {
+        "version": "1",
+        "command": "server-status",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-status\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":42,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_valid_server-halt",
+      "direction": "request",
+      "command": "server-halt",
+      "request": {
+        "version": "1",
+        "command": "server-halt",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-halt\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_valid_server-halt",
+      "direction": "response",
+      "command": "server-halt",
+      "request": {
+        "version": "1",
+        "command": "server-halt",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-halt\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":null,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_server-halt_extra",
+      "direction": "request",
+      "command": "server-halt",
+      "request": {
+        "version": "1",
+        "command": "server-halt",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-halt\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"unexpected\":1}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_server-halt_null",
+      "direction": "request",
+      "command": "server-halt",
+      "request": {
+        "version": "1",
+        "command": "server-halt",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-halt\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":null}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "response_server-halt_bad_status",
+      "direction": "response",
+      "command": "server-halt",
+      "request": {
+        "version": "1",
+        "command": "server-halt",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-halt\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"paused\",\"status_reason\":null,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_server-halt_bad_causes",
+      "direction": "response",
+      "command": "server-halt",
+      "request": {
+        "version": "1",
+        "command": "server-halt",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-halt\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":null,\"halt_causes\":[1],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_server-halt_bad_reason",
+      "direction": "response",
+      "command": "server-halt",
+      "request": {
+        "version": "1",
+        "command": "server-halt",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-halt\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":42,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_valid_server-resume",
+      "direction": "request",
+      "command": "server-resume",
+      "request": {
+        "version": "1",
+        "command": "server-resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_valid_server-resume",
+      "direction": "response",
+      "command": "server-resume",
+      "request": {
+        "version": "1",
+        "command": "server-resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":null,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": true,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "request_server-resume_extra",
+      "direction": "request",
+      "command": "server-resume",
+      "request": {
+        "version": "1",
+        "command": "server-resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"unexpected\":1}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "request_server-resume_null",
+      "direction": "request",
+      "command": "server-resume",
+      "request": {
+        "version": "1",
+        "command": "server-resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":null}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": 422
+    },
+    {
+      "id": "response_server-resume_bad_status",
+      "direction": "response",
+      "command": "server-resume",
+      "request": {
+        "version": "1",
+        "command": "server-resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"paused\",\"status_reason\":null,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_server-resume_bad_causes",
+      "direction": "response",
+      "command": "server-resume",
+      "request": {
+        "version": "1",
+        "command": "server-resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":null,\"halt_causes\":[1],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
+    },
+    {
+      "id": "response_server-resume_bad_reason",
+      "direction": "response",
+      "command": "server-resume",
+      "request": {
+        "version": "1",
+        "command": "server-resume",
+        "trace_id": "0123456789abcdef0123456789abcdef",
+        "payload": {}
+      },
+      "http_status": 200,
+      "content_type": "application/json",
+      "raw_body": "{\"version\":\"1\",\"command\":\"server-resume\",\"trace_id\":\"0123456789abcdef0123456789abcdef\",\"payload\":{\"flag\":0,\"message\":\"\",\"status\":\"running\",\"status_reason\":42,\"halt_causes\":[],\"last_checkpoint_at\":null,\"restore_summary\":null}}",
+      "expected_wire_valid": false,
+      "expected_rejection_status": null
     }
   ]
 }

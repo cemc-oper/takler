@@ -69,7 +69,10 @@
       "show_meter": "b"
     },
     "ping": {},
-    "coroutine": {}
+    "coroutine": {},
+    "server-status": {},
+    "server-halt": {},
+    "server-resume": {}
   },
   "response": {
     "init": {
@@ -141,6 +144,33 @@
     "ping": {},
     "coroutine": {
       "coroutines": "coroutines"
+    },
+    "server-status": {
+      "flag": "flag",
+      "message": "s",
+      "status": "server_status",
+      "status_reason": "ns",
+      "halt_causes": "as",
+      "last_checkpoint_at": "ns",
+      "restore_summary": "no"
+    },
+    "server-halt": {
+      "flag": "flag",
+      "message": "s",
+      "status": "server_status",
+      "status_reason": "ns",
+      "halt_causes": "as",
+      "last_checkpoint_at": "ns",
+      "restore_summary": "no"
+    },
+    "server-resume": {
+      "flag": "flag",
+      "message": "s",
+      "status": "server_status",
+      "status_reason": "ns",
+      "halt_causes": "as",
+      "last_checkpoint_at": "ns",
+      "restore_summary": "no"
     }
   },
   "item": {

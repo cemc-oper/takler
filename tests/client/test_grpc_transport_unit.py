@@ -89,6 +89,9 @@ PAYLOAD_AND_TYPE_BY_COMMAND: Dict[Command, Tuple[Dict[str, Any], Any]] = {
     ),
     Command.PING: ({}, takler_pb2.PingRequest),
     Command.COROUTINE: ({}, takler_pb2.CoroutineRequest),
+    Command.SERVER_STATUS: ({}, takler_pb2.ServerStatusRequest),
+    Command.SERVER_HALT: ({}, takler_pb2.ServerHaltCommand),
+    Command.SERVER_RESUME: ({}, takler_pb2.ServerResumeCommand),
 }
 TEST_ATTEMPT_ID = "123e4567-e89b-42d3-a456-426614174000"
 for _child in (
@@ -117,6 +120,12 @@ class RecordingStub:
             targets = list(getattr(request, "node_path", getattr(request, "path", [])))
             if hasattr(request, "flow_name") and request.flow_name:
                 targets = ["/" + request.flow_name]
+            if name in {
+                "RunRequestServerStatus",
+                "RunCommandServerHalt",
+                "RunCommandServerResume",
+            }:
+                return takler_pb2.ServerStatusResponse(flag=0, status="running")
             return SimpleNamespace(
                 flag=0,
                 message="",

@@ -71,6 +71,7 @@ EXIT_CODE_BY_ERROR_CODE: Dict[int, int] = {
     30: EXIT_SERVER_ERROR,  # job_submission
     31: EXIT_SERVER_ERROR,  # zombie
     32: EXIT_REQUEST_ERROR,  # attempt_mismatch
+    33: EXIT_REQUEST_ERROR,  # server_halted
     40: EXIT_UNREACHABLE,  # transport
     41: EXIT_UNREACHABLE,  # client_connection
     42: EXIT_SERVER_ERROR,  # server_response

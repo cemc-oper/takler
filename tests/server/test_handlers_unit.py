@@ -64,6 +64,8 @@ def test_control_method_names_match_the_control_commands():
         Command.LOAD,
         Command.REPLACE,
         Command.BEGIN,
+        Command.SERVER_HALT,
+        Command.SERVER_RESUME,
     }
     assert CONTROL_METHOD_NAMES == {
         METHOD_NAME_BY_COMMAND[command] for command in control

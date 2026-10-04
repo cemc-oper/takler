@@ -286,6 +286,23 @@ class ServerState(BaseModel):
         }
 
     @classmethod
+    def from_causes(cls, causes: List[HaltCause]) -> "ServerState":
+        """Construct a whole validated state instead of mutating model fields."""
+        if not causes:
+            return cls()
+        reasons = {
+            HaltCause.checkpoint_failure: "checkpoint failure",
+            HaltCause.recovery: "recovery pending",
+            HaltCause.manual: "manual pause",
+        }
+        reason = next(reasons[cause] for cause in reasons if cause in causes)
+        return cls(
+            status=ServerStatus.halted,
+            status_reason=reason,
+            halt_causes=causes,
+        )
+
+    @classmethod
     def from_dict(cls, d: Dict) -> "ServerState":
         if not isinstance(d, dict) or set(d) != {
             "status",

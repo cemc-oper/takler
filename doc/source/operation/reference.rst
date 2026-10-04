@@ -306,6 +306,11 @@ error_code 分类表
       - ``AttemptMismatchError``
       - child 缺失、旧身份或已结束轮次被拒绝
       - ``1``
+    * - ``33``
+      - ``server_halted``
+      - ``ServerHaltedError``
+      - checkpoint failure 阻止服务转为 running
+      - ``1``
     * - ``40``
       - ``transport``
       - ``TransportError``

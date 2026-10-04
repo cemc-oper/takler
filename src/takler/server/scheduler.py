@@ -6,7 +6,8 @@ from queue import Queue
 from typing import Callable, Optional
 from uuid import UUID
 
-from takler.core import Bunch, Task, NodeStatus, ServerStatus, Event, Flow
+from takler.core import Bunch, Task, NodeStatus, ServerStatus, HaltCause, Event, Flow
+from takler.core.bunch import ServerState
 from takler.core.node import Node
 from takler.exceptions import (
     AttemptMismatchError,
@@ -36,6 +37,7 @@ from takler.protocol.commands import (
     ResumeCommand,
     RunCommand,
     ShowRequest,
+    ServerStatusResponse,
     SuspendCommand,
 )
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
@@ -864,6 +866,48 @@ class Scheduler:
         for flow in flows:
             logger.info(f"begin flow [flow name: {flow.name}, force: {command.force}]")
             flow.begin(force=command.force)
+
+    # Service scheduling state -----------------------------------
+
+    def server_status_response(
+        self, flag: int = 0, message: str = ""
+    ) -> ServerStatusResponse:
+        """Return only the current, safe scheduling summary."""
+        state = self.bunch.server_state
+        return ServerStatusResponse(
+            flag=flag,
+            message=message,
+            status=state.status.value,
+            status_reason=state.status_reason,
+            halt_causes=[cause.value for cause in state.halt_causes],
+            last_checkpoint_at=None,
+            restore_summary=None,
+        )
+
+    def run_request_server_status(self, request) -> ServerStatusResponse:
+        return self.server_status_response()
+
+    def run_command_server_halt(self, command) -> ServerStatusResponse:
+        causes = list(self.bunch.server_state.halt_causes)
+        if HaltCause.manual not in causes:
+            causes.append(HaltCause.manual)
+            self.bunch.server_state = ServerState.from_causes(causes)
+        return self.server_status_response(message="service halted in memory")
+
+    def run_command_server_resume(self, command) -> ServerStatusResponse:
+        causes = [
+            cause
+            for cause in self.bunch.server_state.halt_causes
+            if cause not in (HaltCause.manual, HaltCause.recovery)
+        ]
+        if causes != self.bunch.server_state.halt_causes:
+            self.bunch.server_state = ServerState.from_causes(causes)
+        if HaltCause.checkpoint_failure in causes:
+            return self.server_status_response(
+                flag=33,
+                message="checkpoint failure still halts the service",
+            )
+        return self.server_status_response(message="service running in memory")
 
     # Query -------------------------------------------------
 

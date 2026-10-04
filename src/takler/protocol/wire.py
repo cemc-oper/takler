@@ -8,7 +8,7 @@ from importlib.resources import files
 from .error_code import ERROR_NAME_BY_CODE
 
 SCHEMA = json.loads(files("takler.protocol").joinpath("wire_schema.json").read_text())
-READ_ONLY = frozenset({"ping", "show", "coroutine"})
+READ_ONLY = frozenset({"ping", "show", "coroutine", "server-status"})
 
 
 class WireError(ValueError):
@@ -75,6 +75,10 @@ def validate_object(value, schema):
             valid = type(v) is bool
         elif kind == "as":
             valid = type(v) is list and all(type(i) is str for i in v)
+        elif kind == "ns":
+            valid = v is None or type(v) is str
+        elif kind == "no":
+            valid = v is None or type(v) is dict
         elif kind in {"flag", "uint32"}:
             valid = type(v) is int and (
                 v in ERROR_NAME_BY_CODE if kind == "flag" else 0 <= v < 2**32
@@ -100,7 +104,7 @@ def validate_object(value, schema):
                     )
                 except (ValueError, UnicodeError):
                     valid = False
-            elif valid and kind in {"state", "dep", "effect"}:
+            elif valid and kind in {"state", "dep", "effect", "server_status"}:
                 valid = (
                     v
                     in {
@@ -116,6 +120,7 @@ def validate_object(value, schema):
                         },
                         "dep": {"all", "trigger", "time"},
                         "effect": {"none", "applied", "partial", "unknown"},
+                        "server_status": {"running", "halted"},
                     }[kind]
                 )
         if not valid:

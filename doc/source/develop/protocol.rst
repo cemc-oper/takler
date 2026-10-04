@@ -6,7 +6,7 @@
 
 M3 起协议分两层描述：
 
-* **协议模型** （ ``takler/protocol`` 包）是传输中立的：十七个命令各
+* **协议模型** （ ``takler/protocol`` 包）是传输中立的：二十个命令各
   有一对请求 / 应答 DTO （ ``commands.py`` ）、一个信封类型
   （ ``envelope.py`` ）与一张 error_code 分类表（ ``error_code.py``
   ）。这一层不 import ``grpc`` 、 ``takler_pb2`` 或
@@ -25,7 +25,7 @@ gRPC 编码的唯一权威来源仍是
 命令面
 ------
 
-全部命令共十七个：五个 child 命令、九个控制命令、三个查询命令。每个
+全部命令共二十个：五个 child 命令、十一个控制命令、四个查询命令。每个
 命令在协议模型里有一个名字（ ``Command`` 枚举，取值就是两个 CLI 使
 用的命令词），在 gRPC 上对应一个 RPC 方法，在 HTTP 上对应
 ``POST /v1/commands/{command}`` 路径的一段。三种命名的一一对应关系
@@ -103,6 +103,18 @@ gRPC 编码的唯一权威来源仍是
       - ``QueryCoroutine``
       - ``CoroutineRequest`` → ``CoroutineResponse``
       - 列出服务端事件循环上的协程
+    * - ``server-status``
+      - ``RunRequestServerStatus``
+      - ``ServerStatusRequest`` → ``ServerStatusResponse``
+      - 查询服务执行状态与安全的 halt 原因
+    * - ``server-halt``
+      - ``RunCommandServerHalt``
+      - ``ServerHaltCommand`` → ``ServerStatusResponse``
+      - 增加 manual halt 原因并停止新执行
+    * - ``server-resume``
+      - ``RunCommandServerResume``
+      - ``ServerResumeCommand`` → ``ServerStatusResponse``
+      - 移除 manual/recovery 原因；checkpoint_failure 保留时返回 ``server_halted`` (33)
 
 gRPC 上全部是 unary-unary 调用（一次请求一次应答，没有流式）。
 

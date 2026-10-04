@@ -71,6 +71,9 @@ def test_command_kind_table_covers_the_seventeen_commands():
         Command.SHOW: CommandKind.QUERY,
         Command.PING: CommandKind.QUERY,
         Command.COROUTINE: CommandKind.QUERY,
+        Command.SERVER_STATUS: CommandKind.QUERY,
+        Command.SERVER_HALT: CommandKind.CONTROL,
+        Command.SERVER_RESUME: CommandKind.CONTROL,
     }
 
 

@@ -48,7 +48,7 @@ gets the value an operator typing the CLI without that flag would get.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Type, Literal
+from typing import Any, Dict, List, Type, Literal
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr, StrictInt, StrictStr, Field
 
@@ -73,6 +73,9 @@ __all__ = [
     "LoadCommand",
     "ReplaceCommand",
     "BeginCommand",
+    "ServerStatusRequest",
+    "ServerHaltCommand",
+    "ServerResumeCommand",
     "ShowRequest",
     "PingRequest",
     "CoroutineRequest",
@@ -84,6 +87,7 @@ __all__ = [
     "PingResponse",
     "Coroutine",
     "CoroutineResponse",
+    "ServerStatusResponse",
     "REQUEST_TYPE_BY_COMMAND",
     "RESPONSE_TYPE_BY_COMMAND",
 ]
@@ -129,6 +133,9 @@ class Command(str, Enum):
     SHOW = "show"
     PING = "ping"
     COROUTINE = "coroutine"
+    SERVER_STATUS = "server-status"
+    SERVER_HALT = "server-halt"
+    SERVER_RESUME = "server-resume"
 
 
 class ForceState(str, Enum):
@@ -313,6 +320,14 @@ class BeginCommand(ProtocolModel):
     force: bool = False
 
 
+class ServerHaltCommand(ProtocolModel):
+    """Pause all new executions until explicitly resumed."""
+
+
+class ServerResumeCommand(ProtocolModel):
+    """Clear manual/recovery pauses, subject to fault causes."""
+
+
 # ---------------------------------------------------------------------------
 # Query commands
 # ---------------------------------------------------------------------------
@@ -339,6 +354,10 @@ class PingRequest(ProtocolModel):
 
 class CoroutineRequest(ProtocolModel):
     """``coroutine``: list the server's asyncio tasks. Carries nothing."""
+
+
+class ServerStatusRequest(ProtocolModel):
+    """Read the service scheduling status, independent of node status."""
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +432,16 @@ class CoroutineResponse(ProtocolModel):
     coroutines: List[Coroutine] = []
 
 
+class ServerStatusResponse(ProtocolModel):
+    flag: int = 0
+    message: str = ""
+    status: Literal["running", "halted"]
+    status_reason: str | None = None
+    halt_causes: List[str]
+    last_checkpoint_at: str | None = None
+    restore_summary: Dict[str, Any] | None = None
+
+
 #: Command -> request DTO type, one entry per command. The envelope's
 #: ``parse_request`` looks the payload's type up here, so this map -- not a
 #: convention -- is what ties a command name to its model.
@@ -434,6 +463,9 @@ REQUEST_TYPE_BY_COMMAND: Dict[Command, Type[ProtocolModel]] = {
     Command.SHOW: ShowRequest,
     Command.PING: PingRequest,
     Command.COROUTINE: CoroutineRequest,
+    Command.SERVER_STATUS: ServerStatusRequest,
+    Command.SERVER_HALT: ServerHaltCommand,
+    Command.SERVER_RESUME: ServerResumeCommand,
 }
 
 #: Command -> response DTO type. The thirteen child and control commands all
@@ -457,4 +489,7 @@ RESPONSE_TYPE_BY_COMMAND: Dict[Command, Type[ProtocolModel]] = {
     Command.SHOW: ShowResponse,
     Command.PING: PingResponse,
     Command.COROUTINE: CoroutineResponse,
+    Command.SERVER_STATUS: ServerStatusResponse,
+    Command.SERVER_HALT: ServerStatusResponse,
+    Command.SERVER_RESUME: ServerStatusResponse,
 }

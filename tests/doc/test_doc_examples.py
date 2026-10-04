@@ -2747,6 +2747,8 @@ def test_operation_audit_audited_command_set():
         "RunCommandRequeue",
         "RunCommandResume",
         "RunCommandRun",
+        "RunCommandServerHalt",
+        "RunCommandServerResume",
         "RunCommandSuspend",
     ]
 
@@ -3482,7 +3484,7 @@ def test_develop_protocol_documents_all_rpc_methods():
     service = takler_pb2.DESCRIPTOR.services_by_name["TaklerServer"]
 
     methods = [m.name for m in service.methods]
-    assert len(methods) == 17
+    assert len(methods) == 20
     for name in methods:
         assert f"``{name}``" in text, name
 

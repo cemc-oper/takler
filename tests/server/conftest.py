@@ -302,10 +302,32 @@ HANDLER_CASES: List[HandlerCase] = [
     ),
     HandlerCase("ping", Command.PING, {}),
     HandlerCase("coroutine", Command.COROUTINE, {}),
+    HandlerCase(
+        "server-status",
+        Command.SERVER_STATUS,
+        {},
+        check=lambda bunch: _assert_server_state(bunch, "running"),
+    ),
+    HandlerCase(
+        "server-halt",
+        Command.SERVER_HALT,
+        {},
+        check=lambda bunch: _assert_server_state(bunch, "halted"),
+    ),
+    HandlerCase(
+        "server-resume",
+        Command.SERVER_RESUME,
+        {},
+        check=lambda bunch: _assert_server_state(bunch, "running"),
+    ),
 ]
 
 
 # state assertions --------------------------------------------------------
+
+
+def _assert_server_state(bunch: Bunch, status: str) -> None:
+    assert bunch.server_state.status.value == status
 
 
 def _assert_status(bunch: Bunch, node_path: str, status: NodeStatus) -> None:
@@ -531,6 +553,12 @@ def to_pb2(command: Command, kwargs: Dict[str, Any]):
         return takler_pb2.PingRequest()
     if command is Command.COROUTINE:
         return takler_pb2.CoroutineRequest()
+    if command is Command.SERVER_STATUS:
+        return takler_pb2.ServerStatusRequest()
+    if command is Command.SERVER_HALT:
+        return takler_pb2.ServerHaltCommand()
+    if command is Command.SERVER_RESUME:
+        return takler_pb2.ServerResumeCommand()
     raise AssertionError(f"no pb2 builder for {command}")
 
 

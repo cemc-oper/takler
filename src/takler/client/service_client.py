@@ -600,6 +600,30 @@ class TaklerServiceClient:
 
     # Query command ----------------------------------------------------
 
+    def server_status(self):
+        return self._guarded(self.run_request_server_status)
+
+    def run_request_server_status(self):
+        response = self.transport.call(Command.SERVER_STATUS, {})
+        print(response.model_dump_json())
+        return response
+
+    def server_halt(self):
+        return self._guarded(self.run_command_server_halt)
+
+    def run_command_server_halt(self):
+        response = self.transport.call(Command.SERVER_HALT, {})
+        print(response.model_dump_json())
+        return response
+
+    def server_resume(self):
+        return self._guarded(self.run_command_server_resume)
+
+    def run_command_server_resume(self):
+        response = self.transport.call(Command.SERVER_RESUME, {})
+        print(response.model_dump_json())
+        return response
+
     def show(
         self,
         show_parameter: bool = False,

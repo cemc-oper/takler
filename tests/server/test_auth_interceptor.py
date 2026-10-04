@@ -186,6 +186,8 @@ def build_requests(flow_bytes: bytes) -> Dict[str, Any]:
             flow=export_definition(Flow("replaceable")).model_dump_json().encode(),
         ),
         "RunCommandBegin": takler_pb2.BeginCommand(flow_name=FLOW_NAME, force=True),
+        "RunCommandServerHalt": takler_pb2.ServerHaltCommand(),
+        "RunCommandServerResume": takler_pb2.ServerResumeCommand(),
         # Query_Commands at Operator level: both return the whole flow
         # definition.
         "RunRequestShow": takler_pb2.ShowRequest(
@@ -196,6 +198,7 @@ def build_requests(flow_bytes: bytes) -> Dict[str, Any]:
             show_meter=True,
         ),
         "QueryCoroutine": takler_pb2.CoroutineRequest(),
+        "RunRequestServerStatus": takler_pb2.ServerStatusRequest(),
         # The one PUBLIC rpc.
         "RunRequestPing": takler_pb2.PingRequest(),
     }
@@ -225,7 +228,7 @@ def test_the_rpc_table_of_this_file_covers_the_whole_service() -> None:
     """
     assert set(build_requests(b"{}")) == set(ALL_METHODS)
     assert len(CHILD_METHODS) == 5
-    assert len(OPERATOR_METHODS) == 11
+    assert len(OPERATOR_METHODS) == 14
     assert PUBLIC_METHODS == ["RunRequestPing"]
 
 

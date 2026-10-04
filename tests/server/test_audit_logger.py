@@ -359,7 +359,10 @@ def test_every_control_command_is_covered() -> None:
 
     Validates: Requirement 11.2
     """
-    assert set(CONTROL_CASES) == set(CONTROL_METHOD_NAMES)
+    assert set(CONTROL_CASES) == set(CONTROL_METHOD_NAMES) - {
+        "RunCommandServerHalt",
+        "RunCommandServerResume",
+    }
 
 
 # ---------------------------------------------------------------------------

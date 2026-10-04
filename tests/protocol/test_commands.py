@@ -70,6 +70,9 @@ CONTRACT_COMMAND_NAMES = {
     "show",
     "ping",
     "coroutine",
+    "server-status",
+    "server-halt",
+    "server-resume",
 }
 
 #: The names ForceState and DepType take, transcribed from the proto enums.
@@ -93,7 +96,7 @@ CONTRACT_DEP_TYPE_NAMES = {"all", "trigger", "time"}
 
 def test_command_names_match_the_contract():
     assert {command.value for command in Command} == CONTRACT_COMMAND_NAMES
-    assert len(Command) == 17
+    assert len(Command) == 20
 
 
 def test_command_count_matches_the_rpc_count():
@@ -120,7 +123,14 @@ def test_response_type_map_covers_exactly_the_commands():
 
 
 def test_thirteen_commands_answer_service_response():
-    queries = {Command.SHOW, Command.PING, Command.COROUTINE}
+    queries = {
+        Command.SHOW,
+        Command.PING,
+        Command.COROUTINE,
+        Command.SERVER_STATUS,
+        Command.SERVER_HALT,
+        Command.SERVER_RESUME,
+    }
     for command, response_type in RESPONSE_TYPE_BY_COMMAND.items():
         if command in queries:
             assert response_type is not ServiceResponse

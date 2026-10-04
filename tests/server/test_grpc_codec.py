@@ -72,6 +72,9 @@ PAYLOAD_BY_COMMAND = {
     },
     Command.PING: {},
     Command.COROUTINE: {},
+    Command.SERVER_STATUS: {},
+    Command.SERVER_HALT: {},
+    Command.SERVER_RESUME: {},
 }
 for _child in (
     Command.INIT,

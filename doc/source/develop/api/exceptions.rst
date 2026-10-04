@@ -23,6 +23,7 @@ takler 自有异常全部定义在 ``takler.exceptions`` ，根类是
   * :py:exc:`~takler.exceptions.JobSubmissionError`
   * :py:exc:`~takler.exceptions.ZombieError`
   * :py:exc:`~takler.exceptions.AttemptMismatchError`
+  * :py:exc:`~takler.exceptions.ServerHaltedError`
   * :py:exc:`~takler.exceptions.TransportError`
 
     * :py:exc:`~takler.exceptions.ClientConnectionError`
@@ -51,6 +52,7 @@ takler 自有异常全部定义在 ``takler.exceptions`` ，根类是
    takler.exceptions.JobSubmissionError
    takler.exceptions.ZombieError
    takler.exceptions.AttemptMismatchError
+   takler.exceptions.ServerHaltedError
    takler.exceptions.TransportError
    takler.exceptions.ClientConnectionError
    takler.exceptions.ServerResponseError

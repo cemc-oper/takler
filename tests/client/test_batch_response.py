@@ -71,7 +71,12 @@ class Unavailable(grpc.RpcError):
 
 @pytest.mark.parametrize(
     "command",
-    [c for c in Command if c not in (Command.PING, Command.SHOW, Command.COROUTINE)],
+    [
+        c
+        for c in Command
+        if c
+        not in (Command.PING, Command.SHOW, Command.COROUTINE, Command.SERVER_STATUS)
+    ],
 )
 @pytest.mark.parametrize("wire", ["grpc", "http"])
 def test_all_mutations_never_retry(command, wire):

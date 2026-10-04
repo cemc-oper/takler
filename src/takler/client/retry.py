@@ -118,6 +118,9 @@ COMMAND_KIND_BY_COMMAND: Dict[Command, CommandKind] = {
     Command.SHOW: CommandKind.QUERY,
     Command.PING: CommandKind.QUERY,
     Command.COROUTINE: CommandKind.QUERY,
+    Command.SERVER_STATUS: CommandKind.QUERY,
+    Command.SERVER_HALT: CommandKind.CONTROL,
+    Command.SERVER_RESUME: CommandKind.CONTROL,
 }
 
 
