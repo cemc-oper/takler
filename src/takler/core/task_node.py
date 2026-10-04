@@ -8,7 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict
 
 from .node import Node
-from .state import NodeStatus, ServerStatus
+from .state import NodeStatus
 from takler.exceptions import FlowStateError
 from .limit import Limit
 from .parameter import (
@@ -230,8 +230,14 @@ class Task(Node):
         """
         Prepare identity when called directly; ``run`` does this before hooks.
         """
+        self._require_running()
         if not self._run_identity_prepared:
             Task.increment_try_no(self)
+
+    def _require_running(self) -> None:
+        bunch = self.get_bunch()
+        if bunch is not None:
+            bunch.require_running()
 
     def do_run(self) -> bool:
         """
@@ -254,15 +260,38 @@ class Task(Node):
         """
         Run the task, set status to ``NodeStatus.submitted`` and handle status change.
         """
-        bunch = self.get_bunch()
-        if bunch is not None and bunch.server_state.status is ServerStatus.halted:
-            raise FlowStateError("service is halted")
+        self._require_running()
         # Allocate before any overridable hook, while preserving the existing
         # before_run -> do_run -> after_run template order for extensions.
+        prior_attempt = {
+            field: getattr(self, field)
+            for field in (
+                "try_no",
+                "definition_generation",
+                "attempt_id",
+                "task_id",
+                "aborted_reason",
+                "job_password",
+                "submitted_at",
+                "started_at",
+                "ended_at",
+                "job_path",
+                "jobout_path",
+                "orvix_info_path",
+            )
+        }
         Task.increment_try_no(self)
         self._run_identity_prepared = True
         try:
             self.before_run()
+            # A trusted extension hook may change service state. No task body
+            # may start after that transition, and unused identity is restored.
+            self._require_running()
+        except FlowStateError:
+            for field, value in prior_attempt.items():
+                setattr(self, field, value)
+            self.update_generated_parameters()
+            raise
         finally:
             self._run_identity_prepared = False
 
@@ -416,15 +445,18 @@ def task(name: str):
                 def __init__(self):
                     super(RunTask, self).__init__(name=name)
 
-                def run(self):
-                    if not Task.run(self):
-                        return False
-
+                def do_run(self):
+                    self._require_running()
+                    Task.after_run(self)
                     self.init()
                     kwargs.update(self=self)
                     func(*args, **kwargs)
                     self.complete()
                     return True
+
+                def after_run(self):
+                    # The inline body has already reported its final state.
+                    pass
 
             return RunTask()
 

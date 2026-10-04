@@ -14,6 +14,11 @@
 :py:class:`~takler.tasks.shell.ShellScriptTask` 来说一次运行尝试的
 完整路径如下：
 
+服务状态为 ``halted`` 时，自动调度和手动 ``run``（包括 ``--force``）
+均不会进入执行：不增加 ``try_no``、不分配 ``attempt_id``，也不准备
+本轮作业文件。节点 ``resume`` 不改变服务状态；已有作业可继续运行并
+上报 child 结果。服务恢复运行的操作入口将在 R1-07 接入。
+
 .. mermaid::
 
     flowchart TD
@@ -62,32 +67,33 @@
       - ``script_path`` ，可用同名 user 参数覆盖
       - 任务脚本路径
     * - ``TAKLER_JOB``
-      - ``{TAKLER_HOME}{节点路径}.job{try_no}``
+      - ``{TAKLER_HOME}{节点路径}.job{attempt_id}``
       - 渲染产出的作业文件，每次尝试一个新文件
     * - ``TAKLER_JOBOUT``
-      - ``{TAKLER_HOME}{节点路径}.{try_no}``
+      - ``{TAKLER_HOME}{节点路径}.{attempt_id}``
       - 默认提交命令下 stdout 与 stderr 的共同落点
 
 两个路径都会解析为绝对路径。以 ``TAKLER_HOME=$HOME/takler-tutorial``
-、任务 ``/test/t1`` 、第二次尝试为例，目录里会出现：
+、任务 ``/test/t1`` 、两次执行的 UUID 分别为 ``<uuid-a>`` 与
+``<uuid-b>`` 为例，目录里会出现：
 
 .. code-block::
 
     $TAKLER_HOME/test/t1.takler   # 用户编写的脚本
-    $TAKLER_HOME/test/t1.job1     # 第 1 次尝试的作业文件
-    $TAKLER_HOME/test/t1.1        # 第 1 次尝试的输出
-    $TAKLER_HOME/test/t1.job2     # 第 2 次尝试的作业文件
-    $TAKLER_HOME/test/t1.2        # 第 2 次尝试的输出
+    $TAKLER_HOME/test/t1.job<uuid-a>  # 第 1 次尝试的作业文件
+    $TAKLER_HOME/test/t1.<uuid-a>     # 第 1 次尝试的输出
+    $TAKLER_HOME/test/t1.job<uuid-b>  # 第 2 次尝试的作业文件
+    $TAKLER_HOME/test/t1.<uuid-b>     # 第 2 次尝试的输出
 
-旧尝试的作业文件与输出**不会**被清理，按 ``try_no`` 并存，便于
+旧尝试的作业文件与输出**不会**被清理，按 ``attempt_id`` 并存，便于
 回溯上一次失败。
 
 try_no 与作业口令
 -----------------
 
 ``try_no`` 标记这是第几次尝试：每次运行前加一， ``requeue`` 时清零
-（``requeue`` 意味着下一轮从第 1 次重新计起，作业文件从
-``.job1`` 重新写起）。每次加一的同时轮换一次性作业口令
+（``requeue`` 意味着下一轮从第 1 次重新计起，但文件路径不复用）。
+每次加一的同时轮换一次性作业口令
 ``TAKLER_PASS`` ——43 个字符的 URL-safe 随机串，不含 shell 元字符，
 可直接写进作业脚本。
 ``attempt_id`` 是每次实际执行新生成的 UUID；即使 ``requeue`` 后

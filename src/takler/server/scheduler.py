@@ -232,6 +232,8 @@ class Scheduler:
             # than an edge case.
             return
         flow.update_calendar(time_now)
+        if self.bunch.server_state.status is ServerStatus.halted:
+            return
         flow.resolve_dependencies()
 
     def _require_begun(self, node: Optional[Node]):
@@ -275,9 +277,9 @@ class Scheduler:
         -----
         是否使用异步函数遍历工作流？
         """
-        if self.bunch.server_state.status is ServerStatus.halted:
-            return
         for name, flow in self.bunch.flows.items():
+            if self.bunch.server_state.status is ServerStatus.halted:
+                return
             flow.resolve_dependencies()
 
     def _guard_child_command(
@@ -650,8 +652,7 @@ class Scheduler:
 
         if not isinstance(node, Task):
             raise NodeTypeError("run requires a Task", node_path=node_path)
-        if self.bunch.server_state.status is ServerStatus.halted:
-            raise FlowStateError("service is halted")
+        self.bunch.require_running()
         if not force:
             status = node.state.node_status
             if status in (NodeStatus.submitted, NodeStatus.active):

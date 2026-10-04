@@ -5,6 +5,7 @@ from pydantic_core import PydanticCustomError
 
 from takler import constant
 from takler.exceptions import (
+    FlowStateError,
     InvalidNodePathError,
     NodeNotFoundError,
     InvalidRequestError,
@@ -82,6 +83,11 @@ class Bunch(NodeContainer):
         for _, flow in self.flows.items():
             status.append(flow.computed_status(True))
         return max(status)
+
+    def require_running(self) -> None:
+        """Guard an execution boundary without changing service or node state."""
+        if self.server_state.status is not ServerStatus.running:
+            raise FlowStateError("service is halted")
 
     # Flow ------------------------------------------------
 

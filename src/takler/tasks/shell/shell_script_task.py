@@ -10,12 +10,11 @@ from takler.core import (
     Parameter,
     Flow,
     NodeStatus,
-    ServerStatus,
     SerializationType,
 )
 from takler.core.node import Node
 from takler.core.parameter import TAKLER_HOME
-from takler.exceptions import FlowStateError, JobSubmissionError
+from takler.exceptions import JobSubmissionError
 from takler.logging import get_logger
 from takler.visitor import pre_order_travel, NodeVisitor
 
@@ -191,11 +190,6 @@ class ShellScriptTask(Task):
             before_start=self._require_running,
         )
         return True
-
-    def _require_running(self) -> None:
-        bunch = self.get_bunch()
-        if bunch is not None and bunch.server_state.status is ServerStatus.halted:
-            raise FlowStateError("service is halted")
 
     def _artifact_paths(self) -> tuple[Path, Path, Optional[Path]]:
         """Resolve this attempt's files and reject collisions before any write."""
