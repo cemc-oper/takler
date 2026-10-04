@@ -36,7 +36,6 @@ from takler.server.checkpoint import (
     CHECKPOINT_FORMAT_VERSION,
     TEMP_SUFFIX,
     CheckpointManager,
-    _takler_version,
 )
 
 
@@ -87,17 +86,14 @@ def test_build_payload_returns_a_json_string_with_the_expected_top_level():
 
     assert set(snapshot) == {
         "format_version",
-        "takler_version",
-        "written_at",
-        "bunch",
-        # Sibling of ``bunch``, added in M2 without a version bump
-        # (requirements 5.1, 5.7).
-        "job_passwords",
+        "saved_at",
+        "definition",
+        "runtime",
+        "secrets",
+        "source_address",
     }
     assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION
-    assert snapshot["takler_version"] == _takler_version()
-    # ``written_at`` is diagnostic only, so only its parsability is pinned.
-    assert isinstance(snapshot["written_at"], str)
+    assert isinstance(snapshot["saved_at"], str)
 
 
 def test_build_payload_contains_complete_runtime():
@@ -107,18 +103,20 @@ def test_build_payload_contains_complete_runtime():
 
     snapshot = json.loads(manager.build_payload())
 
-    from takler.serialization.runtime import export_runtime
+    from takler.serialization.checkpoint import restore_checkpoint
 
-    assert snapshot["bunch"] == json.loads(json.dumps(export_runtime(bunch)))
+    restored = restore_checkpoint(snapshot)
+    assert set(restored.flows) == set(bunch.flows)
+    assert set(snapshot["runtime"]["nodes"]) == {"/", "/flow1", "/flow1/task1"}
 
 
 def test_build_payload_reflects_later_bunch_changes():
     """The payload is built per call, not cached at construction."""
     manager = CheckpointManager(bunch=_make_bunch())
 
-    before = json.loads(manager.build_payload())["bunch"]
+    before = json.loads(manager.build_payload())["definition"]["root"]
     manager.bunch.add_flow(Flow(name="flow2"))
-    after = json.loads(manager.build_payload())["bunch"]
+    after = json.loads(manager.build_payload())["definition"]["root"]
 
     assert len(before["flows"]) == 1
     assert len(after["flows"]) == 2
@@ -136,7 +134,7 @@ def test_write_checkpoint_creates_a_complete_snapshot(tmp_path):
 
     snapshot = json.loads(manager.checkpoint_file.read_text(encoding="utf-8"))
     assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION
-    assert [f["name"] for f in snapshot["bunch"]["flows"]] == ["flow1"]
+    assert [f["name"] for f in snapshot["definition"]["root"]["flows"]] == ["flow1"]
 
 
 def test_write_checkpoint_leaves_no_temporary_files(tmp_path):
@@ -201,7 +199,7 @@ def test_second_write_moves_the_previous_snapshot_to_the_backup(tmp_path):
 
     assert manager.backup_file.read_text(encoding="utf-8") == first
     current = json.loads(manager.checkpoint_file.read_text(encoding="utf-8"))
-    assert len(current["bunch"]["flows"]) == 2
+    assert len(current["definition"]["root"]["flows"]) == 2
     assert _temp_names(tmp_path) == []
 
 
@@ -384,7 +382,7 @@ def test_write_checkpoint_async_writes_the_same_snapshot(tmp_path):
 
     snapshot = json.loads(manager.checkpoint_file.read_text(encoding="utf-8"))
     assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION
-    assert [f["name"] for f in snapshot["bunch"]["flows"]] == ["flow1"]
+    assert [f["name"] for f in snapshot["definition"]["root"]["flows"]] == ["flow1"]
 
 
 def test_write_checkpoint_async_builds_the_payload_on_the_loop_thread(tmp_path):

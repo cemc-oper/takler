@@ -105,12 +105,11 @@ trigger/complete-trigger free、完成触发锁存及 time free 均为 false。
 ``default_node_status`` 保留定义值，当前状态仍是 unknown。
 
 Status 仍读取完整运行字段；作业口令不从节点字典读取，而由 checkpoint
-的独立 ``job_passwords`` 映射恢复。当前 Tree 仅是现有反序列化入口的模式，
+的 ``secrets.job_passwords`` 映射恢复。当前 Tree 仅是现有反序列化入口的模式，
 网络输入请使用 :doc:`/develop/definition` 的严格纯定义格式与受信任注册器。
 
-``Bunch.to_dict()`` 把整个 :py:class:`~takler.core.Bunch`
-（所有 flow 加上服务参数）序列化为一个 dict ，是 checkpoint 文件的
-内容来源。
+checkpoint 从 :py:class:`~takler.core.Bunch` 导出纯定义、按路径索引的运行态与
+独立凭据；``Bunch.to_dict()`` 仍服务于旧的混合树接口。
 
 校验：check_job_creation
 ---------------------------

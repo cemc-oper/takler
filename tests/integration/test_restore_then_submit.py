@@ -166,10 +166,10 @@ def _snapshot_task_dict(checkpoint_file: Path) -> dict:
     the only thing a restart has, so it is the only legitimate expectation.
     """
     snapshot = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-    (flow_dict,) = snapshot["bunch"]["flows"]
+    (flow_dict,) = snapshot["definition"]["root"]["flows"]
     (task_dict,) = flow_dict["children"]
     assert task_dict["name"] == "task1"
-    return task_dict
+    return {**task_dict, **snapshot["runtime"]["nodes"][TASK_PATH]}
 
 
 def _restore(checkpoint_file: Path) -> Tuple[Bunch, ShellScriptTask]:
@@ -250,8 +250,8 @@ def test_restored_shell_task_resolves_the_current_server_address(
     # Guard the scenario: an assertion that the address is "current" proves
     # nothing if the snapshot happened to record the same one.
     snapshot = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-    assert snapshot["bunch"]["server_config"]["host"] == SNAPSHOT_HOST
-    assert snapshot["bunch"]["server_config"]["port"] == SNAPSHOT_PORT
+    assert snapshot["source_address"]["host"] == SNAPSHOT_HOST
+    assert snapshot["source_address"]["port"] == SNAPSHOT_PORT
     assert (SNAPSHOT_HOST, SNAPSHOT_PORT) != (CURRENT_HOST, CURRENT_PORT)
 
     assert task.get_bunch() is bunch, "the restored flow lost its bunch"

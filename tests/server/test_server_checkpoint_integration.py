@@ -194,7 +194,7 @@ def test_shutdown_writes_a_final_snapshot_of_the_quiesced_bunch(
 
     assert checkpoint_file.exists()
     snapshot = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-    assert "flow1" in json.dumps(snapshot["bunch"])
+    assert "flow1" in json.dumps(snapshot["definition"]["root"])
 
 
 def test_shutdown_runs_at_most_once(tmp_path: Path) -> None:

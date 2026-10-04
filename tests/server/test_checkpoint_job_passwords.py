@@ -182,11 +182,11 @@ def test_snapshot_holds_the_passwords_of_submitted_and_active_tasks_only():
     bunch = _source_bunch()
     manager = CheckpointManager(bunch=bunch)
 
-    mapping = json.loads(manager.build_payload())[JOB_PASSWORDS_KEY]
+    mapping = json.loads(manager.build_payload())["secrets"][JOB_PASSWORDS_KEY]
 
     assert set(mapping) == {SUBMITTED_PATH, ACTIVE_PATH}
-    assert mapping[SUBMITTED_PATH] == _password_of(bunch, SUBMITTED_PATH)
-    assert mapping[ACTIVE_PATH] == _password_of(bunch, ACTIVE_PATH)
+    assert mapping[SUBMITTED_PATH]["password"] == _password_of(bunch, SUBMITTED_PATH)
+    assert mapping[ACTIVE_PATH]["password"] == _password_of(bunch, ACTIVE_PATH)
 
 
 def test_snapshot_text_holds_no_password_of_a_not_persisted_task():
@@ -201,15 +201,15 @@ def test_snapshot_text_holds_no_password_of_a_not_persisted_task():
         assert _password_of(bunch, path) not in payload
 
 
-def test_snapshot_uses_format_version_two():
+def test_snapshot_uses_format_version_three():
     """Requirement 5.7: a new sibling of ``bunch`` is not a format change."""
     snapshot = json.loads(CheckpointManager(bunch=_source_bunch()).build_payload())
 
-    assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION == 2
+    assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION == 3
     # A sibling of ``bunch``, never inside the node tree: ``show`` and the
     # snapshot share one ``Bunch.to_dict()``.
-    assert JOB_PASSWORDS_KEY in snapshot
-    assert JOB_PASSWORDS_KEY not in json.dumps(snapshot["bunch"])
+    assert JOB_PASSWORDS_KEY in snapshot["secrets"]
+    assert JOB_PASSWORDS_KEY not in json.dumps(snapshot["definition"])
 
 
 # ---------------------------------------------------------------------------
@@ -238,20 +238,26 @@ def test_restore_writes_the_passwords_back_onto_the_in_flight_tasks(tmp_path):
 def test_restore_rejects_a_snapshot_without_the_mapping_key(tmp_path):
     _write_source_snapshot(tmp_path)
     snapshot = _snapshot(tmp_path)
-    del snapshot[JOB_PASSWORDS_KEY]
+    del snapshot["secrets"][JOB_PASSWORDS_KEY]
     _rewrite_snapshot(tmp_path, snapshot)
     manager = _target_manager(tmp_path)
     result, captured = _capturing_stderr(manager.restore)
     assert result is False
     assert manager.bunch.flows == {}
-    assert "incomplete_checkpoint" in captured
+    assert "invalid v3 document" in captured
 
 
 def test_restore_rejects_stale_and_non_task_password_paths(tmp_path):
     _write_source_snapshot(tmp_path)
     snapshot = _snapshot(tmp_path)
-    snapshot[JOB_PASSWORDS_KEY]["/flow1/container1/removed_task"] = "stale-value"
-    snapshot[JOB_PASSWORDS_KEY][CONTAINER_PATH] = "container-value"
+    snapshot["secrets"][JOB_PASSWORDS_KEY]["/flow1/container1/removed_task"] = {
+        "attempt_id": "22222222-2222-4222-8222-222222222222",
+        "password": "stale-value",
+    }
+    snapshot["secrets"][JOB_PASSWORDS_KEY][CONTAINER_PATH] = {
+        "attempt_id": "22222222-2222-4222-8222-222222222222",
+        "password": "container-value",
+    }
     _rewrite_snapshot(tmp_path, snapshot)
     manager = _target_manager(tmp_path)
     result, captured = _capturing_stderr(manager.restore)

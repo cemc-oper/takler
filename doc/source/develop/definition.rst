@@ -107,7 +107,7 @@ replace 不同步写 checkpoint；后续周期保存新树，保存前崩溃仍�
      - UTF-8 JSON，``kind=takler.definition``、``schema_version=1``
      - 网络入口只接受单个 Flow；不接受 Bunch、多文档、YAML、旧混合树或运行字段
    * - checkpoint
-     - ``format_version=2``
+     - ``format_version=3``，分离 ``definition`` / ``runtime`` / ``secrets``
      - 用于运行状态恢复，不能作为 load / replace 输入；旧格式拒绝，无自动迁移
    * - show / TUI
      - 只读 JSON 投影

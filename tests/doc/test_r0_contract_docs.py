@@ -40,7 +40,7 @@ def test_documented_commands_and_hpc_boundary():
     definition = (docs / "develop/definition.rst").read_text()
     assert "当前不能通过客户端调用 replace" not in definition
     assert "exactly-once" in definition
-    assert "schema_version=1" in definition and "format_version=2" in definition
+    assert "schema_version=1" in definition and "format_version=3" in definition
     for path in (
         "guide/job-management.rst",
         "guide/ecflow-differences.rst",

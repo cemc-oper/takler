@@ -19,7 +19,7 @@ from .registry import (
 )
 
 
-def _project(node, path):
+def _project(node, path, *, checkpoint_root=False):
     entry = get_registry().by_type(type(node))
     type_id = entry.type_id
     require_codec(entry, "definition_schema", "export_definition")
@@ -36,17 +36,19 @@ def _project(node, path):
         ).model_dump(mode="json")
         validate_definition_data(result["type_data"], entry.secret_fields)
     if entry.kind == "bunch":
-        if (
-            node.children
-            or node.trigger_expression is not None
-            or node.complete_trigger_expression is not None
-            or node.events
-            or node.meters
-            or node.limits
-            or node.in_limit_manager.in_limit_list
-            or node.repeat is not None
-            or node.times
-            or node.default_node_status != NodeStatus.queued
+        if node.children or (
+            not checkpoint_root
+            and (
+                node.trigger_expression is not None
+                or node.complete_trigger_expression is not None
+                or node.events
+                or node.meters
+                or node.limits
+                or node.in_limit_manager.in_limit_list
+                or node.repeat is not None
+                or node.times
+                or node.default_node_status != NodeStatus.queued
+            )
         ):
             raise DefinitionError("unsupported_root_attribute", path)
         result["flows"] = [
@@ -102,7 +104,9 @@ def _project(node, path):
 
 
 @safe_codec
-def export_definition(root: Bunch | Flow, *, registry=None) -> DefinitionDocument:
+def export_definition(
+    root: Bunch | Flow, *, registry=None, checkpoint_root=False
+) -> DefinitionDocument:
     """Return a validated document without reading files or changing runtime.
 
     Serialize with ``model_dump(mode="json")`` or ``model_dump_json()``.
@@ -117,7 +121,7 @@ def export_definition(root: Bunch | Flow, *, registry=None) -> DefinitionDocumen
             dict(
                 kind="takler.definition",
                 schema_version=1,
-                root=_project(root, "$.root"),
+                root=_project(root, "$.root", checkpoint_root=checkpoint_root),
             ),
             model=registry.document_model(),
         )

@@ -21,8 +21,6 @@ Requirements: 5.x, 6.x, 7.2, 7.3, 7.4, 7.5, 7.6, 12.5.
 from __future__ import annotations
 
 import asyncio
-import datetime
-import json
 import os
 import shutil
 import time
@@ -32,11 +30,14 @@ from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 import takler
 from takler.core.bunch import Bunch
 from takler.core.node import Node
-from takler.core.parameter import TAKLER_HOST, TAKLER_PORT
 from takler.core.state import NodeStatus
 from takler.core.task_node import Task
-from takler.serialization.runtime import export_runtime, restore_runtime
-from takler.serialization.builder import walk
+from takler.serialization.checkpoint import (
+    FORMAT_VERSION,
+    CheckpointDocument,
+    capture_checkpoint,
+    restore_checkpoint,
+)
 from takler.schema.definition import DefinitionError, _decode_json
 from takler.logging import get_logger
 from takler.server.connect_config import AuthMode, ConnectConfig, resolve_auth_mode
@@ -60,11 +61,11 @@ logger = get_logger("server.checkpoint")
 
 #: Format version stamped into every snapshot this implementation writes
 #: (requirement 6.14).
-CHECKPOINT_FORMAT_VERSION: int = 2
+CHECKPOINT_FORMAT_VERSION: int = FORMAT_VERSION
 
 #: Oldest readable version; currently only the exact current integer version
 #: is accepted. Missing versions are rejected (R0, no historical compatibility).
-EARLIEST_SUPPORTED_FORMAT_VERSION: int = 2
+EARLIEST_SUPPORTED_FORMAT_VERSION: int = FORMAT_VERSION
 
 #: Snapshot period used when nothing is configured, in seconds
 #: (requirement 7.2). Also the fallback for a rejected period
@@ -94,10 +95,7 @@ TEMP_SUFFIX: str = ".tmp"
 #: job, so it must not be readable by other users on a shared login node.
 CHECKPOINT_FILE_MODE: int = 0o600
 
-#: Top level key of the snapshot's "node path -> Job_Password" mapping, a
-#: sibling of ``bunch`` rather than a node field (requirement 5.1). ``show``
-#: snapshot keep credentials separate from node fields. The runtime exporter
-#: never places them in the mixed node tree used by status consumers.
+#: Key inside ``secrets`` for path-keyed, attempt-bound in-flight passwords.
 JOB_PASSWORDS_KEY: str = "job_passwords"
 
 #: The only node statuses whose Job_Password is worth persisting
@@ -327,19 +325,9 @@ class CheckpointManager:
         dictionary to the worker thread) means the value the thread writes can
         no longer change underneath it.
 
-        Layout (requirements 5.11, 6.14): ``format_version`` /
-        ``takler_version`` / ``written_at`` at the top level plus a ``bunch``
-        mixed definition/runtime subtree with registered type IDs and explicit
-        required runtime fields. This remains the R0 mixed tree, not S2. ``takler_version`` and ``written_at`` are
-        diagnostic only and take no part in restoring.
-
-        The :data:`JOB_PASSWORDS_KEY` mapping is a sibling of ``bunch``
-        (requirement 5.1) and is collected here, at the same instant as
-        runtime export, so the passwords and the node statuses they were
-        selected by are one consistent view.
-
-        Format version 2 uses registered type IDs and explicit required runtime
-        fields. No version 1 aliases or migration are provided.
+        Format v3 stores one trusted definition, path-keyed runtime, and
+        attempt-bound credentials in separate ``secrets``. All three are
+        captured from the same in-memory state on the event-loop thread.
 
         Returns:
             The snapshot as a JSON string.
@@ -349,14 +337,7 @@ class CheckpointManager:
                 (:meth:`write_checkpoint`, :meth:`write_checkpoint_async`) turn
                 that into an ERROR log and a ``False`` result.
         """
-        snapshot = {
-            "format_version": CHECKPOINT_FORMAT_VERSION,
-            "takler_version": _takler_version(),
-            "written_at": datetime.datetime.now().isoformat(),
-            "bunch": export_runtime(self.bunch),
-            JOB_PASSWORDS_KEY: self._collect_job_passwords(),
-        }
-        return json.dumps(snapshot)
+        return capture_checkpoint(self.bunch).model_dump_json(exclude_unset=True)
 
     def _collect_job_passwords(self) -> Dict[str, str]:
         """Collect the Job_Passwords of the in-flight tasks, keyed by node path.
@@ -876,7 +857,7 @@ class CheckpointManager:
         fallback chain (requirement 6.7).
 
         Only the current integer format version is accepted. Missing versions,
-        older/newer formats, booleans and floats are unusable; R0 does not
+        older/newer formats, booleans and floats are unusable; v3 does not
         provide historical format migration.
 
         Args:
@@ -900,13 +881,6 @@ class CheckpointManager:
             )
             return None
 
-        if not isinstance(snapshot.get("bunch"), dict):
-            logger.error(
-                f"failed to parse checkpoint file {path}: the 'bunch' key is "
-                f"missing or is not an object."
-            )
-            return None
-
         version = snapshot.get("format_version")
         if type(version) is not int or version != CHECKPOINT_FORMAT_VERSION:
             logger.error(
@@ -914,6 +888,19 @@ class CheckpointManager:
                 f"{version if type(version) is int else type(version).__name__}; "
                 f"expected integer {CHECKPOINT_FORMAT_VERSION}; this file cannot be used."
             )
+            return None
+
+        if not isinstance(snapshot.get("definition"), dict):
+            logger.error(
+                f"failed to parse checkpoint file {path}: the 'definition' key is "
+                f"missing or is not an object."
+            )
+            return None
+
+        try:
+            CheckpointDocument.model_validate(snapshot)
+        except Exception:
+            logger.error(f"checkpoint file {path} has an invalid v3 document.")
             return None
 
         return snapshot
@@ -924,35 +911,10 @@ class CheckpointManager:
         Unknown types or invalid runtime reject the complete snapshot, allowing
         restore() to try the backup without any changes to the live tree.
         """
-        candidate = restore_runtime(snapshot["bunch"])
+        candidate = restore_checkpoint(snapshot)
         if not isinstance(candidate, Bunch):
             raise DefinitionError("invalid_structure")
-        mapping = snapshot.get(JOB_PASSWORDS_KEY)
-        if not isinstance(mapping, dict):
-            raise DefinitionError("incomplete_checkpoint")
-        tasks = {
-            node.node_path: node for node in walk(candidate) if isinstance(node, Task)
-        }
-        for path, password in mapping.items():
-            if (
-                path not in tasks
-                or not isinstance(password, str)
-                or not password
-                or tasks[path].state.node_status not in _PERSISTED_STATUSES
-            ):
-                raise DefinitionError("invalid_runtime")
-        for path, node in tasks.items():
-            if node.state.node_status in _PERSISTED_STATUSES:
-                if path not in mapping:
-                    raise DefinitionError("incomplete_checkpoint")
-                node.job_password = mapping[path]
-        for node in walk(candidate):
-            for key in (TAKLER_HOST, TAKLER_PORT):
-                if key in node.user_parameters:
-                    del node.user_parameters[key]
-                    logger.warning(
-                        "checkpoint deployment parameter conflict: using current deployment."
-                    )
+        mapping = snapshot["secrets"][JOB_PASSWORDS_KEY]
         deployment = self.bunch.server_config
         self.bunch.__dict__.update(vars(candidate))
         self.bunch.server_config = deployment
@@ -1032,7 +994,7 @@ class CheckpointManager:
         Args:
             snapshot: The snapshot dictionary that was just restored from.
         """
-        server_config = (snapshot.get("bunch") or {}).get("server_config") or {}
+        server_config = snapshot.get("source_address") or {}
         snapshot_host = server_config.get("host")
         snapshot_port = server_config.get("port")
         current_host = self.bunch.server_config.host

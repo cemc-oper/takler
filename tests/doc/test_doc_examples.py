@@ -948,7 +948,7 @@ def test_step13_checkpoint_restore_keeps_in_flight_tasks(tmp_path):
 
     # Only in-flight tasks get their password persisted.
     payload = json.loads(checkpoint_file.read_text(encoding="utf-8"))
-    assert list(payload["job_passwords"]) == ["/test/t1"]
+    assert list(payload["secrets"]["job_passwords"]) == ["/test/t1"]
 
     # The server restarts: a fresh bunch restores from the snapshot.
     restored_bunch = Bunch(name="bunch")
@@ -2457,7 +2457,7 @@ def test_operation_checkpoint_persists_only_in_flight_passwords():
     from takler.server.checkpoint import JOB_PASSWORDS_KEY, CheckpointManager
 
     payload = json.loads(CheckpointManager(bunch=_checkpoint_bunch()).build_payload())
-    passwords = payload[JOB_PASSWORDS_KEY]
+    passwords = payload["secrets"][JOB_PASSWORDS_KEY]
 
     assert "/flow1/submitted_task" in passwords
     assert "/flow1/complete_task" not in passwords

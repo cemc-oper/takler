@@ -247,22 +247,28 @@ def test_checkpoint_invalid_primary_falls_back_atomically(tmp_path, corrupt):
     good = json.loads(writer.build_payload())
     writer.backup_file.write_text(json.dumps(good))
     bad = copy.deepcopy(good)
-    bad["bunch"]["name"] = "bad"
-    t = bad["bunch"]["flows"][0]["children"][0]
+    bad["definition"]["root"]["name"] = "bad"
+    t = bad["definition"]["root"]["flows"][0]["children"][0]
+    runtime_task = bad["runtime"]["nodes"]["/f/t"]
     if corrupt == "unknown_type":
         t["type_id"] = "evil.Task"
     if corrupt == "missing_runtime":
-        del t["trigger_free"]
+        del runtime_task["trigger_free"]
     if corrupt == "bad_state":
-        t["state"]["status"] = True
+        runtime_task["state"]["status"] = True
     if corrupt == "bad_limit":
-        bad["bunch"]["flows"][0]["limits"][0]["value"] = 0
+        bad["runtime"]["nodes"]["/f"]["limit_usage"]["pool"]["value"] = 0
     if corrupt == "duplicate":
-        bad["bunch"]["flows"].append(copy.deepcopy(bad["bunch"]["flows"][0]))
+        bad["definition"]["root"]["flows"].append(
+            copy.deepcopy(bad["definition"]["root"]["flows"][0])
+        )
     if corrupt == "missing_password":
-        bad["job_passwords"] = {}
+        bad["secrets"]["job_passwords"] = {}
     if corrupt == "unknown_password":
-        bad["job_passwords"]["/missing"] = "SECRET"
+        bad["secrets"]["job_passwords"]["/missing"] = {
+            "attempt_id": task.attempt_id,
+            "password": "SECRET",
+        }
     if corrupt == "version1":
         bad["format_version"] = 1
     writer.checkpoint_file.write_text(json.dumps(bad))

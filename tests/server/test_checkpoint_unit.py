@@ -254,7 +254,7 @@ def test_the_startup_flow_continues_after_an_empty_start(tmp_path):
 
     assert manager.write_checkpoint() is True
     snapshot = json.loads(manager.checkpoint_file.read_text(encoding="utf-8"))
-    assert [f["name"] for f in snapshot["bunch"]["flows"]] == ["flow1"]
+    assert [f["name"] for f in snapshot["definition"]["root"]["flows"]] == ["flow1"]
 
 
 def test_an_absent_checkpoint_file_still_restores_from_the_backup(tmp_path):

@@ -177,12 +177,16 @@ def _snapshot_expectations(
     """
     snapshot = json.loads(checkpoint_file.read_text(encoding="utf-8"))
 
-    nodes: Dict[str, dict] = {}
-    begun: Dict[str, bool] = {}
-    for flow_dict in snapshot["bunch"]["flows"]:
-        begun[flow_dict["name"]] = flow_dict["begun"]
-        for path, node_dict in _walk_snapshot(flow_dict, f"/{flow_dict['name']}"):
-            nodes[path] = node_dict
+    nodes: Dict[str, dict] = {
+        path: value
+        for path, value in snapshot["runtime"]["nodes"].items()
+        if path != "/"
+    }
+    begun: Dict[str, bool] = {
+        path[1:]: value["begun"]
+        for path, value in nodes.items()
+        if value["kind"] == "flow"
+    }
     return nodes, begun
 
 

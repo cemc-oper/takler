@@ -105,8 +105,8 @@ try_no 与作业口令
 
 口令是 child 命令的凭据：启用鉴权后，服务只接受携带当前口令的
 上报，过期口令（如 requeue 之前启动的旧作业）会被识别为僵尸。
-口令不入 ``show`` 输出，也不入 checkpoint 正文（checkpoint 另有
-独立的 ``job_passwords`` 映射）。完整叙述见
+口令不入 ``show`` 输出，也不入 checkpoint 的定义或运行态（checkpoint 的
+``secrets.job_passwords`` 映射单独保存）。完整叙述见
 :doc:`/tutorial/advanced-topics/zombies` 。
 
 定制作业提交命令

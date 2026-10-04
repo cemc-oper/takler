@@ -184,7 +184,8 @@ Node 继承体系
 
 纯定义使用 :doc:`definition` 中的 ``export_definition`` / ``build_definition``。
 现有 ``to_dict`` / ``from_dict`` 保留混合树的定义与运行字段；
-checkpoint v2 另行校验完整 runtime。内建 ``Node`` 负责公共字段，子类用
+checkpoint v3 分离定义、完整 runtime 和 secrets，恢复时复用受信任定义构造器。
+内建 ``Node`` 负责公共字段，子类用
 ``fill_from_dict`` 链式填充各自多出来的字段（ ``Task`` 填
 ``task_id`` / ``try_no`` ， ``Flow`` 填 ``begun`` / ``calendar``
 ， ``ShellScriptTask`` 填 ``script_path`` ）。

@@ -261,7 +261,10 @@ def test_stop_writes_a_final_snapshot_after_cancelling_the_task(tmp_path):
     asyncio.run(main())
 
     snapshot = json.loads(manager.checkpoint_file.read_text(encoding="utf-8"))
-    assert [f["name"] for f in snapshot["bunch"]["flows"]] == ["flow1", "flow2"]
+    assert [f["name"] for f in snapshot["definition"]["root"]["flows"]] == [
+        "flow1",
+        "flow2",
+    ]
 
 
 def test_stop_cancels_before_it_writes(tmp_path):

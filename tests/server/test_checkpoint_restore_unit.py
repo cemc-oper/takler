@@ -28,7 +28,6 @@ import json
 from pathlib import Path
 
 import takler.logging
-from takler.core import SerializationType
 from takler.core.bunch import Bunch
 from takler.core.flow import Flow
 from takler.core.parameter import TAKLER_HOST, TAKLER_PORT
@@ -405,7 +404,7 @@ def test_a_newer_format_version_is_refused_and_falls_back(tmp_path):
 def test_a_broken_flow_rejects_the_entire_snapshot(tmp_path):
     path = _write_source_snapshot(tmp_path)
     snapshot = json.loads(path.read_text(encoding="utf-8"))
-    snapshot["bunch"]["flows"][0]["type_id"] = "unknown.flow"
+    snapshot["definition"]["root"]["flows"][0]["type_id"] = "unknown.flow"
     path.write_text(json.dumps(snapshot), encoding="utf-8")
     manager = _target_manager(tmp_path)
     original = manager.bunch.add_flow("existing")
@@ -437,7 +436,10 @@ def test_load_snapshot_returns_the_parsed_dictionary(tmp_path):
     snapshot = manager._load_snapshot(path)
 
     assert snapshot["format_version"] == CHECKPOINT_FORMAT_VERSION
-    assert [f["name"] for f in snapshot["bunch"]["flows"]] == ["flow1", "flow2"]
+    assert [f["name"] for f in snapshot["definition"]["root"]["flows"]] == [
+        "flow1",
+        "flow2",
+    ]
 
 
 def test_restore_into_bunch_reports_the_counts(tmp_path):
@@ -449,23 +451,19 @@ def test_restore_into_bunch_reports_the_counts(tmp_path):
     assert (flow_count, node_count) == (2, 7)
 
 
-def test_restore_into_bunch_uses_the_status_serialization(tmp_path, monkeypatch):
-    """A Tree restore would drop the status; Status must be used (6.11)."""
+def test_restore_into_bunch_uses_the_trusted_definition_builder(tmp_path, monkeypatch):
     path = _write_source_snapshot(tmp_path)
     manager = _target_manager(tmp_path)
     snapshot = manager._load_snapshot(path)
+    from takler.serialization import checkpoint as codec
+
+    original = codec.build_definition
     used = []
-    original = Flow.from_dict
 
-    def recording_from_dict(d, method=SerializationType.Status):
-        used.append(method)
-        return original(d, method=method)
+    def recording_build(document, **kwargs):
+        used.append(document)
+        return original(document, **kwargs)
 
-    monkeypatch.setattr(Flow, "from_dict", recording_from_dict)
+    monkeypatch.setattr(codec, "build_definition", recording_build)
     manager._restore_into_bunch(snapshot)
-
-    # ``Node.fill_from_dict`` recurses through ``cls.from_dict``, so the
-    # recording function sees the flows and their direct children alike; every
-    # one of them must be asked for the Status serialization.
-    assert len(used) >= 2
-    assert set(used) == {SerializationType.Status}
+    assert used == [snapshot["definition"]]

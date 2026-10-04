@@ -1,0 +1,321 @@
+{
+  "format_version": 3,
+  "saved_at": "2026-10-04T08:15:00+08:00",
+  "definition": {
+    "kind": "takler.definition",
+    "schema_version": 1,
+    "root": {
+      "type_id": "takler.bunch",
+      "name": "root",
+      "user_parameters": [
+        {
+          "name": "ROOT_SETTING",
+          "value": "inherited"
+        },
+        {
+          "name": "TAKLER_HOME",
+          "value": "/jobs"
+        }
+      ],
+      "flows": [
+        {
+          "type_id": "takler.flow",
+          "name": "f",
+          "user_parameters": [],
+          "default_node_status": "queued",
+          "trigger": null,
+          "complete_trigger": "/f/q == complete",
+          "events": [],
+          "meters": [],
+          "limits": [],
+          "in_limits": [],
+          "repeat": {
+            "type_id": "takler.repeat.date",
+            "name": "RUN_DATE",
+            "start_date": "20261001",
+            "end_date": "20261031",
+            "step": 1
+          },
+          "times": [
+            {
+              "time": "08:00"
+            }
+          ],
+          "children": [
+            {
+              "type_id": "takler.task",
+              "name": "s",
+              "user_parameters": [],
+              "default_node_status": "queued",
+              "trigger": "/f/q == complete",
+              "complete_trigger": null,
+              "events": [
+                {
+                  "name": "ready",
+                  "initial_value": false
+                }
+              ],
+              "meters": [],
+              "limits": [],
+              "in_limits": [
+                {
+                  "limit_name": "slots",
+                  "node_path": "/root",
+                  "tokens": 1
+                }
+              ],
+              "repeat": null,
+              "times": [],
+              "children": []
+            },
+            {
+              "type_id": "takler.task",
+              "name": "a",
+              "user_parameters": [],
+              "default_node_status": "queued",
+              "trigger": null,
+              "complete_trigger": null,
+              "events": [],
+              "meters": [],
+              "limits": [],
+              "in_limits": [
+                {
+                  "limit_name": "slots",
+                  "node_path": "/root",
+                  "tokens": 1
+                }
+              ],
+              "repeat": null,
+              "times": [],
+              "children": []
+            },
+            {
+              "type_id": "takler.task",
+              "name": "q",
+              "user_parameters": [],
+              "default_node_status": "queued",
+              "trigger": null,
+              "complete_trigger": null,
+              "events": [],
+              "meters": [],
+              "limits": [],
+              "in_limits": [],
+              "repeat": null,
+              "times": [],
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "runtime": {
+    "server_state": {
+      "status": "running",
+      "status_reason": null,
+      "halt_causes": []
+    },
+    "nodes": {
+      "/": {
+        "kind": "bunch",
+        "state": {
+          "status": 1,
+          "suspended": false
+        },
+        "trigger_free": true,
+        "complete_trigger_free": true,
+        "is_complete_triggered": false,
+        "event_values": {
+          "root_ready": true
+        },
+        "meter_values": {
+          "root_progress": 4
+        },
+        "limit_usage": {
+          "slots": {
+            "value": 2,
+            "node_paths": [
+              "/f/s",
+              "/f/a"
+            ]
+          }
+        },
+        "repeat_value": 20261004,
+        "time_free": {
+          "09:30": true
+        },
+        "runtime_data": {},
+        "root_attributes": {
+          "default_node_status": "queued",
+          "trigger": "/f/q == complete",
+          "complete_trigger": "/f/q == complete",
+          "events": [
+            {
+              "name": "root_ready",
+              "initial_value": false
+            }
+          ],
+          "meters": [
+            {
+              "name": "root_progress",
+              "min_value": 0,
+              "max_value": 10
+            }
+          ],
+          "limits": [
+            {
+              "name": "slots",
+              "limit": 5
+            }
+          ],
+          "in_limits": [
+            {
+              "limit_name": "slots",
+              "node_path": null,
+              "tokens": 1
+            }
+          ],
+          "repeat": {
+            "type_id": "takler.repeat.date",
+            "name": "ROOT_DATE",
+            "start_date": "20261001",
+            "end_date": "20261031",
+            "step": 1
+          },
+          "times": [
+            {
+              "time": "09:30"
+            }
+          ]
+        }
+      },
+      "/f": {
+        "kind": "flow",
+        "state": {
+          "status": 5,
+          "suspended": false
+        },
+        "trigger_free": false,
+        "complete_trigger_free": false,
+        "is_complete_triggered": true,
+        "event_values": {},
+        "meter_values": {},
+        "limit_usage": {},
+        "repeat_value": 20261004,
+        "time_free": {
+          "08:00": true
+        },
+        "runtime_data": {},
+        "begun": true,
+        "calendar": {
+          "initial_time": "2026-10-04T08:00:00+08:00",
+          "flow_time": "2026-10-04T08:15:00+08:00",
+          "duration": 900.0,
+          "increment": 60.0,
+          "initial_real_time": "2026-10-04T08:00:00+08:00",
+          "last_real_time": "2026-10-04T08:15:00+08:00"
+        },
+        "definition_generation": "11111111-1111-4111-8111-111111111111"
+      },
+      "/f/s": {
+        "kind": "task",
+        "state": {
+          "status": 4,
+          "suspended": false
+        },
+        "trigger_free": true,
+        "complete_trigger_free": false,
+        "is_complete_triggered": false,
+        "event_values": {
+          "ready": true
+        },
+        "meter_values": {},
+        "limit_usage": {},
+        "repeat_value": null,
+        "time_free": {},
+        "runtime_data": {},
+        "task_id": null,
+        "try_no": 1,
+        "aborted_reason": null,
+        "definition_generation": "11111111-1111-4111-8111-111111111111",
+        "attempt_id": "22222222-2222-4222-8222-222222222222",
+        "submitted_at": "2026-10-04T08:10:00+08:00",
+        "started_at": null,
+        "ended_at": null,
+        "job_path": "/jobs/f/s.job.22222222-2222-4222-8222-222222222222",
+        "jobout_path": "/jobs/f/s.out.22222222-2222-4222-8222-222222222222",
+        "orvix_info_path": "/jobs/f/s.info.22222222-2222-4222-8222-222222222222"
+      },
+      "/f/a": {
+        "kind": "task",
+        "state": {
+          "status": 5,
+          "suspended": false
+        },
+        "trigger_free": false,
+        "complete_trigger_free": false,
+        "is_complete_triggered": false,
+        "event_values": {},
+        "meter_values": {},
+        "limit_usage": {},
+        "repeat_value": null,
+        "time_free": {},
+        "runtime_data": {},
+        "task_id": "RID-42",
+        "try_no": 1,
+        "aborted_reason": null,
+        "definition_generation": "11111111-1111-4111-8111-111111111111",
+        "attempt_id": "33333333-3333-4333-8333-333333333333",
+        "submitted_at": "2026-10-04T08:11:00+08:00",
+        "started_at": "2026-10-04T08:12:00+08:00",
+        "ended_at": null,
+        "job_path": "/jobs/f/a.job.33333333-3333-4333-8333-333333333333",
+        "jobout_path": "/jobs/f/a.out.33333333-3333-4333-8333-333333333333",
+        "orvix_info_path": null
+      },
+      "/f/q": {
+        "kind": "task",
+        "state": {
+          "status": 3,
+          "suspended": false
+        },
+        "trigger_free": false,
+        "complete_trigger_free": false,
+        "is_complete_triggered": false,
+        "event_values": {},
+        "meter_values": {},
+        "limit_usage": {},
+        "repeat_value": null,
+        "time_free": {},
+        "runtime_data": {},
+        "task_id": null,
+        "try_no": 0,
+        "aborted_reason": null,
+        "definition_generation": "11111111-1111-4111-8111-111111111111",
+        "attempt_id": null,
+        "submitted_at": null,
+        "started_at": null,
+        "ended_at": null,
+        "job_path": null,
+        "jobout_path": null,
+        "orvix_info_path": null
+      }
+    }
+  },
+  "secrets": {
+    "job_passwords": {
+      "/f/s": {
+        "attempt_id": "22222222-2222-4222-8222-222222222222",
+        "password": "fixture-submitted-password"
+      },
+      "/f/a": {
+        "attempt_id": "33333333-3333-4333-8333-333333333333",
+        "password": "fixture-active-password"
+      }
+    }
+  },
+  "source_address": {
+    "host": "old.example",
+    "port": "33083"
+  }
+}

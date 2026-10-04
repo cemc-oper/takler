@@ -13,7 +13,7 @@ takler 服务把整棵节点树的状态定期快照到**检查点文件**，重
 快照内容
 --------
 
-检查点文件是一个 JSON 文档，顶层五个键：
+检查点文件是一个 JSON 文档，包含五个必需键及一个可选诊断键：
 
 .. list-table::
     :header-rows: 1
@@ -22,22 +22,21 @@ takler 服务把整棵节点树的状态定期快照到**检查点文件**，重
     * - 键
       - 内容
     * - ``format_version``
-      - 快照格式版本，当前为 ``2``
-    * - ``takler_version``
-      - 写出快照的 takler 版本，仅作诊断，不参与恢复
-    * - ``written_at``
-      - 写入时间，仅作诊断，不参与恢复
-    * - ``bunch``
-      - 整棵节点树的状态序列化：节点状态、 ``suspended`` 、event 与
-        meter 的当前值、limit 的计数、repeat 计数、时间属性的 free
-        闩锁、task 的 ``task_id`` / ``try_no`` / ``aborted_reason``
-        、flow 的 ``begun`` 标志与 calendar；根节点的 ``server_config``
-        仅记录历史 host/port， ``server_state`` 记录独立的服务运行状态
-    * - ``job_passwords``
-      - 「节点路径 → 作业一次性口令」映射，只收录状态为 submitted 或
-        active 且口令非空的 task
+      - 快照格式版本，当前为 ``3``
+    * - ``saved_at``
+      - 带时区的保存时间，仅作诊断
+    * - ``definition``
+      - S1 纯定义文档；不包含运行字段或口令
+    * - ``runtime``
+      - ``server_state`` 与按节点路径索引的 ``nodes``：状态、当前 attempt、
+        limit 占用、repeat/calendar 和触发锁存等；根节点键固定为 ``/``
+    * - ``secrets``
+      - ``job_passwords`` 映射，仅收录 submitted/active Task，
+        每条绑定 ``attempt_id`` 和口令
+    * - ``source_address``
+      - 可选的历史 host/port，只用于地址诊断，不作为恢复配置
 
-``job_passwords`` 刻意放在 ``bunch`` **之外**，仅用于恢复在途作业凭据。
+``job_passwords`` 只在 ``secrets`` 中，不能进入定义或查询结果。
 当前 ``show`` 使用独立只读投影并脱敏；口令不能写入纯定义文档。
 
 **重启后在途任务为何仍能上报** ：恢复时 submitted / active 任务的状态原样
@@ -47,7 +46,7 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 （见 :doc:`/operation/zombie` ）。complete 与 aborted 任务的口令不持久化
 ——它们的运行已结束，对口令的上报无论如何都会命中 ``Z2`` 。
 
-快照中的历史服务地址（ ``server_config`` ）在恢复时被丢弃，
+快照中的历史服务地址（ ``source_address`` ）在恢复时被丢弃，
 ``TAKLER_HOST`` / ``TAKLER_PORT`` 始终宣告当前进程。快照中的
 ``server_state`` 则恢复为服务运行状态，其 ``status`` 是独立于节点
 状态的 ``running`` 或 ``halted`` ，并带安全的原因摘要与暂停原因集合。
@@ -103,8 +102,8 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 回退链为 **检查点文件 → 备份文件 → 空 bunch** ：
 
 * 文件不存在：记一条 INFO，进入下一级
-* 文件不可读、不是 JSON、缺 ``bunch`` 键，或 ``format_version`` 不是当前
-  整数版本 ``2``：记一条含路径与原因的 ERROR，进入下一级。缺少版本、
+* 文件不可读、不是 JSON、缺 ``definition`` 键，或 ``format_version`` 不是当前
+  整数版本 ``3``：记一条含路径与原因的 ERROR，进入下一级。缺少版本、
   null、布尔值、浮点数以及旧/未知版本均拒绝；不提供历史格式兼容
 * 两级都不可用：记一条 ERROR，以空 bunch 启动
 
@@ -121,13 +120,12 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 触发器、事件、标尺、limit/in-limit、repeat 和 time 的已存储值。
 根参数仍由 flow 和子节点继承；这些存储字段的往返不代表根调度属性能控制全部 flow。
 ``trigger_free`` / ``complete_trigger_free`` 保存 free-dep 的运行效果，
-v2 必须显式保存这两个字段及完成触发锁存；缺失时拒绝恢复。
+v3 必须显式保存这两个字段及完成触发锁存；缺失时拒绝恢复。
 
 checkpoint 恢复保留当前 ``server_config`` 对象及部署配置，从快照恢复
 ``server_state``；不使用快照旧值替换 host/port 或当前 TLS/auth 等配置。
-快照中根或子节点的用户参数
-``TAKLER_HOST`` / ``TAKLER_PORT`` 覆盖项被移除并记录不含值的冲突警告，
-使继承得到当前服务地址；显式用户 ``TAKLER_HOME`` 和其他业务参数保持原值。
+定义中 ``TAKLER_HOST`` / ``TAKLER_PORT`` 用户覆盖项不合法，
+使任务继承当前服务地址；显式用户 ``TAKLER_HOME`` 和其他业务参数保持原值。
 独立 ``Bunch.from_dict`` 没有在线部署上下文，恢复字典中的
 ``server_config`` 和 ``server_state`` 。
 
@@ -152,12 +150,12 @@ checkpoint 恢复保留当前 ``server_config`` 对象及部署配置，从快�
 发给他人分析前的脱敏
 --------------------
 
-``job_passwords`` 键保存着全部在途作业的一次性口令，文件权限也因此收紧
-为 ``0600`` 。需要把快照发给他人分析时，先删掉这个键：
+``secrets.job_passwords`` 保存着全部在途作业的一次性口令，文件权限也因此收紧
+为 ``0600`` 。需要把快照发给他人分析时，先删掉整个 ``secrets`` 对象：
 
 .. code-block:: bash
 
-    jq 'del(.job_passwords)' takler.check > takler.check.shared
+    jq 'del(.secrets)' takler.check > takler.check.shared
 
 恢复失败时怎么查
 ----------------
@@ -166,7 +164,7 @@ checkpoint 恢复保留当前 ``server_config`` 对象及部署配置，从快�
 见 :doc:`/operation/deployment` ），按以下记录定位：
 
 * ``failed to parse checkpoint file ...`` ：某级文件不可用，原因在
-  同一行（不是 JSON 、缺 ``bunch`` 键、版本过新等），服务已进入回退链
+  同一行（不是 JSON 、缺 ``definition`` 键、版本过新等），服务已进入回退链
   的下一级
 * ``could not restore from the checkpoint file ... nor from the backup
   file`` ：两级都失败，服务以空 bunch 启动
