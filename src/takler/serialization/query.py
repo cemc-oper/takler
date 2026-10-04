@@ -77,6 +77,7 @@ def project_show(bunch, redacted_parameters=()):
                 }
             }
         if isinstance(node, Flow):
+            result["definition_generation"] = node.definition_generation
             result["begun"] = node.begun
             result["calendar"] = Calendar.to_dict(node.calendar)
             generated.update(
@@ -91,6 +92,11 @@ def project_show(bunch, redacted_parameters=()):
             result.update(
                 task_id=node.task_id,
                 try_no=node.try_no,
+                attempt_id=node.attempt_id,
+                definition_generation=node.definition_generation,
+                submitted_at=node.submitted_at,
+                started_at=node.started_at,
+                ended_at=node.ended_at,
                 aborted_reason=node.aborted_reason.replace(node.job_password, REDACTED)
                 if node.aborted_reason and node.job_password
                 else node.aborted_reason,
@@ -99,6 +105,7 @@ def project_show(bunch, redacted_parameters=()):
                 TASK=node.name,
                 TAKLER_NAME=node.node_path,
                 TAKLER_RID=node.task_id,
+                TAKLER_ATTEMPT_ID=node.attempt_id,
                 TAKLER_TRY_NO=node.try_no,
             )
         if isinstance(node, ShellScriptTask):

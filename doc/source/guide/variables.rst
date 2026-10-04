@@ -111,6 +111,9 @@ takler 在各层级自动生成的变量如下。
     * - ``TAKLER_RID``
       - 作业标识（本地 shell 作业即进程号）， child 命令上报与
         ``kill`` 时定位作业用
+    * - ``TAKLER_ATTEMPT_ID``
+      - 本次执行尝试的 UUID；与可清零的 ``TAKLER_TRY_NO`` 和作业标识
+        ``TAKLER_RID`` 不同。child 上报身份校验将在 R1-04 接入
     * - ``TAKLER_TRY_NO``
       - 第几次尝试运行，每次重试加一
     * - ``TAKLER_PASS``

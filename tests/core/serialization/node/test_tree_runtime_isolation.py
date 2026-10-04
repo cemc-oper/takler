@@ -51,6 +51,8 @@ def assert_fresh(flow, task_type):
     assert task.task_id is None
     assert task.try_no == 0
     assert task.aborted_reason is None
+    assert task.attempt_id is None
+    assert task.definition_generation is None
     assert task.job_password is None
     for node in (flow, flow.children[0], task):
         assert node.state.node_status is NodeStatus.unknown
@@ -82,7 +84,7 @@ def test_tree_ignores_runtime_without_begin(flow_data, runtime, monkeypatch):
     original = copy.deepcopy(data)
     task = data["children"][0]["children"][0]
     runtime_fields = [
-        (data, ["state", "begun", "calendar"]),
+        (data, ["state", "begun", "calendar", "definition_generation"]),
         (data["children"][0], ["state"]),
         (
             task,
@@ -90,6 +92,14 @@ def test_tree_ignores_runtime_without_begin(flow_data, runtime, monkeypatch):
                 "state",
                 "task_id",
                 "try_no",
+                "attempt_id",
+                "definition_generation",
+                "submitted_at",
+                "started_at",
+                "ended_at",
+                "job_path",
+                "jobout_path",
+                "orvix_info_path",
                 "aborted_reason",
                 "job_password",
                 "trigger_free",
@@ -134,7 +144,18 @@ def test_status_preserves_runtime_but_never_reads_embedded_password(flow_data):
     assert task.aborted_reason == "previous attempt failed"
     assert task.job_password is None  # CheckpointManager restores its separate map.
     expected = copy.deepcopy(data)
-    del expected["children"][0]["children"][0]["job_password"]
+    expected_task = expected["children"][0]["children"][0]
+    del expected_task["job_password"]
+    for key in (
+        "submitted_at",
+        "started_at",
+        "ended_at",
+        "job_path",
+        "jobout_path",
+        "orvix_info_path",
+    ):
+        if expected_task.get(key) is None:
+            expected_task.pop(key, None)
     for key in ("trigger_free", "complete_trigger_free", "is_complete_triggered"):
         if expected.get(key) is False:
             del expected[key]

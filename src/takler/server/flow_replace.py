@@ -173,6 +173,7 @@ def replace_flow(bunch, command):
         raise InvalidRequestError(f"invalid replacement: {exc.code}") from None
 
     updates = _reference_updates(bunch, old, candidate)
+    candidate.ensure_definition_generation()
     name = old.name
     assignments = [
         (candidate.__dict__, "bunch", bunch),

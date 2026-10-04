@@ -2,8 +2,9 @@
 
 from datetime import datetime
 from typing import Annotated, Literal
+from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from takler.core import Bunch, Flow, Task, NodeStatus, SerializationType
 from takler.core.node import Node
@@ -152,12 +153,34 @@ class RuntimeNode(DefinitionModel):
     server_state: RuntimeServerState | None = None
     begun: bool | None = None
     calendar: RuntimeCalendar | None = None
+    definition_generation: str | None = None
+    attempt_id: str | None = None
     task_id: str | None = None
     try_no: Annotated[int, Field(ge=0)] | None = None
     aborted_reason: str | None = None
+    submitted_at: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
+    job_path: str | None = None
+    jobout_path: str | None = None
+    orvix_info_path: str | None = None
     script_path: str | None = None
     type_data: dict = Field(default_factory=dict)
     runtime_data: dict = Field(default_factory=dict)
+
+    @field_validator("definition_generation", "attempt_id")
+    @classmethod
+    def canonical_uuid(cls, value):
+        if value is not None and str(UUID(value)) != value:
+            raise ValueError("invalid runtime UUID")
+        return value
+
+    @field_validator("submitted_at", "started_at", "ended_at")
+    @classmethod
+    def observed_time(cls, value):
+        if value is not None and datetime.fromisoformat(value).tzinfo is None:
+            raise ValueError("runtime timestamp must have a timezone")
+        return value
 
     @model_validator(mode="after")
     def invariants(self):
@@ -193,8 +216,20 @@ class RuntimeNode(DefinitionModel):
                 raise ValueError("invalid trigger runtime")
         required = {
             "bunch": {"flows", "server_config", "server_state"},
-            "flow": {"begun", "calendar"},
-            "task": {"task_id", "try_no", "aborted_reason"},
+            "flow": {"begun", "calendar", "definition_generation"},
+            "task": {
+                "task_id",
+                "try_no",
+                "aborted_reason",
+                "definition_generation",
+                "attempt_id",
+                "submitted_at",
+                "started_at",
+                "ended_at",
+                "job_path",
+                "jobout_path",
+                "orvix_info_path",
+            },
             "container": set(),
         }[entry.kind]
         conditional = {
@@ -203,9 +238,17 @@ class RuntimeNode(DefinitionModel):
             "server_state",
             "begun",
             "calendar",
+            "definition_generation",
+            "attempt_id",
             "task_id",
             "try_no",
             "aborted_reason",
+            "submitted_at",
+            "started_at",
+            "ended_at",
+            "job_path",
+            "jobout_path",
+            "orvix_info_path",
             "script_path",
         }
         allowed = required | (
@@ -218,8 +261,20 @@ class RuntimeNode(DefinitionModel):
             raise ValueError("incomplete or invalid runtime")
         if entry.kind == "task" and (self.children or self.try_no is None):
             raise ValueError("invalid task runtime")
+        if entry.kind == "task" and (
+            self.definition_generation is None
+            or (self.try_no == 0 and self.attempt_id is not None)
+            or (
+                self.state.status
+                in (NodeStatus.submitted.value, NodeStatus.active.value)
+                and self.attempt_id is None
+            )
+        ):
+            raise ValueError("inconsistent task identity")
         if entry.kind == "flow" and (self.begun is None or self.calendar is None):
             raise ValueError("incomplete flow runtime")
+        if entry.kind == "flow" and self.definition_generation is None:
+            raise ValueError("missing definition generation")
         if entry.kind == "bunch" and (
             self.server_config is None or self.server_state is None
         ):
@@ -326,12 +381,24 @@ def export_runtime(root):
             item["server_config"] = node.server_config.to_dict()
             item["server_state"] = node.server_state.to_dict()
         if entry.kind == "flow":
-            item.update(begun=node.begun, calendar=node.calendar.to_dict())
+            item.update(
+                begun=node.begun,
+                calendar=node.calendar.to_dict(),
+                definition_generation=node.definition_generation,
+            )
         if entry.kind == "task":
             item.update(
                 task_id=node.task_id,
                 try_no=node.try_no,
                 aborted_reason=node.aborted_reason,
+                definition_generation=node.definition_generation,
+                attempt_id=node.attempt_id,
+                submitted_at=node.submitted_at,
+                started_at=node.started_at,
+                ended_at=node.ended_at,
+                job_path=node.job_path,
+                jobout_path=node.jobout_path,
+                orvix_info_path=node.orvix_info_path,
             )
         if entry.type_id == "takler.shell":
             item["script_path"] = (
@@ -375,6 +442,10 @@ def restore_runtime(data, *, registry=None):
 
 def validate_occupancy(root):
     nodes = list(walk(root))
+    for node in nodes:
+        if isinstance(node, Task) and node.get_flow() is not None:
+            if node.definition_generation != node.get_flow().definition_generation:
+                raise DefinitionError("invalid_runtime")
     paths = [node.node_path for node in nodes if not isinstance(node, Bunch)]
     if len(paths) != len(set(paths)):
         raise DefinitionError("invalid_structure")

@@ -669,6 +669,13 @@ class Scheduler:
                     f"state {state} is not supported for Node: {variable_path}",
                     value=state,
                 ) from exc
+            if node_status == NodeStatus.queued:
+                from takler.serialization.builder import walk
+
+                targets = walk(variable) if recursive else (variable,)
+                for target in targets:
+                    if isinstance(target, Task):
+                        target.clear_current_attempt()
             if recursive:
                 variable.sink_status_change(node_status)
             else:

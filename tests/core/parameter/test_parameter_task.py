@@ -166,6 +166,7 @@ def test_task_generated_parameters_only(flow_with_parameter):
         TASK: Parameter(TASK, None),
         TAKLER_NAME: Parameter(TAKLER_NAME, None),
         TAKLER_RID: Parameter(TAKLER_RID, None),
+        "TAKLER_ATTEMPT_ID": Parameter("TAKLER_ATTEMPT_ID", None),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, None),
         TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }
@@ -175,6 +176,7 @@ def test_task_generated_parameters_only(flow_with_parameter):
         TASK: Parameter(TASK, "task1"),
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/task1"),
         TAKLER_RID: Parameter(TAKLER_RID, None),
+        "TAKLER_ATTEMPT_ID": Parameter("TAKLER_ATTEMPT_ID", None),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
         TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }
@@ -185,6 +187,7 @@ def test_task_generated_parameters_only(flow_with_parameter):
         TASK: Parameter(TASK, "task1"),
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/task1"),
         TAKLER_RID: Parameter(TAKLER_RID, "1001"),
+        "TAKLER_ATTEMPT_ID": Parameter("TAKLER_ATTEMPT_ID", None),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
         TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }

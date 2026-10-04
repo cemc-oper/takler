@@ -26,7 +26,7 @@
         spawn -.->|进程创建失败| abort1
         spawn -.->|进程非零退出| fail["on_job_failure：仍 submitted/active 才 aborted"]
 
-1. ``before_run`` ： ``try_no`` 加一、生成新的作业口令
+1. ``before_run`` ： ``try_no`` 加一、生成新的 ``attempt_id`` 和作业口令
    （ ``TAKLER_PASS`` ）、清掉上一次的 ``task_id`` 与
    ``aborted_reason``
 2. ``create_job_script`` ：先刷新全部 generated 参数，再取
@@ -90,6 +90,9 @@ try_no 与作业口令
 ``.job1`` 重新写起）。每次加一的同时轮换一次性作业口令
 ``TAKLER_PASS`` ——43 个字符的 URL-safe 随机串，不含 shell 元字符，
 可直接写进作业脚本。
+``attempt_id`` 是每次实际执行新生成的 UUID；即使 ``requeue`` 后
+``try_no`` 再次为 1，身份也不会复用。``TAKLER_RID`` 仍是 init 上报的
+作业标识，不能代替 ``attempt_id``。
 
 口令是 child 命令的凭据：启用鉴权后，服务只接受携带当前口令的
 上报，过期口令（如 requeue 之前启动的旧作业）会被识别为僵尸。

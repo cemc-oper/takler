@@ -335,6 +335,9 @@ class Node(ABC):
 
         child_node.parent = self
         self.children.append(child_node)
+        flow = self.get_flow()
+        if flow is not None and flow.bunch is not None:
+            flow.ensure_definition_generation(child_node)
         return child_node
 
     def find_child_index(self, child: Union[str, Node]) -> int:

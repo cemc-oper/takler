@@ -41,6 +41,7 @@ def test_all_builtin_definitions_preserved_while_runtime_is_excluded(monkeypatch
     shell.state.node_status = NodeStatus.active
     shell.state.suspended = True
     shell.task_id = "RUNTIME_ID"
+    shell.attempt_id = "22222222-2222-4222-8222-222222222222"
     shell.try_no = 19
     shell.job_password = "SECRET_PASSWORD"
     shell.aborted_reason = "RUNTIME_REASON"
@@ -69,6 +70,8 @@ def test_all_builtin_definitions_preserved_while_runtime_is_excluded(monkeypatch
         "DEPLOYMENT_HOST",
         '"state"',
         '"try_no"',
+        '"attempt_id"',
+        '"definition_generation"',
         '"job_password"',
         '"calendar"',
         '"begun"',
@@ -99,6 +102,13 @@ def test_all_builtin_definitions_preserved_while_runtime_is_excluded(monkeypatch
     monkeypatch.undo()
     assert bunch.to_dict() == before
     assert shell.job_password == "SECRET_PASSWORD"
+
+
+def test_definition_cannot_override_generated_attempt_id():
+    bunch = Bunch()
+    bunch.add_parameter("TAKLER_ATTEMPT_ID", "spoofed")
+    with pytest.raises(DefinitionError, match="forbidden_field"):
+        export_definition(bunch)
 
 
 @pytest.mark.parametrize(

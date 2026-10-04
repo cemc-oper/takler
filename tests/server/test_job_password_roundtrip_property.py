@@ -50,6 +50,7 @@ import secrets
 import tempfile
 from pathlib import Path
 from typing import Dict, List
+from uuid import uuid4
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -133,6 +134,7 @@ def _bunches_with_job_passwords(draw: st.DrawFn) -> Bunch:
             task.try_no = max(task.try_no, 1)
         if task.try_no != 0:
             task.job_password = secrets.token_urlsafe(PASSWORD_NBYTES)
+            task.attempt_id = str(uuid4())
     return bunch
 
 

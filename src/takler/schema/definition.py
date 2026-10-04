@@ -37,6 +37,7 @@ class ParameterDefinition(DefinitionModel):
     def allowed_name(self):
         if self.name.upper() in {
             "TAKLER_PASS",
+            "TAKLER_ATTEMPT_ID",
             "TAKLER_SECRET",
             "TAKLER_HOST",
             "TAKLER_PORT",

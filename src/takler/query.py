@@ -60,6 +60,11 @@ class NodeInfo:
     complete_trigger: str | None = None
     repeat: str | None = None
     task_id: str | None = None
+    definition_generation: str | None = None
+    attempt_id: str | None = None
+    submitted_at: str | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
     try_no: int | None = None
     aborted_reason: str | None = None
     script_path: str | None = None
@@ -255,6 +260,11 @@ def parse_show(payload: str) -> ShowSnapshot:
             "trigger",
             "complete_trigger",
             "task_id",
+            "definition_generation",
+            "attempt_id",
+            "submitted_at",
+            "started_at",
+            "ended_at",
             "aborted_reason",
             "script_path",
         ):

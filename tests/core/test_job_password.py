@@ -29,20 +29,17 @@ from takler.tasks.shell.shell_render import ShellRender
 # cryptographically secure source of at least this strength stays green.
 MIN_JOB_PASSWORD_LENGTH = 32
 
-# The key set of ``Task.to_dict()`` as of M1, written out literally.
-#
-# ``show`` and the checkpoint file share the same ``Bunch.to_dict()``, so this
-# key set is the only barrier that keeps every in-flight job password out of
-# both. It is asserted against this literal set - not against a snapshot and
-# not against a computed set - precisely so that adding any key to the node
-# serialization fails here and has to be argued for.
-M1_TASK_DICT_KEYS = {
+# Current identity fields may appear in ``Task.to_dict()``; the password must
+# remain excluded. Keep the key set explicit so additions get reviewed.
+TASK_RUNTIME_DICT_KEYS = {
     "aborted_reason",
     "type_id",
     "name",
     "state",
     "task_id",
     "try_no",
+    "definition_generation",
+    "attempt_id",
 }
 
 
@@ -105,7 +102,7 @@ def test_to_dict_key_set_is_unchanged_by_job_password():
 
     d = task1.to_dict()
 
-    assert set(d.keys()) == M1_TASK_DICT_KEYS
+    assert set(d.keys()) == TASK_RUNTIME_DICT_KEYS
     assert task1.job_password not in json.dumps(d)
 
 

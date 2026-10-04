@@ -13,7 +13,8 @@
 
 :py:class:`~takler.core.Task` 的 ``run()`` 是一个三段模板：
 
-#. ``before_run()`` —— 调 ``increment_try_no`` ： ``try_no`` 加一、清
+#. ``before_run()`` —— ``Task.run`` 在进入可覆写钩子前调用
+   ``increment_try_no`` ： ``try_no`` 加一、分配新的 ``attempt_id`` 、清
    空 ``task_id`` 与 ``aborted_reason`` 、轮换一次性
    ``job_password`` 、刷新 generated 参数；
 #. ``do_run()`` —— **子类的扩展点** ，做真正的提交。返回 ``False``
@@ -35,13 +36,13 @@
   ``submitted`` ，之后等外部工作经 child 命令上报。**不要** 在
   ``do_run`` 里自己调 ``complete()`` —— 它返回后 ``after_run`` 会把
   状态盖回 ``submitted`` 。
-* **进程内即时完成** （装饰器模式）：整个覆写 ``run()`` ，先
-  ``Task.run(self)`` 走标准的三段（落 ``submitted`` ），再自己
+* **进程内即时完成** ：注册类型覆写 ``after_run()`` ，先调用父类方法
+  进入 ``submitted`` ，再自己
   ``init()`` → 干活 → ``complete()`` 。函数体跑在 **服务端进程** 的
   调度主循环里，耗时操作会卡住所有 flow 的调度，只适合秒级以内的任
   务。
 
-后一种的最小例子（这也是 ``task`` 装饰器生成的代码形状）：
+后一种的最小例子：
 
 .. code-block:: python
 
@@ -57,11 +58,14 @@
             super().__init__(name)
             self.marker_path = marker_path
 
-        def run(self):
-            Task.run(self)  # before_run / do_run / after_run -> submitted
+        def after_run(self):
+            super().after_run()  # -> submitted
             self.init()     # -> active
             Path(self.marker_path).write_text(self.node_path + "\n")
             self.complete() # -> complete
+
+注册的 Task 子类不能覆写 ``run()`` ；共同入口负责分配执行身份。
+``@task`` 装饰器仍在内部调用 ``Task.run`` 后运行同步函数。
 
 受信任注册与独立 codec
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -108,7 +112,8 @@
 生成变量
 ~~~~~~~~
 
-任务自带的 generated 参数（ ``TAKLER_NAME`` / ``TAKLER_PASS`` 等五个）
+任务自带的 generated 参数（ ``TAKLER_NAME`` / ``TAKLER_ATTEMPT_ID`` /
+``TAKLER_PASS`` 等六个）
 由 ``TaskNodeGeneratedParameters`` 提供。自定义类型要加自己的生成变
 量时，照 ``ShellScriptTask`` 的三件套抄：一个 pydantic 模型集中声明
 字段与 ``update_parameters`` ，再覆写任务上的

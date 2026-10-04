@@ -39,7 +39,7 @@ Bunch 只导出 name、user_parameters、flows；根上配置未支持的调度�
 会报 ``unsupported_root_attribute``。
 
 服务器生成的地址和默认参数不导出；显式用户 TAKLER_HOME 保留。
-用户参数中的 TAKLER_HOST、TAKLER_PORT、TAKLER_PASS、TAKLER_SECRET
+用户参数中的 TAKLER_HOST、TAKLER_PORT、TAKLER_PASS、TAKLER_ATTEMPT_ID、TAKLER_SECRET
 （不区分大小写）被拒绝。其他业务参数按原值导出，文档应按配置数据保护。
 
 ``parse_definition`` 接受 JSON 文本、字节或字典，拒绝未知字段/版本、

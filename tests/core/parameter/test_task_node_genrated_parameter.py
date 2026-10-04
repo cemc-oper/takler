@@ -77,6 +77,7 @@ def test_task_node_generated_parameters_generated_parameters():
         TASK: Parameter(TASK, "task1"),
         TAKLER_NAME: Parameter(TAKLER_NAME, "/flow1/task1"),
         TAKLER_RID: Parameter(TAKLER_RID, "1001"),
+        "TAKLER_ATTEMPT_ID": Parameter("TAKLER_ATTEMPT_ID", None),
         TAKLER_TRY_NO: Parameter(TAKLER_TRY_NO, 0),
         TAKLER_PASS: Parameter(TAKLER_PASS, None),
     }

@@ -57,6 +57,11 @@ class TypeRegistry:
         )
         if actual_kind != entry.kind:
             raise DefinitionError("invalid_registration")
+        if entry.kind == "task" and not (
+            entry.python_type.run is Task.run
+            or entry.python_type.__dict__.get("_takler_inline_run") is True
+        ):
+            raise DefinitionError("invalid_registration")
         for schema in (entry.definition_schema, entry.runtime_schema):
             if schema is not None and (
                 schema.model_config.get("extra") != "forbid"
@@ -68,11 +73,14 @@ class TypeRegistry:
                 "job_password",
                 "task_id",
                 "try_no",
+                "attempt_id",
+                "definition_generation",
                 "state",
                 "suspended",
                 "auth",
                 "secret",
                 "TAKLER_PASS",
+                "TAKLER_ATTEMPT_ID",
                 "TAKLER_SECRET",
             } | set(entry.secret_fields)
             if forbidden.intersection(entry.definition_schema.model_fields):
@@ -233,6 +241,8 @@ def validate_definition_data(data, secret_fields=()):
         "job_password",
         "task_id",
         "try_no",
+        "attempt_id",
+        "definition_generation",
         "state",
         "suspended",
         "auth",

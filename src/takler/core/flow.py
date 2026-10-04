@@ -1,10 +1,12 @@
 import datetime
+from uuid import uuid4
 from typing import TYPE_CHECKING, Optional, Dict
 
 from pydantic import BaseModel, ConfigDict
 
 from ..exceptions import FlowStateError
 from .node_container import NodeContainer
+from .task_node import Task
 from .calendar import Calendar
 from .parameter import Parameter, DATE, TIME
 from .util import SerializationType
@@ -18,6 +20,8 @@ class Flow(NodeContainer):
         super(Flow, self).__init__(name)
 
         self.bunch: Optional[Bunch] = None
+        # Assigned on attachment, and retained when restoring a checkpoint.
+        self.definition_generation: Optional[str] = None
         self.calendar: Calendar = Calendar()
         self.begun: bool = False
 
@@ -38,6 +42,8 @@ class Flow(NodeContainer):
         result = super(Flow, self).to_dict()
         result["begun"] = self.begun
         result["calendar"] = self.calendar.to_dict()
+        if self.definition_generation is not None:
+            result["definition_generation"] = self.definition_generation
         return result
 
     @classmethod
@@ -65,12 +71,26 @@ class Flow(NodeContainer):
         node = super(Flow, cls).fill_from_dict(d, node, method=method)
 
         if method == SerializationType.Status:
+            node.definition_generation = d.get("definition_generation")
             node.begun = bool(d.get("begun", False))
             calendar_dict = d.get("calendar")
             if calendar_dict is not None:
                 node.calendar = Calendar.from_dict(calendar_dict, method=method)
 
         return node
+
+    def ensure_definition_generation(self, subtree=None):
+        """Give a newly attached definition one identity, shared by its tasks."""
+        if self.definition_generation is None:
+            self.definition_generation = str(uuid4())
+        pending = [subtree] if subtree is not None else list(self.children)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, Task) and (
+                subtree is not None or node.definition_generation is None
+            ):
+                node.definition_generation = self.definition_generation
+            pending.extend(node.children)
 
     # Node access --------------------------------------
 

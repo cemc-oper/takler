@@ -88,6 +88,7 @@ class Bunch(NodeContainer):
     def add_flow(self, flow: Union[Flow, str]) -> Flow:
         if isinstance(flow, str):
             flow = Flow(name=flow)
+        flow.ensure_definition_generation()
         self.flows[flow.name] = flow
         flow.bunch = self
         return flow

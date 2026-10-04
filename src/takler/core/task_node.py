@@ -1,7 +1,9 @@
 import functools
 import asyncio
 import secrets
+from datetime import datetime, timezone
 from typing import Optional, Dict, Set
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
@@ -13,6 +15,7 @@ from .parameter import (
     TASK,
     TAKLER_NAME,
     TAKLER_RID,
+    TAKLER_ATTEMPT_ID,
     TAKLER_TRY_NO,
     TAKLER_PASS,
 )
@@ -27,6 +30,15 @@ class Task(Node):
         self.aborted_reason: Optional[str] = None
 
         self.try_no: int = 0
+        self.definition_generation: Optional[str] = None
+        self.attempt_id: Optional[str] = None
+        self.submitted_at: Optional[str] = None
+        self.started_at: Optional[str] = None
+        self.ended_at: Optional[str] = None
+        self.job_path: Optional[str] = None
+        self.jobout_path: Optional[str] = None
+        self.orvix_info_path: Optional[str] = None
+        self._run_identity_prepared = False
 
         # One-time job password of the current run instance.
         #
@@ -35,8 +47,8 @@ class Task(Node):
         # file, so serializing it here would hand every in-flight password to
         # anyone able to call ``show``.
         #
-        # Invariant: ``job_password`` is empty if and only if ``try_no == 0``.
-        # ``increment_try_no`` and ``requeue`` are the only write points.
+        # A new attempt gets its own password. Requeue and force-queued clear
+        # it; try_no may remain nonzero after force-queued.
         self.job_password: Optional[str] = None
 
         self.generated_parameters: TaskNodeGeneratedParameters = (
@@ -57,6 +69,19 @@ class Task(Node):
                 try_no=self.try_no,
             )
         )
+        for field in (
+            "definition_generation",
+            "attempt_id",
+            "submitted_at",
+            "started_at",
+            "ended_at",
+            "job_path",
+            "jobout_path",
+            "orvix_info_path",
+        ):
+            value = getattr(self, field)
+            if value is not None:
+                result[field] = value
 
         return result
 
@@ -74,6 +99,17 @@ class Task(Node):
             node.task_id = d["task_id"]
             node.aborted_reason = d["aborted_reason"]
             node.try_no = d["try_no"]
+            for field in (
+                "definition_generation",
+                "attempt_id",
+                "submitted_at",
+                "started_at",
+                "ended_at",
+                "job_path",
+                "jobout_path",
+                "orvix_info_path",
+            ):
+                setattr(node, field, d.get(field))
 
         return node
 
@@ -191,9 +227,10 @@ class Task(Node):
 
     def before_run(self):
         """
-        Increment try no before actually run the task.
+        Prepare identity when called directly; ``run`` does this before hooks.
         """
-        self.increment_try_no()
+        if not self._run_identity_prepared:
+            Task.increment_try_no(self)
 
     def do_run(self) -> bool:
         """
@@ -207,6 +244,7 @@ class Task(Node):
         """
         If task has been successfully run, change node status to ``NodeStatus.submitted`` and handle status change.
         """
+        self.submitted_at = datetime.now(timezone.utc).isoformat()
         self.set_node_status(node_status=NodeStatus.submitted)
         logger.info(f"run: {self.node_path} with try no {self.try_no}")
         self.handle_status_change()
@@ -215,7 +253,14 @@ class Task(Node):
         """
         Run the task, set status to ``NodeStatus.submitted`` and handle status change.
         """
-        self.before_run()
+        # Allocate before any overridable hook, while preserving the existing
+        # before_run -> do_run -> after_run template order for extensions.
+        Task.increment_try_no(self)
+        self._run_identity_prepared = True
+        try:
+            self.before_run()
+        finally:
+            self._run_identity_prepared = False
 
         if not self.do_run():
             return False
@@ -224,11 +269,25 @@ class Task(Node):
         return True
 
     def requeue(self, reset_repeat: bool = True):
+        self.try_no = 0
+        self.clear_current_attempt()
+        super(Task, self).requeue(reset_repeat=reset_repeat)
+
+    def clear_current_attempt(self):
+        """Discard the current run association before a future execution."""
         self.task_id = None
         self.aborted_reason = None
-        self.try_no = 0
         self.job_password = None
-        super(Task, self).requeue(reset_repeat=reset_repeat)
+        self.attempt_id = None
+        self.submitted_at = None
+        self.started_at = None
+        self.ended_at = None
+        self.job_path = None
+        self.jobout_path = None
+        self.orvix_info_path = None
+        self.generated_parameters.takler_rid.value = None
+        self.generated_parameters.takler_attempt_id.value = None
+        self.generated_parameters.takler_pass.value = None
 
     # Status update operation ---------------------------------------
     #   Status update operation is used in task's running period,
@@ -236,16 +295,22 @@ class Task(Node):
 
     def init(self, task_id: str = ""):
         self.task_id = task_id
+        if self.attempt_id is not None and self.started_at is None:
+            self.started_at = datetime.now(timezone.utc).isoformat()
         self.set_node_status(node_status=NodeStatus.active)
         logger.info(f"init: {self.node_path}")
         self.handle_status_change()
 
     def complete(self):
+        if self.attempt_id is not None:
+            self.ended_at = datetime.now(timezone.utc).isoformat()
         self.set_node_status(node_status=NodeStatus.complete)
         logger.info(f"complete: {self.node_path}")
         self.handle_status_change()
 
     def abort(self, reason: str = ""):
+        if self.attempt_id is not None:
+            self.ended_at = datetime.now(timezone.utc).isoformat()
         self.set_node_status(node_status=NodeStatus.aborted)
         self.aborted_reason = reason
         logger.info(f"abort: {self.node_path} {reason}")
@@ -253,9 +318,23 @@ class Task(Node):
 
     # Util ------------------------------------
     def increment_try_no(self):
+        flow = self.get_flow()
+        if flow is not None:
+            if flow.definition_generation is None:
+                flow.ensure_definition_generation()
+            self.definition_generation = flow.definition_generation
+        elif self.definition_generation is None:
+            self.definition_generation = str(uuid4())
         self.try_no += 1
+        self.attempt_id = str(uuid4())
         self.task_id = None
         self.aborted_reason = None
+        self.submitted_at = None
+        self.started_at = None
+        self.ended_at = None
+        self.job_path = None
+        self.jobout_path = None
+        self.orvix_info_path = None
         # ``token_urlsafe(32)`` yields a 43 character URL-safe string from a
         # cryptographically secure source, and contains no shell metacharacter,
         # so it can be exported without quoting.
@@ -268,6 +347,7 @@ class TaskNodeGeneratedParameters(BaseModel):
     task: Parameter = Parameter(TASK, None)
     takler_name: Parameter = Parameter(TAKLER_NAME, None)
     takler_rid: Parameter = Parameter(TAKLER_RID, None)
+    takler_attempt_id: Parameter = Parameter(TAKLER_ATTEMPT_ID, None)
     takler_try_no: Parameter = Parameter(TAKLER_TRY_NO, None)
     # ``TAKLER_PASS`` must stay a *generated* parameter. ``Node.to_dict()``
     # serializes ``user_parameters`` only, so keeping the job password here is
@@ -283,6 +363,7 @@ class TaskNodeGeneratedParameters(BaseModel):
         self.task.value = self.node.name
         self.takler_name.value = self.node.node_path
         self.takler_rid.value = self.node.task_id
+        self.takler_attempt_id.value = self.node.attempt_id
         self.takler_try_no.value = self.node.try_no
         self.takler_pass.value = self.node.job_password
 
@@ -293,6 +374,8 @@ class TaskNodeGeneratedParameters(BaseModel):
             return self.takler_name
         elif name == TAKLER_RID:
             return self.takler_rid
+        elif name == TAKLER_ATTEMPT_ID:
+            return self.takler_attempt_id
         elif name == TAKLER_TRY_NO:
             return self.takler_try_no
         elif name == TAKLER_PASS:
@@ -305,6 +388,7 @@ class TaskNodeGeneratedParameters(BaseModel):
             TASK: self.task,
             TAKLER_NAME: self.takler_name,
             TAKLER_RID: self.takler_rid,
+            TAKLER_ATTEMPT_ID: self.takler_attempt_id,
             TAKLER_TRY_NO: self.takler_try_no,
             TAKLER_PASS: self.takler_pass,
         }
@@ -323,6 +407,8 @@ def task(name: str):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             class RunTask(Task):
+                _takler_inline_run = True
+
                 def __init__(self):
                     super(RunTask, self).__init__(name=name)
 

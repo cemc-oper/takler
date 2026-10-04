@@ -64,6 +64,7 @@ def test_bunch_to_dict(bunch_case):
             dict(
                 name="flow1",
                 type_id="takler.flow",
+                definition_generation=bunch.find_flow("flow1").definition_generation,
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
@@ -74,6 +75,9 @@ def test_bunch_to_dict(bunch_case):
                             dict(
                                 name="task1",
                                 type_id="takler.task",
+                                definition_generation=bunch.find_flow(
+                                    "flow1"
+                                ).definition_generation,
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
@@ -82,6 +86,9 @@ def test_bunch_to_dict(bunch_case):
                             dict(
                                 name="task2",
                                 type_id="takler.task",
+                                definition_generation=bunch.find_flow(
+                                    "flow1"
+                                ).definition_generation,
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
@@ -103,6 +110,7 @@ def test_bunch_to_dict(bunch_case):
             dict(
                 name="flow2",
                 type_id="takler.flow",
+                definition_generation=bunch.find_flow("flow2").definition_generation,
                 state=dict(status=3, suspended=False),
                 children=[
                     dict(
@@ -113,6 +121,9 @@ def test_bunch_to_dict(bunch_case):
                             dict(
                                 name="task3",
                                 type_id="takler.task",
+                                definition_generation=bunch.find_flow(
+                                    "flow2"
+                                ).definition_generation,
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
@@ -121,6 +132,9 @@ def test_bunch_to_dict(bunch_case):
                             dict(
                                 name="task4",
                                 type_id="takler.task",
+                                definition_generation=bunch.find_flow(
+                                    "flow2"
+                                ).definition_generation,
                                 state=dict(status=3, suspended=False),
                                 task_id=None,
                                 aborted_reason=None,
