@@ -176,5 +176,5 @@ def test_job_script_render_uses_non_empty_takler_pass(tmp_path):
     assert template_params[TAKLER_PASS]
 
     assert task1.check_job_creation()
-    job_script_path = Path(tmp_path, "flow1", f"task1.job{task1.try_no}")
+    job_script_path = Path(task1.job_path)
     assert task1.job_password in job_script_path.read_text()

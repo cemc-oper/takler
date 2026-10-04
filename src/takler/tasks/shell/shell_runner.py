@@ -49,6 +49,7 @@ class ShellRunner:
         command: str,
         node_path: str = "",
         on_failure: Optional[OnFailure] = None,
+        before_start: Optional[Callable[[], None]] = None,
     ) -> asyncio.Task:
         """
         Run command in a subprocess using ``anyio.run_process``.
@@ -69,6 +70,8 @@ class ShellRunner:
         on_failure
             Called with the exception when the job task ends with an exception,
             after the ERROR log has been recorded.
+        before_start
+            Final service status check immediately before starting the process.
 
         Returns
         -------
@@ -83,6 +86,8 @@ class ShellRunner:
         """
 
         async def run_shell_command():
+            if before_start is not None:
+                before_start()
             await run_process(["/bin/sh", "-c", command])
 
         try:

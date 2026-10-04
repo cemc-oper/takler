@@ -132,9 +132,15 @@ takler 在各层级自动生成的变量如下。
         覆盖（ user 优先于 generated ）
     * - ``TAKLER_JOB``
       - 生成的作业文件路径：
-        ``{TAKLER_HOME}{节点路径}.job{try_no}``
+        ``{TAKLER_HOME}{节点路径}.job{attempt_id}``。执行前的预览仍按
+        ``try_no`` 显示；实际执行文件总是使用本轮 UUID
     * - ``TAKLER_JOBOUT``
-      - 作业输出文件路径： ``{TAKLER_HOME}{节点路径}.{try_no}``
+      - 作业输出文件路径： ``{TAKLER_HOME}{节点路径}.{attempt_id}``
+
+显式设置 ``TAKLER_JOB`` 或 ``TAKLER_JOBOUT`` 时，路径字符串必须恰好
+包含一次字面 ``{attempt_id}``；takler 在写文件前替换为本轮完整 UUID，
+并检查解析后的绝对路径与本轮其他文件及当前可见任务的文件引用不冲突。
+配置中的模板保持原样，本轮解析路径保存在运行信息中。
 
 **repeat 生成**：节点带 repeat 时，以 repeat 的名字为变量名生成一个
 参数，取值为 repeat 的当前值，随 repeat 推进自动更新（见

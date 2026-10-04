@@ -120,11 +120,12 @@ def project_show(bunch, redacted_parameters=()):
                 generated.update(TAKLER_JOB=REDACTED, TAKLER_JOBOUT=REDACTED)
                 redacted.update(("TAKLER_JOB", "TAKLER_JOBOUT"))
             elif home is not None and home.value is not None:
-                generated["TAKLER_JOB"] = str(
-                    Path(f"{home.value}{node.node_path}.job{node.try_no}").absolute()
+                suffix = node.attempt_id or str(node.try_no)
+                generated["TAKLER_JOB"] = node.job_path or str(
+                    Path(f"{home.value}{node.node_path}.job{suffix}").absolute()
                 )
-                generated["TAKLER_JOBOUT"] = str(
-                    Path(f"{home.value}{node.node_path}.{node.try_no}").absolute()
+                generated["TAKLER_JOBOUT"] = node.jobout_path or str(
+                    Path(f"{home.value}{node.node_path}.{suffix}").absolute()
                 )
         result["generated_parameters"] = parameters(generated)
         result["redacted_parameters"] = sorted(redacted)

@@ -1757,12 +1757,15 @@ def test_guide_job_management_attempt_files_coexist_per_try_no(tmp_path):
     flow, task1 = _make_shell_flow(tmp_path)
 
     task1.increment_try_no()
+    first = task1.attempt_id
     task1.create_job_script()
     task1.increment_try_no()
+    second = task1.attempt_id
     task1.create_job_script()
 
-    assert (tmp_path / "test/t1.job1").exists()
-    assert (tmp_path / "test/t1.job2").exists()
+    assert first != second
+    assert (tmp_path / f"test/t1.job{first}").exists()
+    assert (tmp_path / f"test/t1.job{second}").exists()
 
 
 # ---------------------------------------------------------------------------

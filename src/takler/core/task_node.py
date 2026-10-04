@@ -8,7 +8,8 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict
 
 from .node import Node
-from .state import NodeStatus
+from .state import NodeStatus, ServerStatus
+from takler.exceptions import FlowStateError
 from .limit import Limit
 from .parameter import (
     Parameter,
@@ -253,6 +254,9 @@ class Task(Node):
         """
         Run the task, set status to ``NodeStatus.submitted`` and handle status change.
         """
+        bunch = self.get_bunch()
+        if bunch is not None and bunch.server_state.status is ServerStatus.halted:
+            raise FlowStateError("service is halted")
         # Allocate before any overridable hook, while preserving the existing
         # before_run -> do_run -> after_run template order for extensions.
         Task.increment_try_no(self)

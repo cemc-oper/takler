@@ -1,13 +1,21 @@
 import stat
+import shlex
 from typing import Union, Optional, Dict
 from pathlib import Path
 
 from pydantic import BaseModel
 
-from takler.core import Task, Parameter, Flow, NodeStatus, SerializationType
+from takler.core import (
+    Task,
+    Parameter,
+    Flow,
+    NodeStatus,
+    ServerStatus,
+    SerializationType,
+)
 from takler.core.node import Node
 from takler.core.parameter import TAKLER_HOME
-from takler.exceptions import JobSubmissionError
+from takler.exceptions import FlowStateError, JobSubmissionError
 from takler.logging import get_logger
 from takler.visitor import pre_order_travel, NodeVisitor
 
@@ -81,6 +89,19 @@ class ShellScriptTask(Task):
         p = super(ShellScriptTask, self).find_generated_parameter(name)
         return p
 
+    def find_parameter(self, name: str) -> Optional[Parameter]:
+        # During a run, artifact overrides are resolved to a concrete path.
+        # Keep the definition's literal template in user_parameters.
+        if name in (TAKLER_JOB, TAKLER_JOBOUT):
+            return self.shell_generated_parameters.find_parameter(name)
+        return super().find_parameter(name)
+
+    def parameters_only(self) -> Dict[str, Parameter]:
+        params = super().parameters_only()
+        params[TAKLER_JOB] = self.shell_generated_parameters.takler_job
+        params[TAKLER_JOBOUT] = self.shell_generated_parameters.takler_jobout
+        return params
+
     def generated_parameters_only(self) -> Dict[str, Parameter]:
         task_params = super(ShellScriptTask, self).generated_parameters_only()
         params = self.shell_generated_parameters.generate_variables()
@@ -114,6 +135,12 @@ class ShellScriptTask(Task):
         self._submission_token = None
         super().requeue(reset_repeat=reset_repeat)
 
+    def clear_current_attempt(self):
+        super().clear_current_attempt()
+        self._submission_token = None
+        self.shell_generated_parameters.takler_job.value = None
+        self.shell_generated_parameters.takler_jobout.value = None
+
     def set_node_status_only(self, node_status: NodeStatus):
         # Includes child completion/abort and forced terminal/queued states.
         if node_status not in (NodeStatus.submitted, NodeStatus.active):
@@ -132,13 +159,18 @@ class ShellScriptTask(Task):
             When the job script cannot be rendered, or the job process cannot
             be spawned.
         """
+        self._require_running()
         token = self._submission_token = object()
         flow, bunch, node_path = self.get_flow(), self.get_bunch(), self.node_path
+        attempt_id, generation = self.attempt_id, self.definition_generation
+        external_submit = self._uses_orvix()
 
         def on_failure(exc: BaseException) -> None:
             # All checks and abort run synchronously on the same event loop.
             # A detached flow can still retain its old bunch back-reference.
             current = self._submission_token is token
+            current = current and self.attempt_id == attempt_id
+            current = current and self.definition_generation == generation
             current = current and self.get_flow() is flow and self.get_bunch() is bunch
             if current and bunch is not None:
                 current = bunch.find_node(node_path) is self
@@ -147,18 +179,87 @@ class ShellScriptTask(Task):
             if not current:
                 logger.info(f"skip stale job failure: {node_path}")
                 return
-            self.on_job_failure(exc)
+            self.on_job_failure(exc, result_unknown=external_submit)
 
         run_command = self.create_job_script()
+        self._require_running()
         shell_runner = ShellRunner(job_password=self.job_password)
         shell_runner.spawn(
             command=run_command,
             node_path=node_path,
             on_failure=on_failure,
+            before_start=self._require_running,
         )
         return True
 
-    def on_job_failure(self, exc: BaseException) -> None:
+    def _require_running(self) -> None:
+        bunch = self.get_bunch()
+        if bunch is not None and bunch.server_state.status is ServerStatus.halted:
+            raise FlowStateError("service is halted")
+
+    def _artifact_paths(self) -> tuple[Path, Path, Optional[Path]]:
+        """Resolve this attempt's files and reject collisions before any write."""
+        home = self.find_parent_parameter(TAKLER_HOME)
+        if home is None or home.value is None:
+            raise ValueError("TAKLER_HOME is not set")
+        suffix = self.attempt_id or str(self.try_no)
+        defaults = (
+            f"{home.value}{self.node_path}.{JOB_SCRIPT_EXTENSION}{suffix}",
+            f"{home.value}{self.node_path}.{suffix}",
+        )
+
+        def resolve(name: str, default: str) -> Path:
+            override = self._artifact_override(name)
+            if override is None:
+                value = default
+            else:
+                value = override.value
+                if not isinstance(value, str) or value.count("{attempt_id}") != 1:
+                    raise ValueError(f"{name} requires exactly one {{attempt_id}}")
+                value = value.replace("{attempt_id}", self.attempt_id or "unassigned")
+            return Path(value).resolve()
+
+        job = resolve(TAKLER_JOB, defaults[0])
+        jobout = resolve(TAKLER_JOBOUT, defaults[1])
+        info = job.with_name(job.name + ".info.yaml") if self._uses_orvix() else None
+        paths = {job, jobout}
+        if info is not None:
+            paths.add(info)
+        if len(paths) != (3 if info is not None else 2):
+            raise ValueError("job artifact paths conflict")
+        bunch = self.get_bunch()
+        if bunch is not None:
+            from takler.serialization.builder import walk
+
+            for other in walk(bunch):
+                if other is self or not isinstance(other, Task):
+                    continue
+                for value in (other.job_path, other.jobout_path, other.orvix_info_path):
+                    if value is not None and Path(value).resolve() in paths:
+                        raise ValueError("job artifact path conflicts with current run")
+        return job, jobout, info
+
+    def _artifact_override(self, name: str) -> Optional[Parameter]:
+        node = self
+        while node is not None:
+            found = node.find_user_parameter(name)
+            if found is not None:
+                return found
+            node = node.parent
+        bunch = self.get_bunch()
+        return None if bunch is None else bunch.find_user_parameter(name)
+
+    def _uses_orvix(self) -> bool:
+        param = self.find_parent_parameter("TAKLER_SHELL_JOB_CMD")
+        if param is None or not isinstance(param.value, str):
+            return False
+        try:
+            args = shlex.split(param.value)
+        except ValueError:
+            return False
+        return len(args) >= 2 and Path(args[0]).name == "orvix" and args[1] == "submit"
+
+    def on_job_failure(self, exc: BaseException, result_unknown: bool = False) -> None:
         """
         Set the task to aborted after ``ShellRunner`` has logged the job failure.
 
@@ -178,9 +279,12 @@ class ShellScriptTask(Task):
             )
             return
 
-        self.abort(
-            redact_job_password(f"{type(exc).__name__}: {exc}", self.job_password)
-        )
+        reason = redact_job_password(f"{type(exc).__name__}: {exc}", self.job_password)
+        if result_unknown:
+            reason = (
+                f"external submission result unknown; verify before rerun: {reason}"
+            )
+        self.abort(reason)
 
     def create_job_script(self) -> str:
         """
@@ -202,8 +306,13 @@ class ShellScriptTask(Task):
             When the job script cannot be rendered. The message contains the
             node path and the reason.
         """
+        self._require_running()
         try:
             self.update_generated_parameters()
+
+            job, jobout, info = self._artifact_paths()
+            self.shell_generated_parameters.takler_job.value = job
+            self.shell_generated_parameters.takler_jobout.value = jobout
 
             # get script path from TAKLER_SCRIPT
             script_param = self.find_parameter(TAKLER_SCRIPT)
@@ -215,6 +324,10 @@ class ShellScriptTask(Task):
             shell_script = ShellRender(self)
 
             job_script_path = shell_script.render_script(script_path)
+            if self.attempt_id is not None:
+                self.job_path = str(job)
+                self.jobout_path = str(jobout)
+                self.orvix_info_path = str(info) if info is not None else None
             # Only add the owner execute bit, and leave the read/write bits as
             # they were created by the default ACL/umask or already existed. A job script
             # may carry ``TAKLER_PASS``, so takler must not widen its read
@@ -260,14 +373,13 @@ class ShellScriptTaskGeneratedParameters(BaseModel):
         self.takler_script.value = self.node.script_path
 
         home_param = self.node.find_parent_parameter(TAKLER_HOME)
+        suffix = self.node.attempt_id or str(self.node.try_no)
         job_path = Path(
-            f"{home_param.value}{self.node.node_path}.{JOB_SCRIPT_EXTENSION}{self.node.try_no}"
+            f"{home_param.value}{self.node.node_path}.{JOB_SCRIPT_EXTENSION}{suffix}"
         )
         self.takler_job.value = job_path.absolute()
 
-        jobout_path = Path(
-            f"{home_param.value}{self.node.node_path}.{self.node.try_no}"
-        )
+        jobout_path = Path(f"{home_param.value}{self.node.node_path}.{suffix}")
         self.takler_jobout.value = jobout_path.absolute()
 
     def find_parameter(self, name: str) -> Optional[Parameter]:

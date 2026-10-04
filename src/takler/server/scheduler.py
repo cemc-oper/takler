@@ -6,7 +6,7 @@ from queue import Queue
 from typing import Callable, Optional
 from uuid import UUID
 
-from takler.core import Bunch, Task, NodeStatus, Event, Flow
+from takler.core import Bunch, Task, NodeStatus, ServerStatus, Event, Flow
 from takler.core.node import Node
 from takler.exceptions import (
     AttemptMismatchError,
@@ -219,7 +219,7 @@ class Scheduler:
         time_now
             current time used to update the flow's calendar.
         """
-        if not flow.begun:
+        if self.bunch.server_state.status is ServerStatus.halted or not flow.begun:
             # Requirement 8.9: an unbegun flow is skipped entirely, both its
             # calendar update and its dependency resolution.
             #
@@ -275,6 +275,8 @@ class Scheduler:
         -----
         是否使用异步函数遍历工作流？
         """
+        if self.bunch.server_state.status is ServerStatus.halted:
+            return
         for name, flow in self.bunch.flows.items():
             flow.resolve_dependencies()
 
@@ -648,6 +650,8 @@ class Scheduler:
 
         if not isinstance(node, Task):
             raise NodeTypeError("run requires a Task", node_path=node_path)
+        if self.bunch.server_state.status is ServerStatus.halted:
+            raise FlowStateError("service is halted")
         if not force:
             status = node.state.node_status
             if status in (NodeStatus.submitted, NodeStatus.active):
