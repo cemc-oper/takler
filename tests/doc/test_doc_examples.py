@@ -1186,37 +1186,19 @@ def test_guide_task_decorator_runs_the_function_inline():
     assert calls == ["/test/notify"]
 
 
-def test_guide_async_task_decorator_run_is_a_coroutine_function():
-    """``async_task`` builds a task whose ``run`` is a coroutine function.
-
-    defining-flows.rst warns that ``async_task`` does not work with the
-    current scheduler: ``resolve_dependencies`` calls ``run()``
-    synchronously, so the coroutine is never awaited and the function body
-    never executes. This test pins that limitation; if ``async_task`` is
-    fixed to run properly, this test fails and the doc note must be updated.
-    """
-    import inspect
-
-    from takler.core import Flow, NodeStatus, async_task
+def test_guide_async_task_decorator_rejects_before_building_a_task():
+    """The public decorator reports unsupported without creating a coroutine."""
+    from takler.core import async_task
+    from takler.exceptions import UnsupportedValueError
 
     calls = []
 
-    @async_task("anotify")
     async def anotify(self):
         calls.append(self.node_path)
 
-    flow = Flow("test")
-    async_task_node = anotify()
-    flow.add_task(async_task_node)
-
-    assert inspect.iscoroutinefunction(async_task_node.run)
-
-    # The scheduler calls run() synchronously: the coroutine is never
-    # awaited, the body never runs, and the status stays where it was.
-    with pytest.warns(RuntimeWarning, match="never awaited"):
-        async_task_node.run()
+    with pytest.raises(UnsupportedValueError, match="async_task is not supported"):
+        async_task("anotify")(anotify)
     assert calls == []
-    assert async_task_node.state.node_status == NodeStatus.unknown
 
 
 def test_guide_check_job_creation_is_a_dry_run(cleanup_generated_files):

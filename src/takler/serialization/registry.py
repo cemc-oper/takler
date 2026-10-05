@@ -57,6 +57,7 @@ class TypeRegistry:
         )
         if actual_kind != entry.kind:
             raise DefinitionError("invalid_registration")
+        self._check_execution(entry)
         if entry.kind == "task" and not (
             entry.python_type.run is Task.run
             or entry.python_type.__dict__.get("_takler_inline_run") is True
@@ -92,12 +93,28 @@ class TypeRegistry:
     def by_id(self, type_id):
         if not isinstance(type_id, str) or type_id not in self._ids:
             raise DefinitionError("unknown_type")
-        return self._ids[type_id]
+        entry = self._ids[type_id]
+        self._check_execution(entry)
+        return entry
 
     def by_type(self, python_type):
         if python_type not in self._types:
             raise DefinitionError("unregistered_type")
-        return self._types[python_type]
+        entry = self._types[python_type]
+        self._check_execution(entry)
+        return entry
+
+    @staticmethod
+    def _check_execution(entry):
+        if entry.kind != "task":
+            return
+        from takler.core.task_node import ensure_synchronous_task
+        from takler.exceptions import UnsupportedValueError
+
+        try:
+            ensure_synchronous_task(entry.python_type)
+        except UnsupportedValueError:
+            raise DefinitionError("async_task_unsupported") from None
 
     def document_model(self):
         """Create a data-only schema from trusted registration descriptors."""

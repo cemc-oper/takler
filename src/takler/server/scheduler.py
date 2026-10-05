@@ -8,6 +8,7 @@ from uuid import UUID
 
 from takler.core import Bunch, Task, NodeStatus, ServerStatus, HaltCause, Event, Flow
 from takler.core.bunch import ServerState
+from takler.core.task_node import ensure_synchronous_task
 from takler.core.node import Node
 from takler.exceptions import (
     AttemptMismatchError,
@@ -657,6 +658,7 @@ class Scheduler:
 
         if not isinstance(node, Task):
             raise NodeTypeError("run requires a Task", node_path=node_path)
+        ensure_synchronous_task(node)
         self.bunch.require_running()
         if not force:
             status = node.state.node_status

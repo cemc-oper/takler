@@ -1,5 +1,5 @@
 import functools
-import asyncio
+import inspect
 import secrets
 from datetime import datetime, timezone
 from typing import Optional, Dict, Set
@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .node import Node
 from .state import NodeStatus
-from takler.exceptions import FlowStateError
+from takler.exceptions import FlowStateError, UnsupportedValueError
 from .limit import Limit
 from .parameter import (
     Parameter,
@@ -23,8 +23,54 @@ from .parameter import (
 from .util import logger, SerializationType
 
 
+_EXECUTION_HOOKS = ("run", "before_run", "do_run", "after_run")
+
+
+def _synchronous_result(result):
+    """Close an unexpected coroutine so a sync hook cannot appear successful."""
+    if inspect.isawaitable(result):
+        close = getattr(result, "close", None)
+        if callable(close):
+            close()
+        raise UnsupportedValueError(
+            "asynchronous task execution is not supported", value="async_task"
+        )
+    return result
+
+
+def ensure_synchronous_task(task_or_type) -> None:
+    """Reject coroutine execution hooks before scheduling can change state."""
+    for name in _EXECUTION_HOOKS:
+        hook = getattr(task_or_type, name, None)
+        if inspect.iscoroutinefunction(hook) or inspect.iscoroutinefunction(
+            getattr(hook, "__call__", None)
+        ):
+            raise UnsupportedValueError(
+                "asynchronous task execution is not supported", value="async_task"
+            )
+
+
+def ensure_synchronous_tasks(root) -> None:
+    """Validate an existing tree before starting scheduler or transport."""
+    from .bunch import Bunch
+
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, Task):
+            ensure_synchronous_task(node)
+        pending.extend(node.children)
+        if isinstance(node, Bunch):
+            pending.extend(node.flows.values())
+
+
 class Task(Node):
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        ensure_synchronous_task(cls)
+
     def __init__(self, name: str):
+        ensure_synchronous_task(self)
         super(Task, self).__init__(name)
         self.task_id: Optional[str] = None
 
@@ -198,6 +244,7 @@ class Task(Node):
         bool
             True if all dependencies are met and the task is run, False otherwise.
         """
+        ensure_synchronous_task(self)
         if self.check_dependencies():
             # run jobs
             self.run()
@@ -260,6 +307,7 @@ class Task(Node):
         """
         Run the task, set status to ``NodeStatus.submitted`` and handle status change.
         """
+        ensure_synchronous_task(self)
         self._require_running()
         # Allocate before any overridable hook, while preserving the existing
         # before_run -> do_run -> after_run template order for extensions.
@@ -282,24 +330,32 @@ class Task(Node):
         }
         Task.increment_try_no(self)
         self._run_identity_prepared = True
-        try:
-            self.before_run()
-            # A trusted extension hook may change service state. No task body
-            # may start after that transition, and unused identity is restored.
-            self._require_running()
-        except FlowStateError:
+
+        def restore_prior_attempt():
             for field, value in prior_attempt.items():
                 setattr(self, field, value)
             self.update_generated_parameters()
+
+        try:
+            _synchronous_result(self.before_run())
+            # A trusted extension hook may change service state. No task body
+            # may start after that transition, and unused identity is restored.
+            self._require_running()
+        except (FlowStateError, UnsupportedValueError):
+            restore_prior_attempt()
             raise
         finally:
             self._run_identity_prepared = False
 
-        if not self.do_run():
-            return False
+        try:
+            if not _synchronous_result(self.do_run()):
+                return False
 
-        self.after_run()
-        return True
+            _synchronous_result(self.after_run())
+            return True
+        except UnsupportedValueError:
+            restore_prior_attempt()
+            raise
 
     def requeue(self, reset_repeat: bool = True):
         self.try_no = 0
@@ -466,26 +522,12 @@ def task(name: str):
 
 
 def async_task(name: str):
+    """Retained public decorator; asynchronous inline tasks are unsupported."""
+
     def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            class RunTask(Task):
-                def __init__(self):
-                    super(RunTask, self).__init__(name=name)
-
-                async def run(self):
-                    Task.run(self)
-
-                    async def run_func():
-                        kwargs.update(self=self)
-                        self.init()
-                        await func(*args, **kwargs)
-                        self.complete()
-
-                    asyncio.run(run_func())
-
-            return RunTask()
-
-        return wrapper
+        raise UnsupportedValueError(
+            "async_task is not supported; use task for synchronous functions",
+            value="async_task",
+        )
 
     return decorator

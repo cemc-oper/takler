@@ -519,6 +519,11 @@ class TaklerServer:
         (Requirement 6.1), and the periodic snapshot task is created last, so its
         first write cannot race the restore (Requirement 5.1).
         """
+        from takler.core.task_node import ensure_synchronous_tasks
+
+        # Reject an in-memory async task before any startup service is active.
+        ensure_synchronous_tasks(self.bunch)
+
         # Configure logging before the first server record is emitted so that
         # startup, command, and shutdown activity is captured at the configured
         # level and destinations. Only the Audit_File is passed explicitly: the
@@ -571,6 +576,7 @@ class TaklerServer:
         # Restore before any scheduler or transport starts. An invalid recovery
         # pair aborts startup instead of opening an empty scheduling service.
         self.checkpoint_manager.restore()
+        ensure_synchronous_tasks(self.bunch)
         self.scheduler.last_checkpoint_at = self.checkpoint_manager.last_checkpoint_at
         self.scheduler.restore_summary = self.checkpoint_manager.restore_summary
         await self.scheduler.start()

@@ -67,7 +67,8 @@ Node 继承体系
   ``try_no`` 、 ``aborted_reason`` 与一次性 ``job_password`` 。
   :py:class:`~takler.tasks.shell.ShellScriptTask` 是它目前唯一的实
   用子类（在 ``takler.tasks`` 包，不在 core ）； ``task`` /
-  ``async_task`` 装饰器则在调用处动态生成内联 ``Task`` 子类。
+  ``task`` 装饰器在调用处动态生成内联 ``Task`` 子类；
+  ``async_task`` 保留名称但明确拒绝异步任务。
 
 状态计算与 sink / swim 传播
 ---------------------------

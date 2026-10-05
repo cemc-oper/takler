@@ -28,7 +28,7 @@
 任务装饰器
 ----------
 
-``task`` 与 ``async_task`` 把函数变成内联任务，用法与限制见
+``task`` 把同步函数变成内联任务；``async_task`` 保留符号但明确拒绝。详见
 :doc:`/develop/extending` 。
 
 .. autosummary::
