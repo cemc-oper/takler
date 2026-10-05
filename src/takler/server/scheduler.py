@@ -80,6 +80,7 @@ class Scheduler:
         self.bunch: Bunch = bunch
         self.last_checkpoint_at: Optional[str] = None
         self.restore_summary: Optional[dict] = None
+        self.checkpoint_manager = None
         self.interval_main_loop: float = interval_main_loop
         self.command_queue: Queue = Queue()
         self.should_stop: bool = False
@@ -876,13 +877,28 @@ class Scheduler:
     ) -> ServerStatusResponse:
         """Return only the current, safe scheduling summary."""
         state = self.bunch.server_state
+        checkpoint_manager = self.checkpoint_manager
+        last_checkpoint_at = (
+            checkpoint_manager.last_checkpoint_at
+            if checkpoint_manager is not None
+            else self.last_checkpoint_at
+        )
+        if (
+            not message
+            and checkpoint_manager is not None
+            and checkpoint_manager.checkpoint_failure_reason is not None
+        ):
+            message = (
+                "checkpoint write failed: "
+                f"{checkpoint_manager.checkpoint_failure_reason}"
+            )
         return ServerStatusResponse(
             flag=flag,
             message=message,
             status=state.status.value,
             status_reason=state.status_reason,
             halt_causes=[cause.value for cause in state.halt_causes],
-            last_checkpoint_at=self.last_checkpoint_at,
+            last_checkpoint_at=last_checkpoint_at,
             restore_summary=self.restore_summary,
         )
 

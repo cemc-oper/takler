@@ -214,6 +214,7 @@ class TaklerServer:
         # reached through ``stop()`` or through ``run()`` after the scheduler
         # task completes / the fatal-error event fires.
         self._stopped: bool = False
+        self.shutdown_checkpoint_ok: bool = True
 
         # The one Zombie_Detector of this server, built from the settings already
         # resolved above so the Scheduler receives a detector that is in force
@@ -269,6 +270,7 @@ class TaklerServer:
             interval=checkpoint_interval,
             connect_config=connect_config,
         )
+        self.scheduler.checkpoint_manager = self.checkpoint_manager
 
     @property
     def security_settings(self) -> Optional[SecuritySettings]:
@@ -645,8 +647,8 @@ class TaklerServer:
         if self.http_transport is not None:
             await self.http_transport.stop()
         await self.scheduler.stop()
-        # Cancels the periodic task and writes the last snapshot; never raises.
-        await self.checkpoint_manager.stop()
+        # Cancels the periodic task and reports the final write outcome.
+        self.shutdown_checkpoint_ok = await self.checkpoint_manager.stop() is not False
         logger.info("stop server...done")
 
     async def stop(self):

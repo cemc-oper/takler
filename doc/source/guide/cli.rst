@@ -306,7 +306,8 @@ invalid_request（flag=15）；两种失败均非零退出且旧树不变。
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Python 与 Go 客户端均提供。三个命令接受 ``--host``、``--port``，
-返回服务状态、原因及 halt causes。查询需要 operator 凭据；halt 增加
+返回服务状态、原因、halt causes、最近成功保存时间及恢复摘要。保存失败时
+``message`` 给出安全故障类别。查询需要 operator 凭据；halt 增加
 ``manual`` 原因，resume 清除 ``manual`` 和 ``recovery`` 原因。
 若仍有 ``checkpoint_failure``，resume 返回 ``server_halted`` (33)，退出码为 1。
 写操作仅调用一次，响应丢失后应先查询状态。成功只表示内存状态已改变。

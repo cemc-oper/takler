@@ -148,7 +148,7 @@ def test_loop_keeps_running_after_a_failing_write(tmp_path):
     errors = [line for line in captured.splitlines() if "ERROR" in line]
     assert len(errors) == 1
     assert str(manager.checkpoint_file) in errors[0]
-    assert "disk gone" in errors[0]
+    assert "storage I/O error" in errors[0]
     # The later periods really did produce a snapshot.
     assert json.loads(manager.checkpoint_file.read_text(encoding="utf-8"))
 

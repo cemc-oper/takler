@@ -324,7 +324,7 @@ def test_failure_keeps_existing_files_and_reports_false(tmp_path, step):
     errors = [line for line in captured.splitlines() if "ERROR" in line]
     assert len(errors) == 1
     assert str(manager.checkpoint_file) in errors[0]
-    assert "No space left on device" in errors[0]
+    assert "storage full" in errors[0]
     assert _temp_names(tmp_path) == []
     if step == "replace_checkpoint":
         # The replace itself already happened; only the injected hook failed,

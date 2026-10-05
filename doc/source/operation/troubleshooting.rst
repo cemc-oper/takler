@@ -130,13 +130,11 @@ zombie 记录刷日志
 快照恢复失败
 ------------
 
-服务启动后节点树是空的或少了某些 flow 。恢复的全部结论都在启动日志
-里： ``failed to parse checkpoint file ...`` 表示某级文件不可用并
-已回退， ``could not restore from the checkpoint file ... nor from
-the backup file`` 表示两级都失败、以空 bunch 启动， ``failed to
-restore flow ...`` 表示单个 flow 被跳过（常见于自定义 Task 子类不
-满足恢复要求）。逐条对照 :doc:`/operation/checkpoint` 的「恢复失败
-时怎么查」一节。
+有快照文件但服务拒绝启动时，查看启动日志： ``failed to parse checkpoint
+file ...`` 表示该文件不可用并尝试下一级； ``could not restore from the
+checkpoint file ... nor from the backup file`` 表示两份都不可用。
+未知 Task 类型或运行字段错误会拒绝整份快照，不跳过单个 flow。
+逐条对照 :doc:`/operation/checkpoint` 的「恢复失败时怎么查」一节。
 
 TLS 握手失败
 ------------

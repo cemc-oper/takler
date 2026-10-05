@@ -21,8 +21,10 @@ Requirements: 5.x, 6.x, 7.2, 7.3, 7.4, 7.5, 7.6, 12.5.
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
 import shutil
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -307,6 +309,16 @@ class CheckpointManager:
         )
         self.last_checkpoint_at: Optional[str] = None
         self.restore_summary: Optional[dict] = None
+        self.checkpoint_failure_reason: Optional[str] = None
+        self._captured_at: Optional[str] = None
+        self._capture_lock = threading.Lock()
+        self._publish_lock = threading.Lock()
+        self._next_sequence = 0
+        self._last_attempted_sequence = 0
+        self._last_attempt_succeeded = False
+        self._last_outcome_sequence = 0
+        self._last_success_sequence = 0
+        self._write_error_kind: Optional[str] = None
 
         # Set once the periodic snapshot task is running, and cancelled on
         # stop; ``None`` means "no periodic task in flight".
@@ -356,7 +368,99 @@ class CheckpointManager:
                 (:meth:`write_checkpoint`, :meth:`write_checkpoint_async`) turn
                 that into an ERROR log and a ``False`` result.
         """
-        return capture_checkpoint(self.bunch).model_dump_json(exclude_unset=True)
+        document = capture_checkpoint(self.bunch)
+        self._captured_at = document.saved_at
+        return document.model_dump_json(exclude_unset=True)
+
+    def _capture_for_write(self) -> tuple[int, Optional[str], str, Optional[Exception]]:
+        """Order views at capture time, before any file I/O starts."""
+        with self._capture_lock:
+            self._next_sequence += 1
+            sequence = self._next_sequence
+            self._captured_at = None
+            try:
+                payload = self.build_payload()
+            except Exception as exc:
+                return sequence, None, "", exc
+            saved_at = self._captured_at or datetime.now().astimezone().isoformat()
+            return sequence, payload, saved_at, None
+
+    @staticmethod
+    def _failure_category(exc: Exception) -> str:
+        """Expose a stable diagnosis without paths or raw exception text."""
+        if isinstance(exc, OSError):
+            if exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+                return "permission denied"
+            if exc.errno in (errno.ENOSPC, errno.EDQUOT):
+                return "storage full"
+            return "storage I/O error"
+        return "snapshot validation error"
+
+    def _record_outcome(
+        self,
+        sequence: int,
+        success: bool,
+        published: bool,
+        saved_at: str,
+        reason: Optional[str],
+    ) -> None:
+        """Apply only the newest resolved write to the live service state."""
+        if success and published and sequence > self._last_success_sequence:
+            self.last_checkpoint_at = saved_at
+            self._last_success_sequence = sequence
+        if sequence < self._last_outcome_sequence:
+            return
+        if not published and success:
+            return  # A newer view is already on disk and will report its result.
+        self._last_outcome_sequence = sequence
+        causes = list(self.bunch.server_state.halt_causes)
+        if success:
+            self.checkpoint_failure_reason = None
+            causes = [
+                cause for cause in causes if cause is not HaltCause.checkpoint_failure
+            ]
+        else:
+            self.checkpoint_failure_reason = reason or "storage I/O error"
+            if HaltCause.checkpoint_failure not in causes:
+                causes.append(HaltCause.checkpoint_failure)
+        if causes != self.bunch.server_state.halt_causes:
+            self.bunch.server_state = ServerState.from_causes(causes)
+
+    def _publish_captured(
+        self, sequence: int, payload: str
+    ) -> tuple[bool, bool, Optional[str]]:
+        """Serialize disk publication and discard a view older than disk."""
+        with self._publish_lock:
+            if sequence <= self._last_attempted_sequence:
+                return self._last_attempt_succeeded, False, None
+            self._last_attempted_sequence = sequence
+            self._write_error_kind = None
+            try:
+                success = self._write_payload(payload)
+            except Exception as exc:
+                logger.error(
+                    f"failed to write checkpoint to {self.checkpoint_file}: "
+                    f"{self._failure_category(exc)}"
+                )
+                self._write_error_kind = self._failure_category(exc)
+                success = False
+            self._last_attempt_succeeded = success
+            return success, success, self._write_error_kind
+
+    def _finish_async_write(
+        self, task: asyncio.Task, sequence: int, saved_at: str
+    ) -> None:
+        """Apply the result on the loop even if the caller was cancelled."""
+        try:
+            success, published, reason = task.result()
+        except asyncio.CancelledError:
+            self._record_outcome(sequence, False, False, "", "storage I/O error")
+        except Exception as exc:
+            category = self._failure_category(exc)
+            logger.error(f"checkpoint worker failed: {category}")
+            self._record_outcome(sequence, False, False, "", category)
+        else:
+            self._record_outcome(sequence, success, published, saved_at, reason)
 
     def _collect_job_passwords(self) -> Dict[str, str]:
         """Collect the Job_Passwords of the in-flight tasks, keyed by node path.
@@ -408,15 +512,20 @@ class CheckpointManager:
         Returns:
             ``True`` when the Checkpoint_File now holds the new snapshot.
         """
-        try:
-            payload = self.build_payload()
-        except Exception as exc:
+        sequence, payload, saved_at, error = self._capture_for_write()
+        if error is not None:
             logger.error(
                 f"failed to build checkpoint snapshot for "
-                f"{self.checkpoint_file}: {exc!r}"
+                f"{self.checkpoint_file}: {self._failure_category(error)}"
+            )
+            self._record_outcome(
+                sequence, False, False, "", self._failure_category(error)
             )
             return False
-        return self._write_payload(payload)
+        assert payload is not None
+        success, published, reason = self._publish_captured(sequence, payload)
+        self._record_outcome(sequence, success, published, saved_at, reason)
+        return success
 
     async def write_checkpoint_async(self) -> bool:
         """Write one snapshot without blocking the event loop.
@@ -428,15 +537,30 @@ class CheckpointManager:
         Returns:
             ``True`` when the Checkpoint_File now holds the new snapshot.
         """
-        try:
-            payload = self.build_payload()
-        except Exception as exc:
+        sequence, payload, saved_at, error = self._capture_for_write()
+        if error is not None:
             logger.error(
                 f"failed to build checkpoint snapshot for "
-                f"{self.checkpoint_file}: {exc!r}"
+                f"{self.checkpoint_file}: {self._failure_category(error)}"
+            )
+            self._record_outcome(
+                sequence, False, False, "", self._failure_category(error)
             )
             return False
-        return await asyncio.to_thread(self._write_payload, payload)
+        assert payload is not None
+        worker = asyncio.create_task(
+            asyncio.to_thread(self._publish_captured, sequence, payload)
+        )
+        worker.add_done_callback(
+            lambda task: self._finish_async_write(task, sequence, saved_at)
+        )
+        try:
+            success, _, _ = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return False  # _finish_async_write reports and pauses the service.
+        return success
 
     # Snapshot writing: file operations -------------------
 
@@ -627,9 +751,10 @@ class CheckpointManager:
                 action()
                 self._after_write_step(index, name)
             except Exception as exc:
+                self._write_error_kind = self._failure_category(exc)
                 logger.error(
                     f"failed to write checkpoint to {self.checkpoint_file} "
-                    f"at step {name!r}: {exc!r}"
+                    f"at step {name!r}: {self._failure_category(exc)}"
                 )
                 self._cleanup_temp_files(main_temp, backup_temp)
                 return False
@@ -663,7 +788,7 @@ class CheckpointManager:
             f"interval={self.interval:g} seconds."
         )
 
-    async def stop(self) -> None:
+    async def stop(self) -> bool:
         """Cancel the periodic task, then write one last snapshot.
 
         The order is the contract (requirement 5.9): the periodic task is
@@ -684,9 +809,8 @@ class CheckpointManager:
         responsive for, and not depending on a worker thread removes the risk of
         the loop closing while the write is still in flight.
 
-        Never raises: :meth:`write_checkpoint` reports failure as an ERROR plus
-        ``False`` (requirement 5.8), so a Checkpoint_File that cannot be written
-        does not turn a clean shutdown into a crash.
+        Returns whether the final snapshot reached disk. Callers can make a
+        failed final write visible in their process exit status.
         """
         task = self._snapshot_task
         self._snapshot_task = None
@@ -700,7 +824,7 @@ class CheckpointManager:
             except Exception as exc:  # noqa: BLE001 - boundary is intentional
                 logger.error(
                     f"periodic checkpoint task for {self.checkpoint_file} "
-                    f"ended with an unexpected exception: {exc!r}"
+                    f"ended with an unexpected exception: {self._failure_category(exc)}"
                 )
 
         await self._drain_in_flight_write()
@@ -708,7 +832,10 @@ class CheckpointManager:
         logger.info(
             f"writing final checkpoint to {self.checkpoint_file} before shutdown."
         )
-        self.write_checkpoint()
+        success = self.write_checkpoint()
+        if not success:
+            logger.error("final checkpoint failed; shutdown state may be lost")
+        return success
 
     async def _snapshot_loop(self) -> None:
         """Write one snapshot per configured period until cancelled.
@@ -747,9 +874,15 @@ class CheckpointManager:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - boundary is intentional
+                with self._capture_lock:
+                    self._next_sequence += 1
+                    sequence = self._next_sequence
+                self._record_outcome(
+                    sequence, False, False, "", self._failure_category(exc)
+                )
                 logger.error(
                     f"periodic checkpoint write to {self.checkpoint_file} "
-                    f"failed: {exc!r}; keeping the periodic task running."
+                    f"failed: {self._failure_category(exc)}; keeping the periodic task running."
                 )
                 continue
             finally:
@@ -793,7 +926,8 @@ class CheckpointManager:
         except Exception as exc:  # noqa: BLE001 - boundary is intentional
             logger.error(
                 f"checkpoint write to {self.checkpoint_file} that was still in "
-                f"flight when the periodic task was cancelled failed: {exc!r}"
+                f"flight when the periodic task was cancelled failed: "
+                f"{self._failure_category(exc)}"
             )
 
     # Restoring -------------------------------------------
@@ -807,6 +941,7 @@ class CheckpointManager:
         """
         self.restore_summary = None
         self.last_checkpoint_at = None
+        self.checkpoint_failure_reason = None
         recovery_mode = any(
             _snapshot_path_present(path)
             for path in (self.checkpoint_file, self.backup_file)
@@ -834,6 +969,8 @@ class CheckpointManager:
             if HaltCause.recovery not in causes:
                 causes.append(HaltCause.recovery)
             self.bunch.server_state = ServerState.from_causes(causes)
+            if HaltCause.checkpoint_failure in causes:
+                self.checkpoint_failure_reason = "previous checkpoint failure"
             in_flight_count = sum(
                 task.state.node_status in _PERSISTED_STATUSES
                 for task in self._iter_restored_tasks()

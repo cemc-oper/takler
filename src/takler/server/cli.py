@@ -242,6 +242,9 @@ def serve_forever(server: TaklerServer) -> None:
     except CheckpointRestoreError as exc:
         typer.echo(f"checkpoint recovery error: {exc}", err=True)
         raise typer.Exit(code=1)
+    if not server.shutdown_checkpoint_ok:
+        typer.echo("final checkpoint failed; shutdown state may be lost", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command()
