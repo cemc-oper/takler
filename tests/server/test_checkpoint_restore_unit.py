@@ -4,7 +4,7 @@ Task 8.5 of the *m1-operational-baseline* spec adds ``restore`` /
 ``_load_snapshot`` / ``_restore_into_bunch``. This file pins what is restored
 (status and runtime state of every node, ``begun`` plus the calendar of every
 flow), what is deliberately *not* restored (the snapshot's ``server_config``),
-the fallback chain Checkpoint_File -> Checkpoint_Backup_File -> empty bunch, the
+the fallback chain Checkpoint_File -> Checkpoint_Backup_File, the
 format-version rules and the "skip one broken flow, keep the rest" behaviour.
 
 Snapshots are produced by the manager's own write path rather than by
@@ -35,6 +35,7 @@ from takler.core.state import NodeStatus
 from takler.server.checkpoint import (
     CHECKPOINT_FORMAT_VERSION,
     CheckpointManager,
+    CheckpointRestoreError,
 )
 from takler.tasks.shell import ShellScriptTask
 
@@ -109,7 +110,10 @@ def _capturing_stderr(func):
     try:
         with contextlib.redirect_stderr(buffer):
             takler.logging.configure(level="DEBUG", console=True)
-            result = func()
+            try:
+                result = func()
+            except CheckpointRestoreError as exc:
+                result = exc
     finally:
         takler.logging.configure(console=True)
     return result, buffer.getvalue()
@@ -325,19 +329,19 @@ def test_unparsable_checkpoint_file_falls_back_to_the_backup(tmp_path):
     assert str(manager.backup_file) in captured
 
 
-def test_both_files_unparsable_starts_with_an_empty_bunch(tmp_path):
+def test_both_files_unparsable_refuses_start(tmp_path):
     manager = _target_manager(tmp_path)
     manager.checkpoint_file.write_text("{not json", encoding="utf-8")
     manager.backup_file.write_text("also not json", encoding="utf-8")
 
     result, captured = _capturing_stderr(manager.restore)
 
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert manager.bunch.flows == {}
     # One ERROR per unusable file plus the summary naming both paths.
     errors = _lines(captured, "ERROR")
     assert len(errors) == 3
-    summary = [line for line in errors if "keeping the current bunch" in line]
+    summary = [line for line in errors if "refusing to start" in line]
     assert len(summary) == 1
     assert str(manager.checkpoint_file) in summary[0]
     assert str(manager.backup_file) in summary[0]
@@ -352,7 +356,7 @@ def test_a_snapshot_without_a_bunch_key_is_unusable(tmp_path):
 
     result, captured = _capturing_stderr(manager.restore)
 
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert manager.bunch.flows == {}
     assert str(manager.checkpoint_file) in "".join(_lines(captured, "ERROR"))
 
@@ -371,7 +375,7 @@ def test_a_snapshot_without_a_format_version_is_refused(tmp_path):
 
     result, captured = _capturing_stderr(manager.restore)
 
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert manager.bunch.flows == {}
     assert "unsupported format version" in captured
 
@@ -385,7 +389,7 @@ def test_a_newer_format_version_is_refused_and_falls_back(tmp_path):
 
     result, captured = _capturing_stderr(manager.restore)
 
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert manager.bunch.flows == {}
     version_errors = [
         line for line in _lines(captured, "ERROR") if "format version" in line
@@ -409,18 +413,18 @@ def test_a_broken_flow_rejects_the_entire_snapshot(tmp_path):
     manager = _target_manager(tmp_path)
     original = manager.bunch.add_flow("existing")
     result, captured = _capturing_stderr(manager.restore)
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert manager.bunch.flows == {"existing": original}
     assert "unknown_type" in captured
 
 
-def test_restore_never_raises_on_a_directory_in_place_of_the_snapshot(tmp_path):
+def test_restore_refuses_directory_in_place_of_the_snapshot(tmp_path):
     manager = _target_manager(tmp_path)
     manager.checkpoint_file.mkdir()
 
     result, captured = _capturing_stderr(manager.restore)
 
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert _lines(captured, "ERROR")
 
 

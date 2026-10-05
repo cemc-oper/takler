@@ -38,6 +38,7 @@ import io
 import json
 import re
 from pathlib import Path
+import pytest
 
 import takler.logging
 from takler.core.bunch import Bunch
@@ -47,6 +48,7 @@ from takler.server.checkpoint import (
     CHECKPOINT_FORMAT_VERSION,
     EARLIEST_SUPPORTED_FORMAT_VERSION,
     CheckpointManager,
+    CheckpointRestoreError,
 )
 
 
@@ -201,11 +203,9 @@ def test_a_snapshot_without_a_format_version_is_rejected(tmp_path):
     path.write_text(json.dumps(snapshot), encoding="utf-8")
     manager = _restoring_manager(tmp_path)
 
-    result, captured = _capturing_stderr(manager.restore)
-
-    assert result is False
+    with pytest.raises(CheckpointRestoreError):
+        manager.restore()
     assert manager.bunch.flows == {}
-    assert "unsupported format version" in captured
 
 
 def test_the_earliest_supported_version_is_not_above_what_is_written(tmp_path):

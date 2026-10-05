@@ -78,6 +78,8 @@ class Scheduler:
     ):
         self.query_redacted_parameters = query_redacted_parameters
         self.bunch: Bunch = bunch
+        self.last_checkpoint_at: Optional[str] = None
+        self.restore_summary: Optional[dict] = None
         self.interval_main_loop: float = interval_main_loop
         self.command_queue: Queue = Queue()
         self.should_stop: bool = False
@@ -880,8 +882,8 @@ class Scheduler:
             status=state.status.value,
             status_reason=state.status_reason,
             halt_causes=[cause.value for cause in state.halt_causes],
-            last_checkpoint_at=None,
-            restore_summary=None,
+            last_checkpoint_at=self.last_checkpoint_at,
+            restore_summary=self.restore_summary,
         )
 
     def run_request_server_status(self, request) -> ServerStatusResponse:

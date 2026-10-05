@@ -287,7 +287,12 @@ def test_restored_shell_task_can_create_its_job_again(
     only half the requirement: the job also has to be able to talk to the server
     that created it.
     """
-    _, _, task = restored
+    _, bunch, task = restored
+    # Recovery requires an explicit operator decision before preparing work.
+    from takler.protocol.commands import ServerResumeCommand
+    from takler.server.scheduler import Scheduler
+
+    Scheduler(bunch).run_command_server_resume(ServerResumeCommand())
 
     assert task.check_job_creation() is True
 
@@ -349,6 +354,10 @@ def test_task_restored_by_a_started_server_creates_a_job_for_that_server(
 
     assert task.find_parent_parameter(TAKLER_HOST).value == runner.host
     assert task.find_parent_parameter(TAKLER_PORT).value == str(runner.port)
+
+    from takler.protocol.commands import ServerResumeCommand
+
+    runner.server.scheduler.run_command_server_resume(ServerResumeCommand())
 
     assert task.check_job_creation() is True
     job_script = Path(task.find_parameter(TAKLER_JOB).value).read_text(encoding="utf-8")

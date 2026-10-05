@@ -13,7 +13,7 @@ server.
 This module holds the configuration layer (constants, path and interval
 resolution), the snapshot write path (payload building plus the atomic
 temporary-file dance), the periodic snapshot task and the startup restore with
-its Checkpoint_File -> Checkpoint_Backup_File -> empty bunch fallback chain.
+its Checkpoint_File -> Checkpoint_Backup_File recovery chain.
 
 Requirements: 5.x, 6.x, 7.2, 7.3, 7.4, 7.5, 7.6, 12.5.
 """
@@ -24,13 +24,14 @@ import asyncio
 import os
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import takler
-from takler.core.bunch import Bunch
+from takler.core.bunch import Bunch, ServerState
 from takler.core.node import Node
-from takler.core.state import NodeStatus
+from takler.core.state import HaltCause, NodeStatus
 from takler.core.task_node import Task
 from takler.serialization.checkpoint import (
     FORMAT_VERSION,
@@ -54,9 +55,25 @@ __all__ = [
     "JOB_PASSWORDS_KEY",
     "UNKNOWN_VERSION",
     "CheckpointManager",
+    "CheckpointRestoreError",
 ]
 
 logger = get_logger("server.checkpoint")
+
+
+class CheckpointRestoreError(RuntimeError):
+    """A snapshot exists, but neither primary nor backup is usable."""
+
+
+def _snapshot_path_present(path: Path) -> bool:
+    """Treat broken links and inaccessible paths as recovery candidates."""
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 #: Format version stamped into every snapshot this implementation writes
@@ -288,6 +305,8 @@ class CheckpointManager:
         self._auth_mode: AuthMode = resolve_auth_mode(
             auth_mode, connect_config=connect_config
         )
+        self.last_checkpoint_at: Optional[str] = None
+        self.restore_summary: Optional[dict] = None
 
         # Set once the periodic snapshot task is running, and cancelled on
         # stop; ``None`` means "no periodic task in flight".
@@ -780,42 +799,26 @@ class CheckpointManager:
     # Restoring -------------------------------------------
 
     def restore(self) -> bool:
-        """Restore the bunch from the Checkpoint_File, or fall back.
+        """Restore one complete snapshot or refuse to start in recovery mode.
 
-        Runs the fallback chain Checkpoint_File -> Checkpoint_Backup_File ->
-        empty bunch (requirements 6.1, 6.7, 6.8, 6.9). The first source that
-        yields a usable snapshot wins; every failing level has already been
-        reported by :meth:`_load_snapshot`, and a level whose file simply does
-        not exist is an INFO rather than a failure (requirement 6.9).
-
-        Called synchronously from ``TaklerServer.start`` before the scheduler
-        loop is created, so the first dependency resolution already sees the
-        restored tree (requirement 6.1).
-
-        Job_Passwords are written back after :meth:`_restore_into_bunch` has
-        added every flow (requirement 5.4) and before
-        :meth:`_verify_server_address`, so the restored tree is complete -- both
-        node states and passwords -- before anything only diagnoses it.
-
-        Never raises. An empty bunch is a valid, if unwelcome, starting point,
-        while a server that refuses to start leaves the operator without even a
-        ``show`` of what was running.
-
-        Returns:
-            ``True`` when a snapshot was restored, ``False`` when the server
-            starts with whatever the bunch already held (normally nothing).
+        With neither file present this is a fresh service and returns ``False``.
+        Once either file exists, failure of both candidates raises before any
+        scheduler or transport starts. Only a validated candidate is published.
         """
-        failed: List[Path] = []
-
+        self.restore_summary = None
+        self.last_checkpoint_at = None
+        recovery_mode = any(
+            _snapshot_path_present(path)
+            for path in (self.checkpoint_file, self.backup_file)
+        )
         for path in (self.checkpoint_file, self.backup_file):
-            if not path.exists():
+            if not _snapshot_path_present(path):
                 logger.info(f"checkpoint file does not exist: {path}.")
                 continue
 
             snapshot = self._load_snapshot(path)
             if snapshot is None:
                 # _load_snapshot already logged the path and the reason.
-                failed.append(path)
                 continue
 
             try:
@@ -824,9 +827,31 @@ class CheckpointManager:
                 logger.error(
                     f"failed to restore the bunch from checkpoint file {path}: {exc!r}"
                 )
-                failed.append(path)
                 continue
 
+            snapshot_state = snapshot["runtime"]["server_state"]
+            causes = list(self.bunch.server_state.halt_causes)
+            if HaltCause.recovery not in causes:
+                causes.append(HaltCause.recovery)
+            self.bunch.server_state = ServerState.from_causes(causes)
+            in_flight_count = sum(
+                task.state.node_status in _PERSISTED_STATUSES
+                for task in self._iter_restored_tasks()
+            )
+            saved_at = datetime.fromisoformat(snapshot["saved_at"]).isoformat()
+            self.last_checkpoint_at = saved_at
+            self.restore_summary = {
+                "source": "primary" if path == self.checkpoint_file else "backup",
+                "saved_at": saved_at,
+                "fallback": path == self.backup_file,
+                "flow_count": flow_count,
+                "node_count": node_count,
+                "in_flight_count": in_flight_count,
+                "snapshot_status": snapshot_state["status"],
+                "snapshot_status_reason": snapshot_state["status_reason"],
+                "effective_status": self.bunch.server_state.status.value,
+                "effective_status_reason": self.bunch.server_state.status_reason,
+            }
             logger.info(  # requirement 6.10
                 f"restored {flow_count} flow(s) and {node_count} node(s) "
                 f"from checkpoint file {path}."
@@ -834,11 +859,14 @@ class CheckpointManager:
             self._verify_server_address(snapshot)
             return True
 
-        if failed:
+        if recovery_mode:
             logger.error(  # requirement 6.8
                 f"could not restore from the checkpoint file "
                 f"{self.checkpoint_file} nor from the backup file "
-                f"{self.backup_file}; keeping the current bunch."
+                f"{self.backup_file}; refusing to start."
+            )
+            raise CheckpointRestoreError(
+                "no valid primary or backup checkpoint; service was not started"
             )
         else:
             logger.info(  # requirement 6.9

@@ -16,7 +16,7 @@ from takler.serialization import (
 )
 from takler.serialization.registry import using_registry
 from takler.serialization.runtime import export_runtime, restore_runtime
-from takler.server.checkpoint import CheckpointManager
+from takler.server.checkpoint import CheckpointManager, CheckpointRestoreError
 
 
 def test_build_resets_runtime_and_rebinds_every_reference(monkeypatch):
@@ -285,7 +285,8 @@ def test_checkpoint_invalid_primary_falls_back_atomically(tmp_path, corrupt):
     assert restored.in_limit_manager.in_limit_list[0].limit is live.flows["f"].limits[0]
     before = live.to_dict()
     reader.backup_file.unlink()
-    assert not reader.restore()
+    with pytest.raises(CheckpointRestoreError):
+        reader.restore()
     assert live.to_dict() == before
 
 

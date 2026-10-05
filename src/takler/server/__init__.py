@@ -566,10 +566,11 @@ class TaklerServer:
         # (Requirement 1.6).
         self._start_security()
 
-        # Restore before the scheduler main loop exists (Requirement 6.1).
-        # ``restore()`` never raises: an unusable snapshot degrades to the backup
-        # file and then to an empty bunch, so startup always proceeds.
+        # Restore before any scheduler or transport starts. An invalid recovery
+        # pair aborts startup instead of opening an empty scheduling service.
         self.checkpoint_manager.restore()
+        self.scheduler.last_checkpoint_at = self.checkpoint_manager.last_checkpoint_at
+        self.scheduler.restore_summary = self.checkpoint_manager.restore_summary
         await self.scheduler.start()
         await self.grpc_transport.start()
         if self.http_transport is not None:

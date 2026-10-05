@@ -30,7 +30,8 @@ def test_checkpoint_restores_root_storage_without_restoring_deployment(tmp_path)
     assert bunch.server_config is config
     assert bunch.server_config.host == "current.invalid"
     assert bunch.server_config.port == "9000"
-    assert bunch.server_state.status is ServerStatus.running
+    assert bunch.server_state.status is ServerStatus.halted
+    assert bunch.server_state.status_reason == "recovery pending"
     assert bunch.limits[0].value == 2
     assert bunch.limits[0].node_paths == {"/f/s", "/f/a"}
     assert bunch.events[0].value is True
@@ -77,8 +78,11 @@ def test_address_changes_but_checkpoint_service_state_is_restored(tmp_path):
     manager.checkpoint_file.write_text(json.dumps(data))
     assert manager.restore() is True
     assert bunch.server_state.status is ServerStatus.halted
-    assert bunch.server_state.status_reason == "manual pause"
-    assert [cause.value for cause in bunch.server_state.halt_causes] == ["manual"]
+    assert bunch.server_state.status_reason == "recovery pending"
+    assert [cause.value for cause in bunch.server_state.halt_causes] == [
+        "manual",
+        "recovery",
+    ]
     assert bunch.server_config.host == "current.invalid"
 
 
@@ -89,7 +93,8 @@ def test_unknown_snapshot_service_status_falls_back_to_backup(tmp_path):
     data["runtime"]["server_state"]["status"] = "complete"
     manager.checkpoint_file.write_text(json.dumps(data))
     assert manager.restore() is True
-    assert manager.bunch.server_state.status is ServerStatus.running
+    assert manager.bunch.server_state.status is ServerStatus.halted
+    assert manager.restore_summary["source"] == "backup"
 
 
 @pytest.mark.parametrize("version", [None, 0, -1, 1, 2, 4, 3.0, True, "3"])

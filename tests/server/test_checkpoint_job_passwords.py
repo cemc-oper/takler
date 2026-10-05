@@ -42,6 +42,7 @@ from takler.server.checkpoint import (
     CHECKPOINT_FORMAT_VERSION,
     JOB_PASSWORDS_KEY,
     CheckpointManager,
+    CheckpointRestoreError,
 )
 
 
@@ -147,7 +148,10 @@ def _capturing_stderr(func):
     try:
         with contextlib.redirect_stderr(buffer):
             takler.logging.configure(level="DEBUG", console=True)
-            result = func()
+            try:
+                result = func()
+            except CheckpointRestoreError as exc:
+                result = exc
     finally:
         takler.logging.configure(console=True)
     return result, buffer.getvalue()
@@ -242,7 +246,7 @@ def test_restore_rejects_a_snapshot_without_the_mapping_key(tmp_path):
     _rewrite_snapshot(tmp_path, snapshot)
     manager = _target_manager(tmp_path)
     result, captured = _capturing_stderr(manager.restore)
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert manager.bunch.flows == {}
     assert "invalid v3 document" in captured
 
@@ -261,7 +265,7 @@ def test_restore_rejects_stale_and_non_task_password_paths(tmp_path):
     _rewrite_snapshot(tmp_path, snapshot)
     manager = _target_manager(tmp_path)
     result, captured = _capturing_stderr(manager.restore)
-    assert result is False
+    assert isinstance(result, CheckpointRestoreError)
     assert manager.bunch.flows == {}
     assert "invalid_runtime" in captured
     assert "stale-value" not in captured and "container-value" not in captured

@@ -43,6 +43,7 @@ import typer
 
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 from takler.exceptions import SecurityConfigError
+from takler.server.checkpoint import CheckpointRestoreError
 from takler.logging import get_logger
 from takler.server import TaklerServer
 from takler.server.connect_config import (
@@ -237,6 +238,9 @@ def serve_forever(server: TaklerServer) -> None:
         asyncio.run(_serve(server))
     except SecurityConfigError as exc:
         typer.echo(f"security configuration error: {exc}", err=True)
+        raise typer.Exit(code=1)
+    except CheckpointRestoreError as exc:
+        typer.echo(f"checkpoint recovery error: {exc}", err=True)
         raise typer.Exit(code=1)
 
 
