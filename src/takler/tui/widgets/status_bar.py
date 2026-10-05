@@ -15,6 +15,8 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
+from takler.query import ServiceInfo
+
 from ..show_parser import NodeInfo
 from ..state_style import state_block
 
@@ -55,6 +57,8 @@ class StatusBar(Horizontal):
         super().__init__(id="status-bar")
         self._left: Static = Static("", id="status-left")
         self._right: Static = Static("", id="status-right")
+        self._service: Optional[ServiceInfo] = None
+        self._selection: Optional[NodeInfo] = None
 
     def compose(self) -> ComposeResult:
         yield self._left
@@ -72,9 +76,22 @@ class StatusBar(Horizontal):
 
     def set_selection(self, node: Optional[NodeInfo]) -> None:
         """Write the left side: the selected node's state badge + path."""
+        self._selection = node
+        text = Text()
+        if self._service is not None:
+            style = "bold red" if self._service.status == "halted" else "green"
+            text.append(f"service {self._service.status}", style=style)
+            if self._service.reason:
+                text.append(f" ({self._service.reason})", style=style)
+            text.append("  |  ", style="dim")
         if node is None:
-            self._left.update(Text("—", style="dim"))
-            return
-        text = state_block(node.state, suspended=node.suspended)
-        text.append(node.path)
+            text.append("—", style="dim")
+        else:
+            text.append(state_block(node.state, suspended=node.suspended))
+            text.append(node.path)
         self._left.update(text)
+
+    def set_service(self, service: Optional[ServiceInfo]) -> None:
+        """Keep service state visible when any tree node is selected."""
+        self._service = service
+        self.set_selection(self._selection)

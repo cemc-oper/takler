@@ -8,9 +8,14 @@ command, so each test asserts what *would* have been sent to the server.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from textual.widgets import Static, TabbedContent
 
+from takler.core import Bunch, Flow, HaltCause
+from takler.core.bunch import ServerState
+from takler.serialization.query import project_show
 from takler.tui.app import TaklerTuiApp
 from takler.tui.menu import (
     NODE_ACTIONS,
@@ -118,6 +123,23 @@ async def test_selection_renders_info_tab_and_status_bar(
         )
         assert "/flow1/family1/task1" in text_of(app._info_tab._body)
         assert "Trigger" in text_of(app._info_tab._body)
+
+
+@pytest.mark.anyio
+async def test_service_status_stays_visible_on_non_root_selection() -> None:
+    bunch = Bunch(name="b")
+    bunch.add_flow(Flow("f")).add_task("t")
+    bunch.server_state = ServerState.from_causes([HaltCause.recovery])
+    service = FakeTuiService(json.dumps(project_show(bunch)))
+    app = make_app(service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await wait_until(lambda: "/f/t" in app._tree._path_nodes, pilot)
+        await select(pilot, app, "/f/t")
+        left = text_of(app._status_bar.query_one("#status-left", Static))
+        assert "service halted (recovery pending)" in left
+        assert "/f/t" in left
+        assert "Attempt ID: none" in text_of(app._info_tab._body)
+        assert "RID: unknown" in text_of(app._info_tab._body)
 
 
 @pytest.mark.anyio

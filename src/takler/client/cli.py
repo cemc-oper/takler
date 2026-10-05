@@ -551,7 +551,7 @@ def server_status(
     host: str = typer.Option(None, help=HOST_HELP_STRING),
     port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
-    """[query] Show server execution state and halt causes."""
+    """[query] Show service state, checkpoint time, and recovery summary."""
     _run_client_command(host, port, lambda client: client.server_status())
 
 
@@ -585,7 +585,7 @@ def show(
     show_all: bool = typer.Option(False, help="show all items, ignore other options."),
 ):
     """
-    [query] print bunch tree.
+    [query] print service status and bunch tree with current task attempts.
     """
     if show_all:
         show_trigger = True

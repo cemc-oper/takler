@@ -38,6 +38,16 @@ class ParameterValue:
         return REDACTED if self.redacted else display(self.value)
 
 
+@dataclass(frozen=True)
+class ServiceInfo:
+    status: str
+    reason: str | None
+    causes: tuple[str, ...]
+    last_checkpoint_at: str | None = None
+    restore_summary: dict | None = None
+    message: str = ""
+
+
 @dataclass
 class NodeInfo:
     name: str
@@ -68,6 +78,9 @@ class NodeInfo:
     try_no: int | None = None
     aborted_reason: str | None = None
     script_path: str | None = None
+    job_path: str | None = None
+    jobout_path: str | None = None
+    orvix_info_path: str | None = None
 
     @property
     def class_name(self):
@@ -106,6 +119,7 @@ class ShowSnapshot:
     roots: list[str]
     root_parameters: dict[str, ParameterValue]
     server_generated: dict[str, ParameterValue]
+    service: ServiceInfo | None = None
 
     def get(self, path):
         return self.nodes.get(path)
@@ -201,6 +215,28 @@ def _parameters(data, key):
     return result
 
 
+def _service_info(data):
+    raw = data.get("server_status", data.get("server_state"))
+    if raw is None:
+        return None
+    raw = _object(raw)
+    status = _string(raw.get("status"))
+    if status not in ("running", "halted"):
+        raise ValueError("invalid_query")
+    reason = raw.get("status_reason")
+    checkpoint = raw.get("last_checkpoint_at")
+    message = raw.get("message", "")
+    for value in (reason, checkpoint):
+        if value is not None:
+            _string(value)
+    _string(message)
+    causes = tuple(_string(cause) for cause in _list(raw, "halt_causes"))
+    summary = raw.get("restore_summary")
+    if summary is not None:
+        _object(summary)
+    return ServiceInfo(status, reason, causes, checkpoint, summary, message)
+
+
 def parse_show(payload: str) -> ShowSnapshot:
     """Parse display data without importing or constructing any execution object."""
 
@@ -224,6 +260,7 @@ def parse_show(payload: str) -> ShowSnapshot:
         [],
         _parameters(data, "user_parameters"),
         _parameters(data, "generated_parameters"),
+        _service_info(data),
     )
 
     def walk(raw, parent=None, level=0):
@@ -267,6 +304,9 @@ def parse_show(payload: str) -> ShowSnapshot:
             "ended_at",
             "aborted_reason",
             "script_path",
+            "job_path",
+            "jobout_path",
+            "orvix_info_path",
         ):
             value = raw.get(key)
             if value is not None:

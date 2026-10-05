@@ -48,6 +48,32 @@ class InfoTab(VerticalScroll):
             return
 
         text = Text()
+        if snapshot is not None and snapshot.service is not None:
+            service = snapshot.service
+            text.append("Service: ", style="bold")
+            text.append(service.status)
+            if service.reason:
+                text.append(f" ({service.reason})")
+            text.append("\n")
+            if service.causes:
+                text.append(f"Halt causes: {', '.join(service.causes)}\n")
+            if service.last_checkpoint_at:
+                text.append(f"Last checkpoint: {service.last_checkpoint_at}\n")
+            if service.restore_summary:
+                summary = service.restore_summary
+                source = summary.get("source", "unknown")
+                fallback = " (fallback)" if summary.get("fallback") else ""
+                text.append(f"Recovery: {source} snapshot{fallback}\n")
+                if summary.get("saved_at"):
+                    text.append(f"Snapshot saved: {summary['saved_at']}\n")
+                text.append(
+                    f"Restored: {summary.get('flow_count', '?')} flows, "
+                    f"{summary.get('node_count', '?')} nodes, "
+                    f"{summary.get('in_flight_count', '?')} in flight\n"
+                )
+            if service.message:
+                text.append(f"Service message: {service.message}\n")
+            text.append("\n")
         text.append("Path:    ", style="bold")
         text.append(f"{node.path}\n")
         text.append("Class:   ", style="bold")
@@ -58,14 +84,22 @@ class InfoTab(VerticalScroll):
         text.append("Children: ", style="bold")
         text.append(f"{len(node.children)}\n")
 
-        for label, value in (
-            ("Task ID", node.task_id),
-            ("Try number", node.try_no),
-            ("Aborted reason", node.aborted_reason),
-            ("Script path", node.script_path),
-        ):
-            if value is not None:
-                text.append(f"{label}: {value}\n")
+        if node.node_kind == "task":
+            for label, value in (
+                ("Attempt ID", node.attempt_id or "none"),
+                ("RID", node.task_id or "unknown"),
+                ("Try number", node.try_no),
+                ("Submitted", node.submitted_at),
+                ("Started", node.started_at),
+                ("Ended", node.ended_at),
+                ("Failure reason", node.aborted_reason),
+                ("Job script", node.job_path),
+                ("Job output", node.jobout_path),
+                ("orvix info", node.orvix_info_path),
+                ("Script path", node.script_path),
+            ):
+                if value is not None:
+                    text.append(f"{label}: {value}\n")
 
         if node.generated_parameters:
             text.append("\nGenerated parameters\n", style="bold underline")

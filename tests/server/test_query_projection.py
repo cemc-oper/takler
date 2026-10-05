@@ -16,6 +16,7 @@ from takler.serialization.registry import (
     using_registry,
 )
 from takler.tasks.shell import ShellScriptTask
+from takler.protocol.commands import ShowRequest
 
 
 def test_projection_filters_all_parameter_sources_without_mutation(
@@ -171,3 +172,61 @@ def test_redacted_artifact_parameters_do_not_leak_through_derived_fields(tmp_pat
     assert snapshot.lookup_parameter("/f/t", "TAKLER_JOB") is None
     assert snapshot.lookup_parameter("/f/t", "TAKLER_JOBOUT") is None
     assert snapshot.lookup_parameter("/f/t", "TAKLER_SCRIPT") is None
+
+
+def test_show_projects_current_attempt_files_and_service_report(tmp_path):
+    from takler.server import TaklerServer
+
+    server = TaklerServer(checkpoint_file=tmp_path / "checkpoint")
+    flow = server.bunch.add_flow(Flow("f"))
+    task = flow.add_task("t")
+    flow.begin()
+    task.run()
+    task.job_path = str(tmp_path / "current.job")
+    task.jobout_path = str(tmp_path / "current.out")
+    task.orvix_info_path = str(tmp_path / "current.info.yaml")
+    server.bunch.server_state = ServerState.from_causes([HaltCause.recovery])
+    server.scheduler.restore_summary = {
+        "source": "backup",
+        "in_flight_count": 1,
+    }
+    server.checkpoint_manager.last_checkpoint_at = "2026-10-05T00:00:00+00:00"
+
+    payload = server.scheduler.handle_request_show(ShowRequest())
+    snapshot = parse_show(payload)
+    current = snapshot.get("/f/t")
+    assert snapshot.service.status == "halted"
+    assert snapshot.service.reason == "recovery pending"
+    assert snapshot.service.restore_summary["source"] == "backup"
+    assert snapshot.service.last_checkpoint_at == "2026-10-05T00:00:00+00:00"
+    assert current.attempt_id == task.attempt_id
+    assert current.task_id is None
+    assert current.submitted_at == task.submitted_at
+    assert current.job_path == str(tmp_path / "current.job")
+    assert current.jobout_path == str(tmp_path / "current.out")
+    assert current.orvix_info_path == str(tmp_path / "current.info.yaml")
+    assert task.job_password not in payload
+    assert snapshot.get("/f/t").path == "/f/t"
+
+
+def test_show_handles_missing_attempt_and_hides_redacted_file_refs(tmp_path):
+    bunch = Bunch()
+    flow = bunch.add_flow(Flow("f"))
+    task = ShellScriptTask("t", script_path=tmp_path / "task.takler")
+    flow.append_child(task)
+    task.job_path = str(tmp_path / "private.job")
+    task.jobout_path = str(tmp_path / "private.out")
+    task.orvix_info_path = str(tmp_path / "private.info.yaml")
+    without_attempt = parse_show(json.dumps(project_show(bunch))).get("/f/t")
+    assert without_attempt.job_path is None
+    assert without_attempt.jobout_path is None
+    assert without_attempt.orvix_info_path is None
+    task.attempt_id = "current-attempt"
+    payload = json.dumps(project_show(bunch, ["TAKLER_HOME"]))
+    current = parse_show(payload).get("/f/t")
+    assert current.attempt_id == "current-attempt"
+    assert current.task_id is None
+    assert current.job_path is None
+    assert current.jobout_path is None
+    assert current.orvix_info_path is None
+    assert "private.job" not in payload

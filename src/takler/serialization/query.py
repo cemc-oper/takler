@@ -10,7 +10,7 @@ from takler.serialization.registry import get_registry
 from takler.tasks.shell.shell_script_task import ShellScriptTask
 
 
-def project_show(bunch, redacted_parameters=()):
+def project_show(bunch, redacted_parameters=(), server_status=None):
     hidden = SENSITIVE_PARAMETERS | {name.lower() for name in redacted_parameters}
 
     def project(node):
@@ -58,6 +58,12 @@ def project_show(bunch, redacted_parameters=()):
         generated = {}
         if isinstance(node, Bunch):
             result["server_state"] = node.server_state.to_dict()
+            result["server_status"] = server_status or {
+                **result["server_state"],
+                "message": "",
+                "last_checkpoint_at": None,
+                "restore_summary": None,
+            }
             generated.update(
                 {
                     name: p.value
@@ -100,6 +106,23 @@ def project_show(bunch, redacted_parameters=()):
                 aborted_reason=node.aborted_reason.replace(node.job_password, REDACTED)
                 if node.aborted_reason and node.job_password
                 else node.aborted_reason,
+            )
+            hide_home = "takler_home" in hidden
+            has_attempt = node.attempt_id is not None
+            result["job_path"] = (
+                None
+                if not has_attempt or hide_home or "takler_job" in hidden
+                else node.job_path
+            )
+            result["jobout_path"] = (
+                None
+                if not has_attempt or hide_home or "takler_jobout" in hidden
+                else node.jobout_path
+            )
+            result["orvix_info_path"] = (
+                None
+                if not has_attempt or hide_home or "takler_job" in hidden
+                else node.orvix_info_path
             )
             generated.update(
                 TASK=node.name,

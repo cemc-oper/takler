@@ -246,6 +246,7 @@ class TaklerTuiApp(App):
     def _apply_snapshot(self, snapshot: ShowSnapshot) -> None:
         """Apply a freshly-fetched snapshot to the UI (main thread)."""
         self._snapshot = snapshot
+        self._status_bar.set_service(snapshot.service)
         self._tree.rebuild(snapshot)
         node = snapshot.get(self._selected_path) if self._selected_path else None
         self._render_tabs(node)

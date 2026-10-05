@@ -125,6 +125,43 @@ task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不�
 ``job_passwords`` 必须存在；未知路径、非 task 路径、终态口令条目或
 缺失 submitted/active 口令使快照失败，不回显口令值。
 
+人工核实与继续调度
+~~~~~~~~~~~~~~~~~~
+
+恢复后先查询独立的服务状态，再查看任务树。``show`` 根对象的
+``server_status`` 与 ``server-status`` 命令一致；查看树中的非根节点时仍可
+读到根级服务状态。任务的 ``attempt_id``、``task_id``（RID）、提交/开始/结束时间、
+失败原因和本轮 job/jobout/orvix 文件引用是当前运行诊断字段。没有当前
+attempt 时为 ``null``；RID 未知时也为 ``null``。TUI 信息页将其显示为
+``none`` / ``unknown``，底栏在选中任何节点时都显示独立的服务状态。
+文件引用只在查询权限允许且未被参数脱敏规则遮蔽时展示。
+
+下面以 Go 客户端和 ``/forecast/run`` 为例；Python 客户端可把
+``takler_client`` 换成 ``takler-client-py``，命令含义相同：
+
+.. code-block:: bash
+
+    takler_client server-status
+    takler_client show --show-all
+    # 对照调度系统中的 RID、job/jobout、orvix 信息和服务日志，人工确认外部作业结果
+    takler_client force complete /forecast/run   # 仅在已确认完成时
+    # 或：takler_client requeue /forecast/run    # 仅在确认旧作业不会再产生副作用时
+    takler_client show --show-all
+    takler_client server-resume
+    takler_client server-status
+
+``force`` 与 ``requeue`` 是针对已核实任务的**择一**修正，不会取消外部
+作业，也不会凭未知 attempt 或 RID 自动收养作业。旧 attempt 的 child
+上报由身份与状态检查拒绝，不会改写修正后的新实例；见
+:doc:`/operation/zombie`。恢复可能选用备用快照，快照之外的已提交或已完成
+执行可能未被记录，因此要逐项核实，不应把 ``queued`` 当作从未提交。
+
+每条控制命令只发送一次，收到成功仅表明服务内存状态已改变。批量命令
+可能部分成功；响应丢失时结果未知，应重新查询状态和外部作业后再决定
+下一步，不要盲目重发。``server-resume`` 清除 ``recovery`` / ``manual``
+暂停原因；若 ``checkpoint_failure`` 尚在，会返回 ``server_halted`` (33)，
+需先修复保存故障并等一次成功快照，再查询、继续调度。
+
 根级属性恢复
 ~~~~~~~~~~~~
 

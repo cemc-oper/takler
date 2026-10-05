@@ -933,7 +933,11 @@ class Scheduler:
         """Project safe display data; clients use the flags to select details."""
         from takler.serialization.query import project_show
 
-        bunch_dict = project_show(self.bunch, self.query_redacted_parameters)
+        bunch_dict = project_show(
+            self.bunch,
+            self.query_redacted_parameters,
+            server_status=self.server_status_response().model_dump(mode="json"),
+        )
         bunch_json_str = json.dumps(bunch_dict)
 
         return bunch_json_str
