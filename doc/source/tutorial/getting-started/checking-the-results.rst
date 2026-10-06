@@ -17,20 +17,13 @@
 
             takler-client-py show --show-all
 
-命令会从 takler 服务检索工作流运行状态，打印每个节点的运行状态。输出如下所示（``${TAKLER_HOME}`` 替换为你实际设置的目录）：
+命令会从 takler 服务检索当前状态。下面只保留树形部分；实际输出还包含
+独立的服务状态、尝试 UUID、RID、时间和允许展示的本轮文件引用：
 
 .. code-block::
 
     |- test [complete]
-        param TAKLER_HOME '${TAKLER_HOME}'
       |- t1 [complete]
-          param TAKLER_SCRIPT '${TAKLER_HOME}/test/task1.takler'
-          # param TAKLER_SCRIPT 'None'
-          # param TAKLER_JOB '${TAKLER_HOME}/test/t1.job'
-          # param TAKLER_JOBOUT '${TAKLER_HOME}/test/t1.out'
-          # param TASK 't1'
-          # param TAKLER_NAME '/test/t1'
-          # param TAKLER_RID 'None'
 
 如果输出与上面一样，任务 *t1* 是完成状态 (``complete``)，工作流 *test* 也是完成状态，表示工作流运行成功。
 
@@ -38,10 +31,12 @@
 
     如果输出不是这样的，可能会看到出错状态 (``aborted``)，请首先检查 takler 脚本。
 
-服务创建的作业文件 (*job file*) 与 takler 文件在同一目录中 (即 ``${TAKLER_HOME}/test``)，名为 **t1.job**。
-比较 **task1.takler**、**head.takler**、**tail.takler** 和 **t1.job** 文件。
+服务创建的作业文件 (*job file*) 与 takler 文件在同一目录中
+（即 ``${TAKLER_HOME}/test``），默认名为 ``t1.job<attempt_id>``。
+比较 **task1.takler**、**head.takler**、**tail.takler** 和本轮作业文件。
 
-输出文件 (*output file*) 与 takler 文件在同一目录中，名为 **t1.out**。
+输出文件 (*output file*) 默认名为 ``t1.<attempt_id>``。可从 ``show``
+的当前文件引用确认实际路径；显式覆盖路径时以该引用为准。
 
 练习
 -----

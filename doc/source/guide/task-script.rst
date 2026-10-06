@@ -95,18 +95,20 @@ takler 不提供 ``head.takler`` / ``tail.takler`` ，它们由使用方自行
 
 要点：
 
-* 第 3~5 行： ``set -e`` 使任一命令失败即退出，配合第 42 行的
+* 开头的 ``set -e`` 使任一命令失败即退出，配合后面的
   ``trap ERROR 0`` 让退出时统一走 ``ERROR`` 处理函数上报
   ``abort``
-* 第 13~16 行：导出与服务通讯的四个变量。 ``TAKLER_HOST`` /
+* 环境变量段：导出与服务通讯的五个变量。 ``TAKLER_HOST`` /
   ``TAKLER_PORT`` 定位服务， ``TAKLER_NAME`` 是节点路径，
+  ``TAKLER_ATTEMPT_ID`` 是本次执行尝试的 UUID，
   ``TAKLER_PASS`` 是本次运行的一次性作业口令（启用鉴权后 child
   命令必须携带，见 :doc:`/operation/security` ）
-* 第 20~24 行： ``TAKLER_RID`` 是作业标识，本地运行时取当前进程
+  不要在导出口令时开启 ``set -x``，否则作业输出会记录明文口令
+* RID 段： ``TAKLER_RID`` 是作业标识，本地运行时取当前进程
   号；在作业调度系统中可换成调度系统分配的作业号
-* 第 28~29 行： ``init`` 上报任务开始并登记作业标识，任务状态
+* ``init`` 上报任务开始并登记作业标识，任务状态
   从 ``submitted`` 变为 ``active``
-* 第 32~46 行： ``ERROR`` 函数先 ``wait`` 后台命令，再上报
+* ``ERROR`` 函数先 ``wait`` 后台命令，再上报
   ``abort`` ，最后清除 trap 并以 ``exit 0`` 结束——退出码已无法
   改变结果，状态以 child 命令上报为准
 
@@ -132,6 +134,8 @@ child 命令约定
   客户端行为一致，示例头文件统一显式传 ``--node-path
   ${TAKLER_NAME}``
 * 作业口令：两个客户端都从环境变量 ``TAKLER_PASS`` 读取
+* 执行身份：两个客户端均从 ``TAKLER_ATTEMPT_ID`` 读取，或显式使用
+  ``--attempt-id``；此 UUID 与 RID、try_no 和口令用途各异
 * 作业标识： ``init`` 用 ``--task-id`` 上报 ``TAKLER_RID`` ，
   服务用它识别僵尸上报（见
   :doc:`/tutorial/advanced-topics/zombies` ）
@@ -147,7 +151,8 @@ is set.`` ）：
 .. code-block:: bash
 
     export NO_TAKLER=1
-    $TAKLER_HOME/test/t1.job1
+    # 未执行前的 check_job_creation 预览文件以 try_no=0 命名
+    NO_TAKLER=1 "$TAKLER_HOME/test/t1.job0"
 
 配合 :doc:`/guide/defining-flows` 的 ``check_job_creation`` 干跑，
 完整的离线检查流程是：干跑生成 ``.job`` 文件 → 检查渲染结果 →

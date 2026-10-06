@@ -4,14 +4,19 @@
 一个 child 命令（ ``init`` 、 ``complete`` 、 ``abort`` 、 ``event`` 、
 ``meter`` ）如果不属于服务当前记录的运行实例，就是 **zombie** 。典型情形
 是 task 被 requeue 之后，仍在运行的旧作业才上报 ``complete`` ——放任这类
-上报会污染新运行实例的状态。本页说明三个判定条件、三种处置策略与配置
-方式； ``auth_mode`` 本身的配置见 :doc:`/operation/security` 。
+上报会污染新运行实例的状态。本页说明执行身份门禁，以及门禁通过后
+既有的三个 zombie 条件和三种策略； ``auth_mode`` 的配置见
+:doc:`/operation/security` 。
 
 判定的时机与范围
 ----------------
 
-每个 child 命令在调度器中定位并类型检查目标节点之后、写入任何状态之前
-先过一次 zombie 判定。两种目标不算 zombie ，保持原有的报错：
+每个 child 命令在调度器中定位并类型检查目标节点之后、写入任何状态之前，
+先核对当前 ``attempt_id``、提交状态和在线树归属。旧身份、终态、
+缺失身份直接返回 ``attempt_mismatch``；非法 UUID 是输入错误。
+``event`` / ``meter`` 还须核对上报者 Task 与目标同属一个 Flow。
+这层门禁不受 ``zombie_policy`` 的 ``fob`` / ``adopt`` 影响。
+之后才执行既有 zombie 判定。两种目标保持原有的报错：
 
 * 节点不存在： ``NodeNotFoundError``
 * 节点不是 task ： ``NodeTypeError``
@@ -23,9 +28,8 @@
 ------------
 
 三个条件按固定顺序 ``Z1`` → ``Z2`` → ``Z3`` 检查，命中第一个即停止。
-顺序从最具体到最宽泛： ``Z1`` 能说出调用方属于哪次运行（持的是旧口令）
-， ``Z2`` 只能说出任务不在接受上报的状态——一个被 requeue 的任务同时
-命中两者，报 ``Z1`` 比报 ``Z2`` 多一层诊断信息。
+顺序从口令到状态和 RID；这三项只适用于已经通过当前 attempt 门禁的
+上报。requeue 后旧作业的上报在此之前就被拒绝，不会按 Z1/Z2 处置。
 
 .. list-table::
     :header-rows: 1
@@ -53,15 +57,14 @@
   下拦截器会先拒绝缺少凭据的 child 命令，因此这种情况很少走到判定层
 * ``Z3`` 只适用于 ``init`` ——它是唯一携带作业 id 的 child 命令；空白
   的 id 与未携带视为同一个「无 id 」取值
-* ``Z1`` 在 ``disabled`` 下整体跳过：不鉴权时没有客户端被期待携带
-  ``takler-pass`` ，每个 child 命令都会命中 ``Z1`` ，等于拒绝整个 child
-  协议。 ``Z2`` 与 ``Z3`` 不需要凭据，在两种模式下都在场——requeue
-  场景不靠鉴权也能拦住
+* ``Z1`` 在 ``disabled`` 下整体跳过。``Z2`` 与 ``Z3`` 不需要凭据；
+  不论鉴权模式如何，旧 attempt 都先被身份门禁挡住
 
 三种处置策略
 ------------
 
-``zombie_policy`` 是服务端全局设置，对全部 zombie 生效：
+``zombie_policy`` 是服务端全局设置，只对通过当前 attempt 门禁后
+命中的 zombie 条件生效：
 
 .. list-table::
     :header-rows: 1
@@ -91,32 +94,26 @@
 ---------------------------------
 
 时间线： ``t1`` 提交作业并上报 ``init`` （任务进入 active ）→ 运维
-requeue （任务回到 queued ，口令被清掉）→ 旧作业继续运行并上报
-``complete`` ：
-
-* ``auth_mode`` 为 ``enabled`` ：旧作业持的是已清空的旧口令，命中
-  ``Z1``
-* ``auth_mode`` 为 ``disabled`` ：目标任务不在 submitted / active ，
-  命中 ``Z2``
-
-两种模式下这条 ``complete`` 都不会写进新运行实例。该场景的端到端演示见
+requeue （任务回到 queued，当前 attempt 清空）→ 旧作业继续运行并上报
+``complete``。无论 ``auth_mode`` 和 ``zombie_policy`` 如何设置，
+旧 ``attempt_id`` 与当前任务不匹配，服务返回 ``attempt_mismatch``；
+若新尝试已提交，也不会误收旧上报。该场景的端到端演示见
 :doc:`/tutorial/advanced-topics/zombies` 。
 
 .. note::
 
-    ``Z2`` 与 ``Z3`` 在 ``auth_mode`` 为 ``disabled`` 时同样生效，这是
-    本版本对既有部署可见的行为改变： requeue 之后旧作业上报的 child 命令
-    会被拒绝，而不再静默污染新实例的状态。升级后如需临时保留旧行为，可以
-    把 ``zombie_policy`` 设为 ``fob`` 。
+    ``Z2`` 与 ``Z3`` 在 ``auth_mode`` 为 ``disabled`` 时仍可判定，
+    但 ``fob`` 不能让旧 attempt 上报成功。UUID 隔离不是鉴权；
+    生产部署仍须启用鉴权保护 child 和 operator 命令。
 
 与检查点的关系
 --------------
 
-快照只持久化 submitted / active 任务的口令（其他状态的口令即使匹配也会
-命中 ``Z2`` ，没有保存价值），重启后还原到对应 task 上，在途作业因此
-**不会** 因为重启变成 zombie ，见 :doc:`/operation/checkpoint` 。反过来
-， ``auth_mode`` 为 ``enabled`` 时恢复自检发现的「在途但无口令」任务，
-其 child 命令会命中 ``Z1`` ，由本页的策略处置。
+checkpoint v3 在 ``runtime`` 保存当前 ``attempt_id``，在 ``secrets``
+保存 submitted / active 任务的配对口令。恢复前强制校验两者完整性，
+缺失或冲突时拒绝整份快照；不会把「在途但无口令」任务交给 zombie 策略。
+有效快照恢复后，匹配身份和口令的在途上报仍可被接受，见
+:doc:`/operation/checkpoint` 。
 
 配置方式
 --------

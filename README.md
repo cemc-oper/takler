@@ -15,11 +15,15 @@ Chinese documentation (中文文档)：[https://takler.readthedocs.io/](https://
 
 ## Quick Start
 
-Install takler with pip:
+Install takler with pip (Python 3.11 or newer):
 
 ```bash
 pip install takler
 ```
+
+For the HTTP listener, install `takler[http]`; for the terminal interface,
+install `takler[tui]`. The Go client is built separately from the
+`takler-client` repository.
 
 ### 1. Define a flow
 
@@ -81,20 +85,26 @@ Create **test/t1.takler**:
 #!/bin/bash
 set -e
 
-takler-client-py init --host {{ TAKLER_HOST }} --port {{ TAKLER_PORT }} \
-    --task-id $$ --node-path {{ TAKLER_NAME }}
+export TAKLER_HOST={{ TAKLER_HOST }}
+export TAKLER_PORT={{ TAKLER_PORT }}
+export TAKLER_NAME={{ TAKLER_NAME }}
+export TAKLER_ATTEMPT_ID={{ TAKLER_ATTEMPT_ID }}
+export TAKLER_PASS={{ TAKLER_PASS }}
+
+takler-client-py init --task-id "$$"
 
 echo "hello from t1"
 sleep 2
 
-takler-client-py complete --host {{ TAKLER_HOST }} --port {{ TAKLER_PORT }} \
-    --node-path {{ TAKLER_NAME }}
+takler-client-py complete
 ```
 
 and **test/t2.takler** the same way, with `echo "hello from t2"` as the payload.
 `TAKLER_HOST`, `TAKLER_PORT` and `TAKLER_NAME` are parameters takler generates for every task;
-the client used inside the script can be either `takler-client-py` (installed with takler) or the Go client `takler_client`, 
-as long as it is on the job's `PATH`.
+the client used inside the script can be either `takler-client-py` (installed with takler) or the Go client `takler_client`,
+as long as it is on the job's `PATH`. Both clients read `TAKLER_ATTEMPT_ID`
+to identify this execution attempt and `TAKLER_PASS` for child authentication;
+`--task-id` reports the job ID (`TAKLER_RID` in shared script templates).
 
 ### 3. Run it
 
@@ -121,6 +131,24 @@ takler-client-py show
 ```
 
 For events, meters, time dependencies, families and more, see the [documentation](https://takler.readthedocs.io/) (中文文档).
+
+## Recovery and control
+
+`server-status` shows whether the service is running or halted;
+`server-halt` stops new automatic and manual execution, including `run --force`.
+After a checkpoint restore, the service starts halted. Inspect the current
+attempts and external jobs with `server-status` and `show`, correct confirmed
+states with `force` or `requeue`, then use `server-resume`. A node's `resume`
+does not resume the service.
+
+Checkpoint v3 stores definition, runtime state, and in-flight job passwords in
+separate sections. It is the only recovery source; logs are for diagnosis and
+audit. `Bunch.server_config` holds the current deployment address, while
+`Bunch.server_state` holds the checkpointed running/halted state and causes.
+A successful write command changes in-memory state and may be lost
+before the next checkpoint. Mutating commands, including child reports, are
+sent once; after a lost response, query the state before deciding whether to
+send another command. `async_task` is explicitly unsupported.
 
 ## Release verification
 

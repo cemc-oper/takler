@@ -21,7 +21,8 @@ task1.takler 脚本需要经过预处理生成作业文件 (job file)。
 检查作业生成时需要注意以下几点：
 
 1. 作业检查 **独立** 于 takler 服务，因此作业文件中的 ``TAKLER_HOST`` 和 ``TAKLER_PORT`` 被替换为默认值 (``localhost`` 和 ``33083``)。
-2. 作业文件扩展名是 **.job**。
+2. 执行前的预览文件名为 ``t1.job0``；真正执行时文件名包含本轮
+   ``attempt_id``，例如 ``t1.job<UUID>``，不同尝试不会覆盖。
 3. 默认情况下，作业文件在 ``TAKLER_HOME`` 目录下生成。
 
 使用 ``takler.tasks.shell.check_job_creation`` 函数完成检查。
@@ -44,8 +45,8 @@ task1.takler 脚本需要经过预处理生成作业文件 (job file)。
 
     |- test [unknown]
       |- t1 [unknown]
-    Job generation success: ${TAKLER_HOME}/test/t1.job
-    Render run command success: ${TAKLER_HOME}/test/t1.job 1> ${TAKLER_HOME}/test/t1.out 2>&1
+    Job generation success: ${TAKLER_HOME}/test/t1.job0
+    Render run command success: ${TAKLER_HOME}/test/t1.job0 1> ${TAKLER_HOME}/test/t1.0 2>&1
     check job creation results: 1 total, 1 success, 0 failed.
 
 
@@ -54,4 +55,4 @@ task1.takler 脚本需要经过预处理生成作业文件 (job file)。
 
 1. 在 ``$TAKLER_HOME/test.py`` 文件中增加作业创建检查。
 2. 运行修改后的 **test.py**
-3. 检查生成的作业文件 ``$TAKLER_HOME/test/t1.job``
+3. 检查生成的预览作业文件 ``$TAKLER_HOME/test/t1.job0``

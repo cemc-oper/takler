@@ -53,7 +53,7 @@ Bunch 只导出 name、user_parameters、flows；根上配置未支持的调度�
 ``existing_bunch`` 只作为跨 flow 引用的只读上下文，不把候选 Flow 加入在线树，
 也不更改在线缓存或占用。构造失败不会替换在线节点。
 
-现有 ``to_dict`` / ``from_dict`` 改用受信任 ``type_id``；checkpoint 格式为 2，
+现有 ``to_dict`` / ``from_dict`` 改用受信任 ``type_id``；checkpoint 当前格式为 3，
 完整校验后才恢复。网络 load 只接受版本 1 的单个 Flow 纯定义；Bunch 根、
 旧混合格式、运行字段和未知类型均拒绝（invalid_request，flag=15）。
 同名 flow 已存在时拒绝（flow_state，flag=14），保留原树及运行进度。

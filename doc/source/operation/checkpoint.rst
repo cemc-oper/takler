@@ -42,9 +42,9 @@ takler 服务把整棵节点树的状态定期快照到**检查点文件**，重
 **重启后在途任务为何仍能上报** ：恢复时 submitted / active 任务的状态原样
 保留（不会重新排队，也不会重新提交作业）， ``job_passwords`` 中的口令再
 写回对应 task。旧作业脚本里注入的 ``TAKLER_PASS`` 因此仍然匹配，目标
-task 也仍处在接受上报的状态，child 命令两个 zombie 条件都不命中
-（见 :doc:`/operation/zombie` ）。complete 与 aborted 任务的口令不持久化
-——它们的运行已结束，对口令的上报无论如何都会命中 ``Z2`` 。
+task 也仍处在接受上报的状态；服务会先校验快照恢复的 ``attempt_id``，
+再进行鉴权与 zombie 判定（见 :doc:`/operation/zombie` ）。complete 与
+aborted 任务的口令不持久化；它们已终结，child 上报由身份门禁拒绝。
 
 快照中的历史服务地址（ ``source_address`` ）在恢复时被丢弃，
 ``TAKLER_HOST`` / ``TAKLER_PORT`` 始终宣告当前进程。快照中的

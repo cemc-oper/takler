@@ -814,10 +814,8 @@ def test_step13_load_registers_a_flow_without_beginning_it():
 def test_step13_try_no_and_job_password_lifecycle():
     """Each run attempt gets a fresh ``try_no`` and job password; requeue clears both.
 
-    zombies.rst builds its zombie story on this invariant: the job file of
-    attempt *n* is ``<node>.job<n>`` and its script carries the ``TAKLER_PASS``
-    generated for that attempt, so a report from attempt *n-1* can be told
-    apart from the current run.
+    zombies.rst builds its isolation story on a fresh attempt UUID. The job
+    file uses that UUID, while TAKLER_PASS is a separate credential.
     """
     module = _load_module(EXAMPLES_DIR / "step13_control.py")
     flow = module.create_flow()
@@ -1483,8 +1481,9 @@ def test_guide_shell_task_generated_job_paths(tmp_path):
 def test_guide_serialization_keeps_user_parameters_only():
     """``to_dict`` writes user parameters, never generated ones.
 
-    variables.rst relies on this for ``TAKLER_PASS``: the job password stays
-    out of ``show`` output and checkpoint files because it is generated.
+    variables.rst relies on this for ``TAKLER_PASS``: the generated parameter
+    stays out of node dictionaries and show; checkpoint stores in-flight
+    passwords separately under secrets.
     """
     from takler.core import Flow
 
@@ -3135,9 +3134,9 @@ def test_operation_troubleshooting_covers_documented_symptoms():
         "invalid_credential",
         "not_in_whitelist",
         "--show-all",
-        "free_dep",
+        "free-dep",
         "TAKLER_SHELL_JOB_CMD",
-        "Z1 / Z2 / Z3",
+        "attempt_mismatch",
         "TAKLER_TLS_SERVER_NAME",
         "check_job_creation",
     ]:

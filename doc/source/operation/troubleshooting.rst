@@ -9,9 +9,9 @@
 连不上服务（退出码 4 ）
 -------------------------
 
-命令在重试窗口内反复重试（默认 control / query 命令 ``60`` 秒，
-child 命令 ``86400`` 秒），最终 stderr 一行 ``ClientConnectionError:
-server ... is unreachable ...`` ，退出码 ``4`` 。按顺序检查：
+``ping``、``show``、``coroutine`` 可在默认 ``60`` 秒查询重试窗口内
+重试；所有变更命令（含 child）只发送一次。连接失败通常以退出码 ``4``
+结束；变更命令即使未收到响应，也不能推断服务端没有执行。按顺序检查：
 
 #. **服务在不在。** 服务进程是否存活、监听端口是否是预期的
    ``33083`` （ ``ss -tlnp | grep 33083`` ）；服务日志里应有启动
@@ -24,12 +24,12 @@ server ... is unreachable ...`` ，退出码 ``4`` 。按顺序检查：
    与 :doc:`/operation/connect-config` 。
 #. **是不是 TLS 握手失败。** 服务端启用了 TLS 而客户端没有配置
    ``TAKLER_TLS_CA_FILE`` （或反之）时，握手失败在客户端表现
-   为 gRPC ``UNAVAILABLE`` ——**与「服务不在线」无法区分**，会
-   一直重试到窗口耗尽。两边 TLS 配置要成对，见下文「 TLS 握手
+   为 gRPC ``UNAVAILABLE`` ——**与「服务不在线」无法区分**；
+   查询可重试，写命令只发一次。两边 TLS 配置要成对，见下文「 TLS 握手
    失败」。
 
-可以用 ``TAKLER_TIMEOUT=5`` 缩短重试窗口让失败更快暴露（ ``0``
-表示只试一次）。
+查询可用 ``TAKLER_TIMEOUT=5`` 缩短重试窗口（ ``0`` 表示只试一次）；
+该设置不会让写命令自动重试。
 
 ping 通但其他命令全被拒绝（退出码 1 ）
 --------------------------------------
@@ -57,16 +57,17 @@ invalid_credential`` / ``not_in_whitelist`` 时，问题在凭据：
 任务卡在 queued
 ---------------
 
-``queued`` 表示依赖未满足。任务只在以下检查全部通过时才会提交：
+``queued`` 表示尚未提交；先用 ``server-status`` 核实服务不是 halted，
+再确认所属 flow 已 ``begin``。服务 running 时，任务只在以下检查全部通过才提交：
 未 suspended 、时间依赖已到、 trigger 表达式为真（含事件、标尺、
 变量条件）、限额令牌可用，且状态不是 ``aborted`` （ aborted 的任务
 **不会** 自动重跑）。
 
-定位： ``takler-client-py show --node-path /flow/task --show-all``
+定位： ``takler-client-py show --show-all``，查找 ``/flow/task``
 （或在 TUI 的属性 / 参数页，见 :doc:`/guide/tui` ）看 trigger
 表达式、时间依赖、事件 / 标尺当前值与限额占用；对照
 :doc:`/guide/trigger-expression` 检查表达式引用的节点路径与状态。确认依赖确实该放行却仍卡住时，运维手段
-是 ``free_dep`` （按类型解除依赖）或 ``run --force`` （跳过检查
+是 ``free-dep`` （按类型解除依赖）或 ``run --force`` （跳过检查
 直接提交），见 :doc:`/guide/cli` 。
 
 注意 takler 没有 date / day / cron 依赖（见
@@ -78,12 +79,13 @@ invalid_credential`` / ``not_in_whitelist`` 时，问题在凭据：
 ``submitted`` 表示作业命令已启动、但 ``init`` 上报尚未到达。
 **服务对这一转移没有任何超时或看门狗** ，任务可以无限期停在这里。
 渲染失败与进程创建失败不会让任务停在 submitted ——它们直接使任务
-``aborted`` ，所以卡在 submitted 说明作业命令本身退出码为 ``0``
-却没有拉起作业：
+``aborted``。卡在 submitted 时外部提交结果可能未知，须先核对调度系统：
 
-#. **看作业输出文件。** 默认路径 ``{TAKLER_HOME}{节点路径}.{try_no}``
-   （如 ``t1.1`` ），作业文件为 ``{TAKLER_HOME}{节点路径}.job{try_no}``
-   。文件不存在或为空 → 作业命令根本没执行作业文件。
+#. **看本轮文件引用。** ``show --show-all`` 会给出本轮
+   ``attempt_id`` 和允许展示的 job/jobout/orvix 路径。默认文件名包含
+   UUID： ``{TAKLER_HOME}{节点路径}.job{attempt_id}`` 与
+   ``{TAKLER_HOME}{节点路径}.{attempt_id}``。文件缺失不能单独证明
+   外部作业没有接收提交。
 #. **检查 ``TAKLER_SHELL_JOB_CMD`` 。** 自定义的作业命令如果把默认
    模板包了一层且吞掉了真实退出码 / 没有真正执行 ``{{TAKLER_JOB}}``
    ，命令「成功」返回而作业从未运行，见
@@ -98,33 +100,31 @@ invalid_credential`` / ``not_in_whitelist`` 时，问题在凭据：
 作业进程活着（输出文件在增长），服务侧状态却停在 ``submitted`` /
 ``active`` ——child 上报没有到达或被拒绝。定位：
 
-#. **直接在作业输出里找 child 命令的报错。** child 命令连接失败会
-   重试最长一天后退出码 ``4`` ；被拒绝则退出码非零并打印一行原因。
+#. **直接在作业输出里找 child 命令的报错。** child 写命令连接失败
+   只发送一次；响应丢失时先查询任务和外部作业，不要盲目重发。
 #. **地址是渲染时写死的。** 作业文件里的 ``TAKLER_HOST`` /
    ``TAKLER_PORT`` 来自服务启动时宣告的地址；服务重启换了地址后，
    旧作业的上报继续发往旧地址。恢复时地址不一致会在日志里留下分级
    记录，见 :doc:`/operation/checkpoint` 。
-#. **口令不匹配即 zombie 。** 启用鉴权时 ``TAKLER_PASS`` 缺失或
-   不匹配、未启用鉴权时上报到一个不在 submitted / active 状态的
-   任务、 ``init`` 携带的 task id 不一致，分别命中 zombie 判定
-   Z1 / Z2 / Z3 ——服务日志有一条 WARNING ，审计文件有一条
-   ``event`` 为 ``zombie`` 的记录。判定条件与处置见
+#. **先查 attempt，再查凭据。** ``TAKLER_ATTEMPT_ID`` 缺失时 CLI
+   会在发送前报输入错误；旧身份或任务已终结时，服务以
+   ``attempt_mismatch`` 直接拒绝，``zombie_policy`` 不能放行。
+   身份匹配后，口令或 ``init`` RID 冲突才按 Z1/Z3 等条件处置。
+   判定条件与处置见
    :doc:`/operation/zombie` 。
 
 zombie 记录刷日志
 -----------------
 
 服务日志反复出现 zombie WARNING 、审计文件里 ``event`` 为
-``zombie`` 的记录持续增长，几乎总是**同一批旧作业在重试**： child
-命令的默认重试窗口长达一天，被 ``fail`` 策略拒绝的上报（退出码
-``3`` ）不会让作业停下。典型场景是 requeue 之后旧作业仍在运行并
-继续上报，见 :doc:`/operation/zombie` 的「典型场景」一节。
+``zombie`` 的记录持续增长，说明作业脚本或外部调用方反复发出了
+冲突上报；客户端不会自动重试被拒绝的 child 命令。旧 attempt 的
+上报由身份门禁直接拒绝，不受 zombie 策略影响。
 
-处置：先按审计记录里的 ``target`` 与 ``peer`` 找到旧作业并确认它
-该不该活着（该杀就杀）；确认上报无害后可以临时把
-``security.zombie_policy`` 调为 ``fob`` （静默收下丢弃）或
-``adopt`` （收下并采用新口令）止血，但这两种策略都会掩盖真实的
-状态漂移，用完调回 ``fail`` 。三种策略的语义见
+处置：先按审计记录里的 ``target`` 与 ``peer`` 找到作业并确认它
+是否仍应运行。对通过身份门禁的冲突，可按
+``security.zombie_policy`` 的既有语义处置；``fob`` 或 ``adopt``
+不能接纳旧 attempt。三种策略的语义见
 :doc:`/operation/zombie` 。
 
 快照恢复失败
@@ -146,7 +146,7 @@ TLS 握手失败
   TLS CA certificate file ...`` ，退出码 ``1`` ——这是配置错误，
   修文件即可。
 * 握手在连接时失败（证书不受信任、主机名不匹配）：表现与「连不上
-  服务」完全相同——重试到窗口耗尽，退出码 ``4`` 。主机名不匹配
+  服务」相同；查询可重试，写命令只发一次。主机名不匹配
   时用 ``TAKLER_TLS_SERVER_NAME`` 指定证书上的名字（例如证书签给
   短主机名而客户端按全名连接）。
 

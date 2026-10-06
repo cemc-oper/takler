@@ -7,15 +7,14 @@
 
 .. code-block:: bash
 
-    $TAKLER_HOME/test/t1.job
+    $TAKLER_HOME/test/t1.job0
 
-出错信息类似：
+若服务未启动，child 命令会因无法连接而报错：
 
 .. code-block::
 
     + takler_client init --host localhost --port 33083 --task-id 132970 --node-path /test/t1
-    localhost:33083 init /test/t1 with 132970
-    2022/06/30 08:53:50 could not init: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing dial tcp 127.0.0.1:33083: connect: connection refused"
+    ... connection refused ...
 
 原因是作业脚本中集成的 takler_client（或 takler-client-py）命令无法与服务 takler 通讯。
 
@@ -28,7 +27,7 @@
 .. code-block:: bash
 
     export NO_TAKLER=1
-    $TAKLER_HOME/test/t1.job
+    $TAKLER_HOME/test/t1.job0
 
 部分输出如下：
 
@@ -47,4 +46,4 @@
 -----
 
 1. ``export NO_TAKLER=1``
-2. 运行作业脚本 ``$TAKLER_HOME/test/t1.job``
+2. 运行预览作业脚本 ``$TAKLER_HOME/test/t1.job0``

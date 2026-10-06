@@ -32,9 +32,9 @@ repeat :doc:`/tutorial/advanced-topics/repeat` 与时间 :doc:`/tutorial/advance
       - 让节点等到 flow 逻辑时钟到达某个时刻才可运行
       - :py:meth:`Node.add_time <takler.core.node.Node.add_time>`
 
-五类属性都会随节点序列化：保存状态（ checkpoint 、 ``show`` ）时带运行
-期取值，只保存定义时（如 load 一棵树）只保留定义、运行期取值回到初始
-状态。各节末尾分别说明。
+五类属性都有定义和运行期取值。checkpoint v3 分别保存纯定义和完整运行态；
+``show`` 使用独立的只读查询投影，展示允许公开的当前值，不能用于恢复。
+只保存定义时（如 load 一棵树），运行期取值回到初始状态。各节末尾分别说明。
 
 .. toctree::
    :hidden:

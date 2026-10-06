@@ -49,7 +49,7 @@ head.takler 头文件放在 takler 脚本的开头，用于：
 
             set -e          # stop the shell on first error
             set -u          # fail when using an undefined variable
-            set -x          # echo script lines as they are executed
+            # Keep xtrace off: it would print TAKLER_PASS to job output.
             # set -o pipefail # fail if last(rightmost) command exits with a non-zero status
 
             date
@@ -94,9 +94,11 @@ head.takler 头文件放在 takler 脚本的开头，用于：
             trap '{ echo "Killed by a signal";trap 0;ERROR; }' 1 2 3 4 5 6 7 8 10 12 13 15
             echo "exec on hostname:" "$(hostname)"
 
-上面示例中的 ``TAKLER_PASS`` 是 takler 为每个 task 生成的作业一次性口令，
+上面示例中的 ``TAKLER_ATTEMPT_ID`` 是本次执行 UUID，五个 child 命令
+都会携带；``TAKLER_PASS`` 是 takler 为每个 task 生成的作业一次性口令，
 在服务启用鉴权模式 (auth mode) 后，child 命令需要携带该口令才能被服务接受。
 ``takler_client`` 从环境变量 ``TAKLER_PASS`` 中读取它，因此头文件中需要把该变量导出。
+头文件默认关闭 ``set -x``，避免把导出的口令写入作业输出。
 
 .. note::
 

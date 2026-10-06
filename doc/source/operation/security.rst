@@ -103,7 +103,7 @@ takler 的默认部署是**不加密、不鉴权**的：
 环境变量
 ------------
 
-本版本引入七个环境变量。取值优先级为
+下列安全相关环境变量的取值优先级为
 **命令行选项 > 环境变量 > connect.yaml 的 security 段 > 内置默认值**，
 其中空串与纯空白视为「未提供」，逐级向下回落。
 
@@ -117,6 +117,9 @@ takler 的默认部署是**不加密、不鉴权**的：
     * - ``TAKLER_PASS``
       - 客户端
       - 作业一次性口令。由服务端生成并作为同名变量注入作业脚本，child 命令从该环境变量读取
+    * - ``TAKLER_ATTEMPT_ID``
+      - 客户端
+      - 当前执行尝试 UUID；五个 child 命令用于身份隔离，不作为口令
     * - ``TAKLER_SECRET_FILE``
       - 客户端
       - 运维共享密钥文件路径，对应 ``operator_secret_file``
@@ -309,6 +312,7 @@ zombie 检测判定（见 :doc:`/operation/zombie` ）。
 服务为 task 的每次运行生成一个一次性口令，作为生成变量 ``TAKLER_PASS`` 注入作业脚本。
 ``head.takler`` 中需要有 ``export TAKLER_PASS={{TAKLER_PASS}}`` 一行，
 详见 :doc:`/tutorial/getting-started/understanding-includes`。
+导出口令前不要开启 ``set -x``；否则 shell 会把口令写进作业输出。
 
 .. warning::
 
@@ -337,7 +341,8 @@ zombie 检测与处置
 
 一个 child 命令如果不属于服务当前记录的运行实例，就是 zombie，
 典型情形是 task 被 requeue 之后，旧作业才上报 ``complete`` 。
-判定条件 (``Z1`` / ``Z2`` / ``Z3``) 、三种处置策略
+旧 ``attempt_id`` 会在 zombie 策略之前直接拒绝，``fob`` / ``adopt``
+不能绕过身份门禁。身份通过后的判定条件 (``Z1`` / ``Z2`` / ``Z3``) 、三种处置策略
 (``fail`` / ``fob`` / ``adopt``) 与 ``zombie_policy`` 的配置方式见
 :doc:`/operation/zombie` 。
 
@@ -357,9 +362,9 @@ zombie 检测与处置
 
 1. **升级到本版本但不启用任何安全项。**
    服务端与两个客户端都升级，``auth_mode`` 保持 ``disabled``、不配 TLS。
-   此时验证 ``Z2`` / ``Z3`` zombie 检测与作业脚本权限变化没有打破既有流程。
-2. **在 head.takler 中加入 ``export TAKLER_PASS={{TAKLER_PASS}}``。**
-   此时服务端还没校验，加了不生效但无害，可以逐个 flow 灰度。
+   此时验证 child ``attempt_id`` 门禁与作业脚本权限变化没有打破流程。
+2. **在 head.takler 中导出 ``TAKLER_ATTEMPT_ID`` 和 ``TAKLER_PASS``。**
+   当前配对客户端要求 attempt UUID；启用鉴权后还要用口令。
 3. **把服务端进程 umask 设为 ``0077``。**
    在启用鉴权之前完成，否则口令一启用即泄露。
 4. **配置 TLS。**
@@ -371,8 +376,11 @@ zombie 检测与处置
 顺序的关键约束是**第 2 步必须早于第 5 步、第 3 步必须早于第 5 步**：
 口令注入与 umask 收紧都要在服务端开始校验之前就位。
 
-``connect.yaml`` 与旧的快照文件都不需要改动或迁移：
-快照中缺少口令映射时按空映射处理，在途任务在 ``auth_mode`` 为 ``disabled`` 下照常上报。
+``connect.yaml`` 中的旧安全字段可继续按当前配置解析，但 checkpoint
+只读当前 v3 格式：恢复时在途 ``attempt_id`` 和 ``secrets.job_passwords``
+必须完整配对，即使 ``auth_mode`` 为 ``disabled`` 也不能缺失。旧格式
+不提供自动迁移；部署前应按 :doc:`/operation/checkpoint` 核实快照与
+恢复流程。
 
 
 不停机轮换运维共享密钥

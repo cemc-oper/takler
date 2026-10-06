@@ -50,6 +50,8 @@ host 与 port 各自独立解析）：
     * - ``1``
       - 请求本身不被接受：节点不存在、节点路径格式错误、取值不支持、
         触发器表达式语法错误、鉴权拒绝等
+    * - ``2``
+      - 命令行用法错误，例如必填参数缺失
     * - ``3``
       - 服务端执行失败（如作业提交失败、僵尸检测拒绝上报），或服务
         返回了客户端无法解析的响应
@@ -322,15 +324,17 @@ child 命令          init / complete / abort /            相同
                     event / meter
 控制命令            requeue / suspend / resume / run /   相同
                     force / free-dep / load / replace /
-                    begin
-查询命令            show / ping / coroutine              相同（show 的显示方式不同）
+                    begin / server-halt / server-resume
+查询命令            show / ping / coroutine /            相同（show 的显示方式不同）
+                    server-status
 TLS / 鉴权选项      全部子命令接受 ``--tls-ca`` /        无命令行选项，只用环境变量与
                     ``--tls-server-name`` /              ``connect.yaml``
                     ``--secret-file``
 安装方式            单独构建的 Go 二进制                 随 ``pip install takler`` 安装
 ==================  ===================================  ===================================
 
-协议语义、地址解析、退出码、 ``TAKLER_NAME`` / ``TAKLER_PASS`` /
+协议语义、地址解析、退出码、 ``TAKLER_NAME`` / ``TAKLER_ATTEMPT_ID`` /
+``TAKLER_PASS`` /
 ``NO_TAKLER`` 约定在两者间完全一致，作业脚本写成哪种都能运行。
 
 批量控制结果
@@ -385,6 +389,11 @@ Go CLI 保留 JSON 输出，并透传同一安全视图。
 查询投影不导出插件私有字段、执行凭据或完整部署配置，不可用作定义或恢复输入。
 用户业务参数的其它机密名称需要部署者显式配置。
 
+R1-16 在本机对 10k 个已完成任务的树测试完整 ``show`` 时，gRPC 默认
+客户端因响应约 7.85 MB 超过默认 4 MiB 接收上限而拒绝；该样本没有
+有效的 gRPC show 延迟值。HTTP 的本机成功结果也不构成生产规模或
+业务时延承诺，实际部署须以自身树形、权限和网络配置复测。
+
 定义文件的格式、导出示例、受信任类型注册及恢复边界见
-:doc:`/develop/definition`。R0 不提供请求去重或提交 exactly-once；
+:doc:`/develop/definition`。当前不提供跨重启请求去重或提交 exactly-once；
 变更请求只发送一次不代表响应丢失后可以安全重发。

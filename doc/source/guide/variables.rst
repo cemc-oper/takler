@@ -58,8 +58,8 @@ user 参数与 generated 参数
 .. note::
 
     ``TAKLER_PASS`` 只能是 generated 参数：作业口令是 child 命令上报
-    的凭据，保持 generated 使它不会出现在 ``show`` 输出与 checkpoint
-    文件中。
+    的凭据，保持 generated 使它不会出现在 ``show`` 输出或 checkpoint
+    的定义与运行态中；在途口令由 checkpoint 的独立 ``secrets`` 段保存。
 
 保留变量全表
 ------------
@@ -67,7 +67,7 @@ user 参数与 generated 参数
 takler 在各层级自动生成的变量如下。
 
 **bunch 级** （服务级，来自 :py:class:`~takler.core.Bunch` 的
-``ServerState`` ，沿继承链对所有节点可见）：
+``ServerConfig`` ，沿继承链对所有节点可见）：
 
 .. list-table::
     :header-rows: 1
@@ -113,11 +113,12 @@ takler 在各层级自动生成的变量如下。
         ``kill`` 时定位作业用
     * - ``TAKLER_ATTEMPT_ID``
       - 本次执行尝试的 UUID；与可清零的 ``TAKLER_TRY_NO`` 和作业标识
-        ``TAKLER_RID`` 不同。child 上报身份校验将在 R1-04 接入
+        ``TAKLER_RID`` 不同；五个 child 命令均须携带当前身份
     * - ``TAKLER_TRY_NO``
       - 第几次尝试运行，每次重试加一
     * - ``TAKLER_PASS``
-      - 作业口令， child 命令上报的凭据（不入 checkpoint ，见上文）
+      - 作业口令， child 命令上报的凭据；在途口令只入 checkpoint
+        的 ``secrets`` 段，不进入定义、运行态或查询
 
 **ShellScriptTask 额外生成** （作业文件相关）：
 

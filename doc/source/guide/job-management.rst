@@ -17,7 +17,8 @@
 服务状态为 ``halted`` 时，自动调度和手动 ``run``（包括 ``--force``）
 均不会进入执行：不增加 ``try_no``、不分配 ``attempt_id``，也不准备
 本轮作业文件。节点 ``resume`` 不改变服务状态；已有作业可继续运行并
-上报 child 结果。服务恢复运行的操作入口将在 R1-07 接入。
+上报 child 结果。先用 ``server-status`` 核实原因，人工核实后通过
+``server-resume`` 继续调度；若仍有 checkpoint 故障，需先修复保存。
 
 .. mermaid::
 

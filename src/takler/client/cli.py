@@ -613,7 +613,7 @@ def ping(
     port: str = typer.Option(None, help=PORT_HELP_STRING),
 ):
     """
-    [query] check the server is running with given host and hort.
+    [query] check the server is running with given host and port.
     """
     _run_client_command(host, port, lambda client: client.ping())
 

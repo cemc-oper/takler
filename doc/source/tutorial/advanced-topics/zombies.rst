@@ -18,32 +18,40 @@
 当旧作业最后调用 ``complete`` 上报时，这条上报就属于已经不存在的运行
 实例：如果放行它，新一轮运行的状态就会被旧作业篡改。
 
-try_no 与作业口令
---------------------
+执行身份、try_no 与作业口令
+-------------------------------
 
-服务靠两组运行实例标识区分新旧作业：
+服务为每次实际执行分配一个不可复用的 ``attempt_id`` UUID，并通过作业脚本
+中的 ``TAKLER_ATTEMPT_ID`` 传给五个 child 命令。服务先核对该身份、任务
+仍在当前树中的归属和 submitted/active 状态，再允许任何状态变更。
+``zombie_policy`` 的 ``fob`` 或 ``adopt`` 也不能放行旧身份。
 
-* 每次提交作业，任务的 ``try_no`` 加 1，作业脚本文件也随之编号
-  （``t1.job1`` 、 ``t1.job2`` ……）；``requeue`` 把 ``try_no`` 清零
-* 每次提交同时生成一个新的**作业口令** (job password)，通过作业脚本中的
-  ``TAKLER_PASS`` 环境变量传给 child 命令；``requeue`` 同样将其清空
+``try_no`` 每次运行加一，但 ``requeue`` 会把它清零，因此不能用它识别
+某轮执行。实际作业文件默认名为 ``t1.job<attempt_id>``，重排队后即使
+``try_no`` 再次为 1，文件也不复用。``TAKLER_RID`` 是 ``init`` 上报的
+外部作业标识，不是本轮身份。每轮还生成新的**作业口令**，通过
+``TAKLER_PASS`` 传给 child 命令；启用鉴权时它是凭据，但身份 UUID 本身
+不是凭据。更多区别见 :doc:`/guide/job-management`。
 
 判定条件
 --------------------
 
-每条 child 命令在写入任何状态之前先过三道检查（命中即视为僵尸）：
+身份检查通过后，既有 zombie 检测还会检查：
 
 * ``Z1`` ：命令携带的口令与任务当前口令不符（或任务根本没有口令）。
   只在服务端开启鉴权 (``auth_mode: enabled``) 时检查
 * ``Z2`` ：任务当前状态不是 ``submitted`` 也不是 ``active`` ——
-  服务端没有正在等它上报的运行实例。``requeue`` 场景主要靠这条挡住
+  服务端没有正在等它上报的运行实例；当前服务入口的身份检查会先拒绝
+  此类上报
 * ``Z3`` ：``init`` 命令携带的作业号与已记录的当前作业号不同——
   两个作业都声称自己拥有这次运行
 
 处置策略
 --------------------
 
-命中僵尸条件的命令按 ``zombie_policy`` 配置处置：
+**旧 attempt、缺失/非法 attempt 和终态上报** 由身份检查直接拒绝，
+不进入下列策略。通过身份检查但命中 zombie 条件的命令按
+``zombie_policy`` 配置处置：
 
 * ``fail`` （默认）：拒绝，任务状态保持不变，客户端收到 ``ZombieError``
   报错并以非零码退出
@@ -61,35 +69,32 @@ try_no 与作业口令
 为了让作业运行足够久，先临时在 **task1.takler** 中加一行
 ``sleep 300`` ，然后：
 
-1. 启动服务并 ``begin`` ，等 ``t1`` 进入 ``active``
+1. 启动服务并 ``begin`` ，等 ``t1`` 进入 ``active``；从 ``show``
+   记录这轮的 ``attempt_id``
 2. 执行 ``takler-client-py requeue /test/t1`` ， ``t1`` 回到
    ``queued`` （旧作业仍在运行）
-3. 在旧作业的 ``sleep`` 结束、调用 ``complete`` 时，服务端日志出现：
+3. 在旧作业的 ``sleep`` 结束、调用 ``complete`` 时，服务拒绝旧身份，
+   客户端报 ``attempt_mismatch``；旧上报不会改变新一轮状态。
+   即使服务尚未再次提交新作业，旧身份仍已失效
 
-   .. code-block::
-
-       WARNING ... zombie complete on /test/t1: hit Z2, status is queued, applying policy fail
-
-   旧作业一侧的 child 命令报错并以非零码退出，新一轮运行的状态不受
-   影响
-
-也可以不启动作业直接模拟一条「过时上报」：在 ``t1`` 处于 ``queued``
-时手动执行 ``takler-client-py complete --node-path /test/t1`` ，同样
-命中 ``Z2`` 被拒绝。
+也可以用记录的旧 UUID 模拟过时上报：在 shell 中设置
+``OLD_ATTEMPT`` 为上一步记录值，然后执行
+``takler-client-py complete --node-path /test/t1 --attempt-id "$OLD_ATTEMPT"``。
+结果同样是 ``attempt_mismatch``。未给 ``--attempt-id`` 且没有
+``TAKLER_ATTEMPT_ID`` 时，客户端会在发送前报输入错误。
 
 .. note::
 
-    默认部署不开启鉴权，此时不检查 ``Z1`` ：如果旧作业的上报恰好赶在
-    新一轮运行提交之后到达（任务已是 ``submitted`` 状态），没有口令
-    校验就识别不出它是旧实例。生产环境请参考 :doc:`/operation/security`
-    开启 ``auth_mode: enabled`` 。
+    默认部署不开启鉴权，此时不检查口令对应的 ``Z1``，但始终校验
+    ``attempt_id``。生产环境仍应参考 :doc:`/operation/security`
+    启用鉴权：UUID 用于隔离执行，不替代作业口令认证。
 
 练习
 -----
 
-1. 按本节步骤复现一次 ``Z2`` 僵尸拒绝，在服务日志中找到对应的
-   WARNING 记录
-2. 查看某次运行生成的 **t1.job1** 作业脚本，找到 ``TAKLER_PASS``
-   环境变量；requeue 后再次运行，对比两次口令不同
-3. 在 ``t1`` 处于 ``queued`` 时手动执行 ``complete`` child 命令，
-   确认命中 ``Z2`` 被拒绝
+1. 按本节步骤复现一次旧身份拒绝，确认状态不变
+2. 查看某次运行生成的 ``t1.job<attempt_id>`` 作业脚本，找到
+   ``TAKLER_ATTEMPT_ID`` 和 ``TAKLER_PASS``；requeue 后再次运行，
+   对比两次值均不同
+3. 在 ``t1`` 处于 ``queued`` 时携带旧 ``--attempt-id`` 手动执行
+   ``complete``，确认返回 ``attempt_mismatch``

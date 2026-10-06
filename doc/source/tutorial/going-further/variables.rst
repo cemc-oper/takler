@@ -65,6 +65,7 @@ user 参数与 generated 参数
         # param TASK 'None'
         # param TAKLER_NAME 'None'
         # param TAKLER_RID 'None'
+        # param TAKLER_ATTEMPT_ID 'None'
         # param TAKLER_TRY_NO 'None'
         # param TAKLER_PASS 'None'
 
@@ -94,7 +95,7 @@ takler 会在不同层级自动生成一批「保留变量」，可以直接在�
       - ``DATE``、``TIME``
       - 日历的当前日期与时刻
     * - task
-      - ``TASK``、``TAKLER_NAME``、``TAKLER_RID``、``TAKLER_TRY_NO``、
+      - ``TASK``、``TAKLER_NAME``、``TAKLER_RID``、``TAKLER_ATTEMPT_ID``、``TAKLER_TRY_NO``、
         ``TAKLER_PASS``
       - 任务名称、节点路径、运行标识、重试次数、作业口令等
 

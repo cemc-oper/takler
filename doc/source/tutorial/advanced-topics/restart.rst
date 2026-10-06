@@ -3,7 +3,8 @@
 
 上一节介绍了僵尸检测。本节介绍 takler 的另一个可靠性机制：
 **检查点 (checkpoint)** ——服务周期性保存快照，进程被杀掉后重启可以
-从快照恢复，正在运行的作业不受影响。
+从快照恢复。恢复不会自动重提交作业；外部作业是否仍在运行需要人工核实。
+只有 checkpoint 用于恢复，运行和审计日志不参与重放。
 
 本节可以亲手复现，继续使用 :doc:`controlling-the-flow` 一节的示例
 工作流。
@@ -16,18 +17,21 @@
 退出时会再写最后一次。写入是原子的（临时文件 + 重命名），并同时维护
 一个备份文件 ``takler.check.b`` 。快照保存节点状态、 ``suspended``
 标记、事件与标尺取值、限额占用、repeat 当前值、时间依赖的 ``free``
-闩锁、任务的 ``task_id`` / ``try_no`` / 中止原因、flow 的 begun 标记与
-逻辑日历，以及**在途任务** （ ``submitted`` / ``active`` ）的作业口令
+闩锁、任务的 ``attempt_id`` / ``task_id`` / ``try_no`` / 中止原因、
+flow 的 begun 标记与逻辑日历，以及**在途任务** （ ``submitted`` /
+``active`` ）的作业口令
 ——因此文件权限被固定为仅属主可读写 (``0600``)。
 
 恢复
 --------------------
 
-服务启动时按 ``takler.check`` → ``takler.check.b`` → 空
-工作流的顺序回退恢复。关键是：恢复出的 ``submitted`` / ``active``
-任务**保持原状，不会重新提交作业**——它们对应的作业还在计算节点上
-跑着，重启只是让服务重新开始接受它们的上报（口令也从快照还原，
-zombie 检查照常通过）。快照格式、回退链与排查方法的完整说明见
+主、备文件都不存在时作为新服务以 running 启动。只要其中任一文件存在，
+服务就按 ``takler.check`` → ``takler.check.b`` 依次完整校验；两份都
+无效时拒绝启动，不会改用空工作流。恢复出的 ``submitted`` /
+``active`` 任务**保持原状，不会重新提交作业**。匹配快照身份和口令的
+旧作业仍可上报；快照之后才发生的提交可能没有记录，不能从日志补回。
+恢复后的服务默认 halted，人工核实并执行 ``server-resume`` 前不会
+启动下游新执行。快照格式、回退链与排查方法的完整说明见
 :doc:`/operation/checkpoint` 。
 
 动手观察一次重启恢复
@@ -45,9 +49,13 @@ zombie 检查照常通过）。快照格式、回退链与排查方法的完整�
        INFO ... restored 1 flow(s) and 4 node(s) from checkpoint file takler.check.
        INFO ... recovered the job password of 1 task(s) from checkpoint file takler.check.
 
-4. ``show`` 查看： ``t1`` 仍是 ``active`` 而不是被重新排队；
-   旧作业的 ``sleep`` 结束后上报 ``complete`` ，服务正常接受，
-   工作流继续向下走
+4. 用 ``server-status`` 和 ``show --show-all`` 核实服务为 halted、
+   ``t1`` 仍是 ``active``、本轮 ``attempt_id`` 和外部作业是否匹配。
+   若旧作业的 ``sleep`` 结束后上报 ``complete``，匹配上报可被接受，
+   但 halted 期间下游不会开始
+5. 核实快照以外的提交和作业结果，必要时择一使用 ``force`` 或
+   ``requeue`` 修正节点；最后执行 ``server-resume``，让下游继续调度。
+   写命令成功只表示内存操作成功，下一次快照前仍可能丢失
 
 .. note::
 
