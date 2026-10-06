@@ -69,16 +69,8 @@ def workflow() -> dict[str, Any]:
 
 @pytest.fixture(scope="module")
 def test_job(workflow: dict[str, Any]) -> dict[str, Any]:
-    """Return the single job that installs dependencies and runs pytest."""
-    jobs = workflow["jobs"]
-    candidates = [
-        job
-        for job in jobs.values()
-        if any("pytest" in command for command in _run_commands(job))
-    ]
-
-    assert len(candidates) == 1, sorted(jobs)
-    return candidates[0]
+    """Return the main test job; paired contracts also run selected pytest tests."""
+    return workflow["jobs"]["build"]
 
 
 def _triggers(workflow: dict[str, Any]) -> dict[str, Any]:
@@ -328,7 +320,22 @@ def test_pair_defaults_to_main_and_contract_runs_in_ci(workflow):
     assert "make proto-check wire-check" in commands
     assert "make http-contract" in commands
     assert "make load-contract replace-contract show-contract" in commands
+    assert "bash scripts/check_drift_negative.sh" in commands
+    assert "test_child_identity_matrix.py" in commands
+    assert "test_server_state_cli_matrix.py" in commands
+    assert "test_show_cli_contract.py" in commands
     assert "paired_check.py" not in commands
+
+
+def test_install_matrix_uses_isolated_wheel_installs(workflow):
+    job = workflow["jobs"]["install-matrix"]
+    assert job["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
+    install = next(
+        step
+        for step in job["steps"]
+        if "bash scripts/check_install_matrix.sh" in step.get("run", "")
+    )
+    assert install["env"]["TAKLER_INSTALL_PYTHON"] == "${{ matrix.python-version }}"
 
 
 @pytest.mark.parametrize(

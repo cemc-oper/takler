@@ -129,6 +129,26 @@ jobs:
       run: |
         uv run coverage report --include="src/takler/tui/*" --fail-under=60
 
+  install-matrix:
+    name: install smoke (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.11", "3.12" ]
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: astral-sh/setup-uv@v10.0.1
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+    - name: Build wheel and test isolated default, HTTP and TUI installs
+      env:
+        TAKLER_INSTALL_PYTHON: ${{ matrix.python-version }}
+      run: bash scripts/check_install_matrix.sh
+
   paired-contract:
     name: paired protocol and CLI contracts
     runs-on: ubuntu-latest
@@ -187,6 +207,11 @@ jobs:
       env:
         TAKLER_REPO: ../takler
       run: make proto-check wire-check
+    - name: Confirm drift gates reject mismatched peers
+      working-directory: takler-client
+      env:
+        TAKLER_REPO: ../takler
+      run: bash scripts/check_drift_negative.sh
     - name: Run HTTP command matrix
       working-directory: takler-client
       env:
@@ -197,3 +222,9 @@ jobs:
       env:
         TAKLER_REPO: ../takler
       run: make load-contract replace-contract show-contract
+    - name: Run child identity and service state matrix
+      working-directory: takler
+      env:
+        TAKLER_SHOW_GO_CLIENT: ../takler-client/bin/takler_client
+      run: |
+        uv run --no-sync pytest -q tests/packaging/test_ci_workflow.py tests/integration/test_child_identity_matrix.py tests/integration/test_server_state_cli_matrix.py tests/integration/test_show_cli_contract.py

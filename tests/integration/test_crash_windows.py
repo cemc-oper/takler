@@ -175,6 +175,8 @@ def go_binary(tmp_path_factory):
     if shutil.which("go") is None:
         pytest.skip("Go toolchain is unavailable")
     repo = Path(__file__).resolve().parents[3] / "takler-client"
+    if not (repo / "go.mod").exists():
+        pytest.skip("paired Go checkout is unavailable")
     binary = tmp_path_factory.mktemp("r1-13-go") / "takler_client"
     subprocess.run(
         ["go", "build", "-o", str(binary), "main.go"],
