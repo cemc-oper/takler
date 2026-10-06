@@ -1,4 +1,4 @@
-# 发布流程：打 tag（`v*`）后构建 sdist + wheel，检查通过后上传到 PyPI。
+# 发布流程：只从 tag 的实际提交构建，并要求该提交的完整 CI 已通过。
 #
 # 使用方式：
 #     git tag -a v0.2.0 -m "v0.2.0" && git push origin v0.2.0
@@ -27,10 +27,16 @@ on:
         description: "要发布的 tag，例如 v0.2.0（必须已经推送到远端）"
         required: true
         type: string
+      dry_run:
+        description: "只验证构建和制品，不上传 PyPI"
+        required: true
+        type: boolean
+        default: true
 
 # 默认只读；发布需要的 id-token 单独在 publish job 里放开，避免构建阶段拿到多余权限。
 permissions:
   contents: read
+  actions: read
 
 env:
   # tag 推送时取 github.ref_name，手动触发时取输入值，后面各步骤统一用这个变量。
@@ -45,6 +51,8 @@ jobs:
   build:
     name: build distributions
     runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
 
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +67,21 @@ jobs:
         with:
           # 纯 Python 包（`py3-none-any` wheel），用受支持区间里较新的版本构建即可。
           python-version: "3.12"
+
+      - name: Verify tagged checkout and exact-commit CI
+        id: source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          args=(--tag "$TAG_NAME" --repository "$GITHUB_REPOSITORY" --check-remote --proof-file release-source.json
+            --required-job 'ci (Python 3.11)' --required-job 'ci (Python 3.12)'
+            --required-job 'install smoke (Python 3.11)' --required-job 'install smoke (Python 3.12)'
+            --required-job 'paired protocol and CLI contracts')
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            args+=(--expected-sha "$GITHUB_SHA")
+          fi
+          python scripts/release_gate.py source "${args[@]}"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Install build tooling
         run: |
@@ -88,8 +111,13 @@ jobs:
 
           # 从环境变量读 tag，而不是把 GitHub 表达式插值进脚本里，避免 tag 名参与代码拼接。
           tag = os.environ["TAG_NAME"]
-          # wheel 文件名形如 takler-0.2.0-py3-none-any.whl，第二段就是包版本。
-          built = sorted(pathlib.Path("dist").glob("*.whl"))[0].name.split("-")[1]
+          wheels = list(pathlib.Path("dist").glob("takler-*.whl"))
+          sdists = list(pathlib.Path("dist").glob("takler-*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              print("::error::expected exactly one wheel and one sdist")
+              sys.exit(1)
+          built = wheels[0].name.split("-")[1]
+          source_version = sdists[0].name.removeprefix("takler-").removesuffix(".tar.gz")
           try:
               expected = Version(tag.removeprefix("v"))
           except InvalidVersion:
@@ -98,6 +126,9 @@ jobs:
           print(f"tag={tag} expected={expected} built={built}")
           if Version(built) != expected:
               print(f"::error::built version '{built}' does not match tag '{tag}'")
+              sys.exit(1)
+          if Version(source_version) != expected:
+              print(f"::error::sdist version '{source_version}' does not match tag '{tag}'")
               sys.exit(1)
           if Version(built).local is not None:
               print(f"::error::version '{built}' has a local segment, PyPI rejects it")
@@ -138,6 +169,11 @@ jobs:
           /tmp/smoke/bin/takler-server --help > /dev/null
           /tmp/smoke/bin/takler-client-py --help > /dev/null
 
+      - name: Record and verify artifact checksums
+        run: |
+          python scripts/release_gate.py manifest --proof-file release-source.json --dist dist --manifest dist/release-manifest.json
+          python scripts/release_gate.py verify --tag "$TAG_NAME" --repository "$GITHUB_REPOSITORY" --check-remote --expected-sha "${{ steps.source.outputs.commit }}" --dist dist --manifest dist/release-manifest.json
+
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
@@ -148,11 +184,13 @@ jobs:
   publish:
     name: publish to PyPI
     needs: build
+    if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
     runs-on: ubuntu-latest
 
     # Trusted Publishing 用 OIDC 换取上传凭据，需要 id-token 写权限；不需要读仓库内容。
     permissions:
       id-token: write
+      contents: read
 
     # environment 与 PyPI publisher 配置里的 Environment name 对应，也方便在仓库
     # 设置里给发布加审批/保护规则。
@@ -161,18 +199,33 @@ jobs:
       url: https://pypi.org/p/takler
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0
+
       - name: Download distributions
         uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist
 
+      - name: Recheck tag commit and artifact checksums
+        run: |
+          python scripts/release_gate.py verify --tag "$TAG_NAME" --repository "$GITHUB_REPOSITORY" --check-remote --expected-sha "${{ needs.build.outputs.commit }}" --dist dist --manifest dist/release-manifest.json
+
+      - name: Stage checked distributions for PyPI
+        run: |
+          mkdir -p dist/packages
+          cp dist/*.whl dist/*.tar.gz dist/packages/
+          cmp dist/*.whl dist/packages/*.whl
+          cmp dist/*.tar.gz dist/packages/*.tar.gz
+
       # 官方 action：读取 dist/ 下的包，用 OIDC 身份上传，并附带 PEP 740 来源证明。
       # 换成 TestPyPI 时加上 `repository-url: https://test.pypi.org/legacy/`。
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # 手动重跑同一个 tag（或上次只上传了一半）时，已存在的文件跳过而不是整个 job
-          # 失败。action 文档建议对 PyPI 让重复上传直接报错，这里更看重 workflow_dispatch
-          # 重跑的幂等；版本与 tag 的一致性已经在 build job 里校验过，不靠上传报错兜底。
-          skip-existing: true
+          # Keep checksum manifests out of the upload set; PyPI accepts only
+          # the sdist and wheel, both checked against the manifest above.
+          packages-dir: dist/packages

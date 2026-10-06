@@ -122,6 +122,15 @@ takler-client-py show
 
 For events, meters, time dependencies, families and more, see the [documentation](https://takler.readthedocs.io/) (中文文档).
 
+## Release verification
+
+The **release** workflow checks the tag's actual commit against the latest
+successful main-branch CI run and every required job before building. Its
+sdist and wheel are installed and checked, then listed with SHA-256 hashes and
+the source commit in `release-manifest.json`. Run the workflow manually with an
+existing remote tag and the default `dry_run` setting to validate without
+uploading to PyPI. Publication rechecks the downloaded artifact and tag commit.
+
 ## LICENSE
 
 Copyright &copy; 2022-2026, developers at cemc-oper.
