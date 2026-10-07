@@ -848,12 +848,36 @@
               "title": "Status",
               "type": "string"
             },
+            "status_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status Reason"
+            },
             "halt_causes": {
               "items": {
                 "type": "string"
               },
               "title": "Halt Causes",
               "type": "array"
+            },
+            "message": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Message"
             },
             "last_checkpoint_at": {
               "anyOf": [

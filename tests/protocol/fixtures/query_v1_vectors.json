@@ -44,6 +44,18 @@
       "raw": "{\"kind\":\"chunk_request\",\"schema_version\":1,\"blob_id\":\"blob-1\",\"offset\":0}"
     },
     {
+      "id": "valid_service_reason",
+      "kind": "detail",
+      "valid": true,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/\",\"flow_generation\":null,\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"service\"],\"groups\":{\"service\":{\"status\":\"halted\",\"status_reason\":\"manual pause\",\"halt_causes\":[\"manual\"],\"message\":\"paused\",\"last_checkpoint_at\":null,\"restore_summary\":null,\"generated_defaults\":[{\"name\":\"TAKLER_HOST\",\"value\":\"login02\"}]}}}"
+    },
+    {
+      "id": "invalid_service_reason_type",
+      "kind": "detail",
+      "valid": false,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/\",\"flow_generation\":null,\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"service\"],\"groups\":{\"service\":{\"status\":\"halted\",\"status_reason\":3,\"halt_causes\":[\"manual\"],\"message\":\"paused\",\"last_checkpoint_at\":null,\"restore_summary\":null,\"generated_defaults\":[{\"name\":\"TAKLER_HOST\",\"value\":\"login02\"}]}}}"
+    },
+    {
       "id": "valid_chunk",
       "kind": "chunk",
       "valid": true,

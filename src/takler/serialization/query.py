@@ -10,26 +10,35 @@ from takler.serialization.registry import get_registry
 from takler.tasks.shell.shell_script_task import ShellScriptTask
 
 
+def query_node_type(node):
+    """Return public labels without calling a plugin query or execution codec."""
+    try:
+        entry = get_registry().by_type(type(node))
+        return entry.kind, entry.type_id
+    except DefinitionError:
+        kind = (
+            "bunch"
+            if isinstance(node, Bunch)
+            else "flow"
+            if isinstance(node, Flow)
+            else "task"
+            if isinstance(node, Task)
+            else "container"
+        )
+        return kind, type(node).__name__
+
+
+def query_hidden_parameters(redacted_parameters=()):
+    return SENSITIVE_PARAMETERS | {name.lower() for name in redacted_parameters}
+
+
 def project_show(bunch, redacted_parameters=(), server_status=None):
-    hidden = SENSITIVE_PARAMETERS | {name.lower() for name in redacted_parameters}
+    hidden = query_hidden_parameters(redacted_parameters)
 
     def project(node):
         # Registrations supply labels only. Never invoke definition/runtime
         # exporters or constructors, which may expose private plugin fields.
-        try:
-            entry = get_registry().by_type(type(node))
-            kind, type_id = entry.kind, entry.type_id
-        except DefinitionError:
-            kind = (
-                "bunch"
-                if isinstance(node, Bunch)
-                else "flow"
-                if isinstance(node, Flow)
-                else "task"
-                if isinstance(node, Task)
-                else "container"
-            )
-            type_id = type(node).__name__
+        kind, type_id = query_node_type(node)
         result = {
             "name": node.name,
             "type_id": type_id,

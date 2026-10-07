@@ -295,7 +295,9 @@ class ArtifactsGroup(QueryModel):
 
 class ServiceGroup(QueryModel):
     status: Literal["running", "halted"]
+    status_reason: StrictStr | None = None
     halt_causes: list[StrictStr]
+    message: StrictStr | None = None
     last_checkpoint_at: StrictStr | None
     restore_summary: dict[str, Any] | None
     generated_defaults: list[ParameterValue]
