@@ -77,6 +77,7 @@ __all__ = [
     "METADATA_KEY_USER",
     "MIN_REDACTED_LENGTH",
     "PRIVILEGE_BY_METHOD",
+    "QUERY_PRIVILEGE_BY_METHOD",
     "REDACTED",
     "SERVICE_METHOD_PREFIX",
     "STATUS_CODE_BY_REJECTION",
@@ -919,6 +920,7 @@ class PrivilegeLevel(enum.Enum):
 #: ``takler_pb2.DESCRIPTOR.services_by_name["TaklerServer"].full_name``, which
 #: the privilege-table completeness test asserts against.
 SERVICE_METHOD_PREFIX: str = "/takler_protocol.TaklerServer/"
+QUERY_METHOD_PREFIX: str = "/takler_protocol.TaklerQuery/"
 
 
 #: Privilege_Level of every RPC method the ``TaklerServer`` service declares,
@@ -977,6 +979,14 @@ PRIVILEGE_BY_METHOD: Dict[str, PrivilegeLevel] = {
 }
 
 
+# The R2 query service is declared separately so the legacy command table and
+# its exact-method tests stay stable. Every query method reads operator data.
+QUERY_PRIVILEGE_BY_METHOD: Dict[str, PrivilegeLevel] = {
+    QUERY_METHOD_PREFIX + name: PrivilegeLevel.OPERATOR
+    for name in ("GetCapabilities", "ReadPage", "ReadDetail", "ReadDetailChunk")
+}
+
+
 def privilege_for_method(
     method: str,
     table: Optional[Mapping[str, PrivilegeLevel]] = None,
@@ -1016,6 +1026,8 @@ def privilege_for_method(
         :attr:`PrivilegeLevel.OPERATOR` when ``method`` is not registered.
     """
     if table is None:
+        if method in QUERY_PRIVILEGE_BY_METHOD:
+            return QUERY_PRIVILEGE_BY_METHOD[method]
         table = PRIVILEGE_BY_METHOD
     return table.get(method, PrivilegeLevel.OPERATOR)
 

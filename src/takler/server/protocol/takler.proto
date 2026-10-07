@@ -228,3 +228,18 @@ message BatchResponse {
   string message = 2;
   repeated BatchItemResult results = 3;
 }
+
+// R2 QueryDocument v1 is the same strict UTF-8 JSON on HTTP and gRPC.
+// These methods are protocol declarations; R2-05/07 provide the query engine.
+// They are separate from legacy TaklerServer methods so old command clients
+// and their exact method/privilege table remain stable.
+message QueryDocumentPayload {
+  bytes json = 1;
+}
+
+service TaklerQuery {
+  rpc GetCapabilities(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+  rpc ReadPage(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+  rpc ReadDetail(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+  rpc ReadDetailChunk(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+}

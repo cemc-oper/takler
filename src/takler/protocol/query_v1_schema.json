@@ -1,0 +1,1112 @@
+{
+  "title": "QueryDocument v1",
+  "version": 1,
+  "kinds": {
+    "capabilities_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "capabilities_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version"
+      ],
+      "title": "CapabilitiesRequest",
+      "type": "object"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "capabilities",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "snapshot": {
+          "const": true,
+          "title": "Snapshot",
+          "type": "boolean"
+        },
+        "detail": {
+          "const": true,
+          "title": "Detail",
+          "type": "boolean"
+        },
+        "since": {
+          "const": false,
+          "title": "Since",
+          "type": "boolean"
+        },
+        "max_page_nodes": {
+          "const": 2048,
+          "title": "Max Page Nodes",
+          "type": "integer"
+        },
+        "max_decoded_page_bytes": {
+          "const": 262144,
+          "title": "Max Decoded Page Bytes",
+          "type": "integer"
+        },
+        "max_chunk_bytes": {
+          "const": 65536,
+          "title": "Max Chunk Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "snapshot",
+        "detail",
+        "since",
+        "max_page_nodes",
+        "max_decoded_page_bytes",
+        "max_chunk_bytes"
+      ],
+      "title": "CapabilitiesReply",
+      "type": "object"
+    },
+    "page_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "page_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "scope_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope Path"
+        },
+        "flow_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flow Name"
+        },
+        "depth": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth"
+        },
+        "field_groups": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Field Groups",
+          "type": "array"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "field_groups"
+      ],
+      "title": "PageRequest",
+      "type": "object"
+    },
+    "page": {
+      "$defs": {
+        "SummaryNode": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "node_kind": {
+              "title": "Node Kind",
+              "type": "string"
+            },
+            "type_id": {
+              "title": "Type Id",
+              "type": "string"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "suspended": {
+              "title": "Suspended",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "path",
+            "node_kind",
+            "type_id",
+            "status",
+            "suspended"
+          ],
+          "title": "SummaryNode",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "page",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "query_id": {
+          "title": "Query Id",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "as_of": {
+          "title": "As Of",
+          "type": "string"
+        },
+        "expires_at": {
+          "title": "Expires At",
+          "type": "string"
+        },
+        "page_index": {
+          "minimum": 0,
+          "title": "Page Index",
+          "type": "integer"
+        },
+        "total_nodes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Nodes"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Cursor"
+        },
+        "root_name": {
+          "title": "Root Name",
+          "type": "string"
+        },
+        "flow_generations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Flow Generations",
+          "type": "object"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/SummaryNode"
+          },
+          "maxItems": 2048,
+          "title": "Nodes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "query_id",
+        "snapshot_id",
+        "as_of",
+        "expires_at",
+        "page_index",
+        "complete",
+        "next_cursor",
+        "root_name",
+        "flow_generations",
+        "nodes"
+      ],
+      "title": "PageReply",
+      "type": "object"
+    },
+    "detail_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "detail_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "query_id": {
+          "title": "Query Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "flow_generation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Generation"
+        },
+        "attempt_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attempt Id"
+        },
+        "field_groups": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Field Groups",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "query_id",
+        "path",
+        "flow_generation",
+        "attempt_id",
+        "field_groups"
+      ],
+      "title": "DetailRequest",
+      "type": "object"
+    },
+    "detail": {
+      "$defs": {
+        "ArtifactRef": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "origin": {
+              "enum": [
+                "current",
+                "anticipated"
+              ],
+              "title": "Origin",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "origin"
+          ],
+          "title": "ArtifactRef",
+          "type": "object"
+        },
+        "ArtifactsGroup": {
+          "additionalProperties": false,
+          "properties": {
+            "job_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactRef"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "jobout_ref": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactRef"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "orvix_info_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Orvix Info Path"
+            }
+          },
+          "title": "ArtifactsGroup",
+          "type": "object"
+        },
+        "DefinitionGroup": {
+          "additionalProperties": false,
+          "properties": {
+            "trigger": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Trigger"
+            },
+            "complete_trigger": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Complete Trigger"
+            },
+            "script_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Script Path"
+            },
+            "times": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Times",
+              "type": "array"
+            },
+            "repeat": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Repeat"
+            },
+            "events": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Events",
+              "type": "array"
+            },
+            "meters": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Meters",
+              "type": "array"
+            },
+            "limits": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Limits",
+              "type": "array"
+            },
+            "in_limits": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "In Limits",
+              "type": "array"
+            }
+          },
+          "title": "DefinitionGroup",
+          "type": "object"
+        },
+        "DetailGroups": {
+          "additionalProperties": false,
+          "properties": {
+            "definition": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DefinitionGroup"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "parameters": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ParametersGroup"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "runtime": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RuntimeGroup"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "artifacts": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactsGroup"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "service": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ServiceGroup"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "title": "DetailGroups",
+          "type": "object"
+        },
+        "ParameterSource": {
+          "additionalProperties": false,
+          "properties": {
+            "source_path": {
+              "title": "Source Path",
+              "type": "string"
+            },
+            "user": {
+              "items": {
+                "$ref": "#/$defs/ParameterValue"
+              },
+              "title": "User",
+              "type": "array"
+            }
+          },
+          "required": [
+            "source_path",
+            "user"
+          ],
+          "title": "ParameterSource",
+          "type": "object"
+        },
+        "ParameterValue": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value"
+            },
+            "redacted": {
+              "anyOf": [
+                {
+                  "const": true,
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Redacted"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "ParameterValue",
+          "type": "object"
+        },
+        "ParametersGroup": {
+          "additionalProperties": false,
+          "properties": {
+            "user": {
+              "items": {
+                "$ref": "#/$defs/ParameterValue"
+              },
+              "title": "User",
+              "type": "array"
+            },
+            "ancestors": {
+              "items": {
+                "$ref": "#/$defs/ParameterSource"
+              },
+              "title": "Ancestors",
+              "type": "array"
+            }
+          },
+          "required": [
+            "user"
+          ],
+          "title": "ParametersGroup",
+          "type": "object"
+        },
+        "RuntimeGroup": {
+          "additionalProperties": false,
+          "properties": {
+            "begun": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Begun"
+            },
+            "calendar_flow_time": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Calendar Flow Time"
+            },
+            "attempt_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Attempt Id"
+            },
+            "try_no": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Try No"
+            },
+            "task_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Task Id"
+            },
+            "submitted_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Submitted At"
+            },
+            "started_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Started At"
+            },
+            "ended_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Ended At"
+            },
+            "aborted_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Aborted Reason"
+            },
+            "events": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Events",
+              "type": "array"
+            },
+            "meters": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Meters",
+              "type": "array"
+            },
+            "repeat": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Repeat"
+            },
+            "limits": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "title": "Limits",
+              "type": "array"
+            }
+          },
+          "title": "RuntimeGroup",
+          "type": "object"
+        },
+        "ServiceGroup": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "running",
+                "halted"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "halt_causes": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Halt Causes",
+              "type": "array"
+            },
+            "last_checkpoint_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last Checkpoint At"
+            },
+            "restore_summary": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Restore Summary"
+            },
+            "generated_defaults": {
+              "items": {
+                "$ref": "#/$defs/ParameterValue"
+              },
+              "title": "Generated Defaults",
+              "type": "array"
+            }
+          },
+          "required": [
+            "status",
+            "halt_causes",
+            "last_checkpoint_at",
+            "restore_summary",
+            "generated_defaults"
+          ],
+          "title": "ServiceGroup",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "detail",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "query_id": {
+          "title": "Query Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "flow_generation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Flow Generation"
+        },
+        "attempt_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Attempt Id"
+        },
+        "sample_mode": {
+          "const": "live",
+          "title": "Sample Mode",
+          "type": "string"
+        },
+        "as_of": {
+          "title": "As Of",
+          "type": "string"
+        },
+        "requested_groups": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Requested Groups",
+          "type": "array"
+        },
+        "groups": {
+          "$ref": "#/$defs/DetailGroups"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "query_id",
+        "path",
+        "flow_generation",
+        "attempt_id",
+        "sample_mode",
+        "as_of",
+        "requested_groups",
+        "groups"
+      ],
+      "title": "DetailReply",
+      "type": "object"
+    },
+    "chunk_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "chunk_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "blob_id": {
+          "title": "Blob Id",
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "blob_id",
+        "offset"
+      ],
+      "title": "ChunkRequest",
+      "type": "object"
+    },
+    "chunk": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "chunk",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "blob_id": {
+          "title": "Blob Id",
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "total_bytes": {
+          "maximum": 16777216,
+          "minimum": 0,
+          "title": "Total Bytes",
+          "type": "integer"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "data_base64": {
+          "title": "Data Base64",
+          "type": "string"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "blob_id",
+        "offset",
+        "total_bytes",
+        "sha256",
+        "data_base64",
+        "complete"
+      ],
+      "title": "ChunkReply",
+      "type": "object"
+    },
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "error",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "reset_scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reset Scope"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "code",
+        "message"
+      ],
+      "title": "FailureReply",
+      "type": "object"
+    }
+  }
+}

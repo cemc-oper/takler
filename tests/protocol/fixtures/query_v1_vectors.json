@@ -1,0 +1,209 @@
+{
+  "contract": "R2-04A",
+  "cases": [
+    {
+      "id": "valid_capabilities_request",
+      "kind": "capabilities_request",
+      "valid": true,
+      "raw": "{\"kind\":\"capabilities_request\",\"schema_version\":1}"
+    },
+    {
+      "id": "valid_capabilities",
+      "kind": "capabilities",
+      "valid": true,
+      "raw": "{\"kind\":\"capabilities\",\"schema_version\":1,\"snapshot\":true,\"detail\":true,\"since\":false,\"max_page_nodes\":2048,\"max_decoded_page_bytes\":262144,\"max_chunk_bytes\":65536}"
+    },
+    {
+      "id": "valid_page_request",
+      "kind": "page_request",
+      "valid": true,
+      "raw": "{\"kind\":\"page_request\",\"schema_version\":1,\"scope_path\":\"/flow\",\"flow_name\":null,\"depth\":1,\"field_groups\":[\"summary\"],\"cursor\":null}"
+    },
+    {
+      "id": "valid_page",
+      "kind": "page",
+      "valid": true,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"takler.flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    },
+    {
+      "id": "valid_detail_request",
+      "kind": "detail_request",
+      "valid": true,
+      "raw": "{\"kind\":\"detail_request\",\"schema_version\":1,\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"field_groups\":[\"parameters\"],\"session_id\":\"session-1\",\"query_id\":\"query-1\"}"
+    },
+    {
+      "id": "valid_detail",
+      "kind": "detail",
+      "valid": true,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"parameters\"],\"groups\":{\"parameters\":{\"user\":[{\"name\":\"NOTE\",\"value\":null},{\"name\":\"SECRET\",\"redacted\":true}]}}}"
+    },
+    {
+      "id": "valid_chunk_request",
+      "kind": "chunk_request",
+      "valid": true,
+      "raw": "{\"kind\":\"chunk_request\",\"schema_version\":1,\"blob_id\":\"blob-1\",\"offset\":0}"
+    },
+    {
+      "id": "valid_chunk",
+      "kind": "chunk",
+      "valid": true,
+      "raw": "{\"kind\":\"chunk\",\"schema_version\":1,\"blob_id\":\"blob-1\",\"offset\":0,\"total_bytes\":2,\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"data_base64\":\"e30=\",\"complete\":true}"
+    },
+    {
+      "id": "valid_error",
+      "kind": "error",
+      "valid": true,
+      "raw": "{\"kind\":\"error\",\"schema_version\":1,\"code\":\"snapshot_expired\",\"message\":\"snapshot expired\",\"reset_scope\":\"/flow\"}"
+    },
+    {
+      "id": "unknown_kind",
+      "kind": "future",
+      "valid": false,
+      "raw": "{\"kind\":\"future\",\"schema_version\":1}"
+    },
+    {
+      "id": "unsupported_version",
+      "kind": "page_request",
+      "valid": false,
+      "raw": "{\"kind\":\"page_request\",\"schema_version\":2,\"field_groups\":[\"summary\"]}"
+    },
+    {
+      "id": "conflicting_scope",
+      "kind": "page_request",
+      "valid": false,
+      "raw": "{\"kind\":\"page_request\",\"schema_version\":1,\"scope_path\":\"/flow\",\"flow_name\":\"flow\",\"field_groups\":[\"summary\"]}"
+    },
+    {
+      "id": "invalid_path",
+      "kind": "page_request",
+      "valid": false,
+      "raw": "{\"kind\":\"page_request\",\"schema_version\":1,\"scope_path\":\"/flow/../task\",\"field_groups\":[\"summary\"]}"
+    },
+    {
+      "id": "unknown_group",
+      "kind": "page_request",
+      "valid": false,
+      "raw": "{\"kind\":\"page_request\",\"schema_version\":1,\"field_groups\":[\"summary\",\"future\"]}"
+    },
+    {
+      "id": "missing_page_identity",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"takler.flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    },
+    {
+      "id": "missing_flow_generation",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"takler.flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    },
+    {
+      "id": "invalid_status",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"future\",\"suspended\":false}]}"
+    },
+    {
+      "id": "wrong_bool",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":1,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"takler.flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    },
+    {
+      "id": "oversize_chunk",
+      "kind": "chunk",
+      "valid": false,
+      "raw": "{\"kind\":\"chunk\",\"schema_version\":1,\"blob_id\":\"blob-1\",\"offset\":0,\"total_bytes\":1,\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"data_base64\":\"e30=\",\"complete\":true}"
+    },
+    {
+      "id": "unknown_error",
+      "kind": "error",
+      "valid": false,
+      "raw": "{\"kind\":\"error\",\"schema_version\":1,\"code\":\"future\",\"message\":\"x\"}"
+    },
+    {
+      "id": "duplicate_key",
+      "kind": "capabilities_request",
+      "valid": false,
+      "raw": "{\"kind\":\"capabilities_request\",\"kind\":\"capabilities_request\",\"schema_version\":1}"
+    },
+    {
+      "id": "nan_value",
+      "kind": "chunk_request",
+      "valid": false,
+      "raw": "{\"kind\":\"chunk_request\",\"schema_version\":1,\"blob_id\":\"x\",\"offset\":NaN}"
+    },
+    {
+      "id": "unknown_detail_field",
+      "kind": "detail",
+      "valid": false,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"parameters\"],\"groups\":{\"parameters\":{\"user\":[],\"future\":\"x\"}}}"
+    },
+    {
+      "id": "redacted_with_value",
+      "kind": "detail",
+      "valid": false,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"parameters\"],\"groups\":{\"parameters\":{\"user\":[{\"name\":\"SECRET\",\"value\":\"leak\",\"redacted\":true}]}}}"
+    },
+    {
+      "id": "null_detail_group",
+      "kind": "detail",
+      "valid": false,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"parameters\"],\"groups\":{\"parameters\":null}}"
+    },
+    {
+      "id": "invalid_as_of",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"takler.flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    },
+    {
+      "id": "unknown_node_kind",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"future\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false}]}"
+    },
+    {
+      "id": "missing_suspended",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\"}]}"
+    },
+    {
+      "id": "wrong_definition_shape",
+      "kind": "detail",
+      "valid": false,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"definition\"],\"groups\":{\"definition\":{\"times\":\"tomorrow\"}}}"
+    },
+    {
+      "id": "bad_ancestor_context",
+      "kind": "detail",
+      "valid": false,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"parameters\"],\"groups\":{\"parameters\":{\"user\":[],\"ancestors\":[{\"source_path\":\"/flow\",\"user\":\"bad\"}]}}}"
+    },
+    {
+      "id": "valid_unknown_type",
+      "kind": "page",
+      "valid": true,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":true,\"next_cursor\":null,\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"vendor.special_flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    },
+    {
+      "id": "empty_cursor",
+      "kind": "page_request",
+      "valid": false,
+      "raw": "{\"kind\":\"page_request\",\"schema_version\":1,\"scope_path\":\"/flow\",\"flow_name\":null,\"depth\":1,\"field_groups\":[\"summary\"],\"cursor\":\"\"}"
+    },
+    {
+      "id": "empty_nonterminal",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":false,\"next_cursor\":\"cursor-1\",\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[]}"
+    },
+    {
+      "id": "empty_next_cursor",
+      "kind": "page",
+      "valid": false,
+      "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":false,\"next_cursor\":\"\",\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"takler.flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    }
+  ]
+}

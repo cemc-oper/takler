@@ -923,3 +923,204 @@ class TaklerServer:
             timeout,
             metadata,
             _registered_method=True)
+
+
+class TaklerQueryStub:
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetCapabilities = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/GetCapabilities',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
+        self.ReadPage = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/ReadPage',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
+        self.ReadDetail = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/ReadDetail',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
+        self.ReadDetailChunk = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/ReadDetailChunk',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
+
+
+class TaklerQueryServicer:
+    """Missing associated documentation comment in .proto file."""
+
+    def GetCapabilities(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadPage(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadDetail(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadDetailChunk(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_TaklerQueryServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetCapabilities': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetCapabilities,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+            'ReadPage': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadPage,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+            'ReadDetail': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadDetail,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+            'ReadDetailChunk': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadDetailChunk,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'takler_protocol.TaklerQuery', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('takler_protocol.TaklerQuery', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class TaklerQuery:
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def GetCapabilities(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/GetCapabilities',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadPage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/ReadPage',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadDetail(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/ReadDetail',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadDetailChunk(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/ReadDetailChunk',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
