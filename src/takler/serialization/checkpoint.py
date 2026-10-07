@@ -8,14 +8,22 @@ beginning a flow, or changing a limit through its scheduling hooks.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from posixpath import dirname, normpath
 from typing import Any, Annotated, Literal
 from uuid import UUID
 
+from lark import Lark
 from pydantic import Field, field_validator, model_validator
 
 from takler.core import Bunch, Flow, NodeStatus, Task
 from takler.core.bunch import ServerState
 from takler.core.calendar import Calendar
+from takler.core.expression_ast import AstNodePath, AstRoot, AstVariablePath
+from takler.core.expression_parser import (
+    ExpressionTransformer,
+    parse_trigger,
+    trigger_parser,
+)
 from takler.core.state import State
 from takler.schema.definition import (
     DefinitionError,
@@ -27,6 +35,7 @@ from takler.schema.definition import (
     RepeatDateDefinition,
     TimeDefinition,
     _decode_json,
+    parse_definition,
     unique,
 )
 from takler.serialization.builder import (
@@ -64,10 +73,24 @@ _TASK_FIELDS = {
 }
 _FLOW_FIELDS = {"begun", "calendar", "definition_generation"}
 _ROOT_FIELDS = {"root_attributes"}
+_CHECKPOINT_TRIGGER_PARSER = Lark(
+    trigger_parser.source_grammar, start="expression", parser="lalr"
+)
 
 
 def _path(node) -> str:
     return "/" if isinstance(node, Bunch) else node.node_path
+
+
+def _parse_checkpoint_expression(text):
+    """Parse frequent snapshot expressions quickly, preserving the full parser fallback."""
+    try:
+        return ExpressionTransformer().transform(_CHECKPOINT_TRIGGER_PARSER.parse(text))
+    except Exception:
+        try:
+            return parse_trigger(text)
+        except Exception:
+            raise DefinitionError("expression_syntax") from None
 
 
 _CALENDAR_TIMES = (
@@ -359,6 +382,165 @@ def _capture_node(node, registry) -> NodeRuntime:
     return NodeRuntime.model_validate(item)
 
 
+def _validate_checkpoint_view(
+    document: CheckpointDocument, definition, registry, *, live_nodes=None
+) -> None:
+    """Check the path-keyed view without constructing or changing a live tree."""
+    definitions = {}
+
+    def visit(item, path):
+        if path in definitions:
+            raise DefinitionError("invalid_structure")
+        definitions[path] = item
+        for child in getattr(item, "children", ()):
+            visit(child, f"{path.rstrip('/')}/{child.name}")
+        for flow in getattr(item, "flows", ()):
+            visit(flow, f"/{flow.name}")
+
+    visit(definition.root, "/")
+    runtime = document.runtime.nodes
+    _same_names(definitions, runtime)
+    root = runtime["/"]
+    if root.kind != "bunch" or root.root_attributes is None:
+        raise DefinitionError("invalid_runtime")
+
+    limits = {}
+    in_limits = {}
+
+    def referenced_path(owner_path, reference):
+        target_path = normpath(
+            reference
+            if reference.startswith("/")
+            else f"{dirname(owner_path)}/{reference}"
+        )
+        # Bunch uses "/" as its runtime key and "/<name>" as Node.node_path.
+        if target_path == f"/{definition.root.name}" and target_path not in definitions:
+            target_path = "/"
+        if target_path not in definitions:
+            raise DefinitionError("unresolved_reference")
+        if live_nodes is not None and not reference.startswith("/"):
+            referenced = live_nodes[owner_path].find_node(reference)
+            if referenced is None or _path(referenced) != target_path:
+                raise DefinitionError("unresolved_reference")
+        return target_path
+
+    for path, item in definitions.items():
+        state = runtime[path]
+        if state.kind != registry.by_id(item.type_id).kind:
+            raise DefinitionError("invalid_runtime")
+        attrs = root.root_attributes if path == "/" else item
+        _same_names((event.name for event in attrs.events), state.event_values)
+        _same_names((meter.name for meter in attrs.meters), state.meter_values)
+        _same_names((limit.name for limit in attrs.limits), state.limit_usage)
+        _same_names((time.time for time in attrs.times), state.time_free)
+        if (attrs.repeat is None) != (state.repeat_value is None):
+            raise DefinitionError("invalid_runtime")
+        if state.trigger_free and attrs.trigger is None:
+            raise DefinitionError("invalid_runtime")
+        if state.complete_trigger_free and attrs.complete_trigger is None:
+            raise DefinitionError("invalid_runtime")
+
+        def check_expression(ast):
+            if isinstance(ast, AstRoot):
+                check_expression(ast.left)
+                check_expression(ast.right)
+            elif isinstance(ast, AstVariablePath):
+                target_path = check_expression(ast.node)
+                if (
+                    live_nodes is not None
+                    and live_nodes[target_path].find_variable(ast.variable_name) is None
+                ):
+                    raise DefinitionError("unresolved_reference")
+            elif isinstance(ast, AstNodePath):
+                return referenced_path(path, ast.node_path)
+
+        for expression_text in (attrs.trigger, attrs.complete_trigger):
+            if expression_text is not None:
+                check_expression(_parse_checkpoint_expression(expression_text))
+        for meter in attrs.meters:
+            RuntimeMeter.model_validate(
+                {**meter.model_dump(), "value": state.meter_values[meter.name]}
+            )
+        for limit in attrs.limits:
+            usage = state.limit_usage[limit.name]
+            RuntimeLimit.model_validate({**limit.model_dump(), **usage.model_dump()})
+            limits[path, limit.name] = (limit, usage)
+        if attrs.repeat is not None:
+            RuntimeRepeat.model_validate(
+                {**attrs.repeat.model_dump(), "value": state.repeat_value}
+            )
+        in_limits[path] = attrs.in_limits
+
+    def resolve(owner_path, item):
+        if item.node_path is None:
+            target_path = owner_path
+            while True:
+                if (target_path, item.limit_name) in limits:
+                    break
+                if target_path == "/":
+                    raise DefinitionError("unresolved_reference")
+                target_path = dirname(target_path) or "/"
+        else:
+            reference = item.node_path
+            if (
+                not reference
+                or reference == "/"
+                or "//" in reference
+                or reference.endswith("/")
+                or ":" in reference
+                or "\0" in reference
+            ):
+                raise DefinitionError("invalid_reference")
+            target_path = referenced_path(owner_path, reference)
+            if (target_path, item.limit_name) not in limits:
+                raise DefinitionError("unresolved_reference")
+        if item.tokens > limits[target_path, item.limit_name][0].limit:
+            raise DefinitionError("invalid_reference")
+        return target_path, item.limit_name
+
+    resolved = {
+        path: [(resolve(path, item), item.tokens) for item in items]
+        for path, items in in_limits.items()
+    }
+    expected = {}
+    in_flight = set()
+    for path, state in runtime.items():
+        if state.kind != "task":
+            continue
+        flow_path = f"/{path.split('/')[1]}"
+        if state.definition_generation != runtime[flow_path].definition_generation:
+            raise DefinitionError("invalid_runtime")
+        if state.state.status not in (
+            NodeStatus.submitted.value,
+            NodeStatus.active.value,
+        ):
+            continue
+        in_flight.add(path)
+        if not state.attempt_id or not state.try_no:
+            raise DefinitionError("invalid_runtime")
+        seen = set()
+        current = path
+        while True:
+            for key, tokens in resolved[current]:
+                if key not in seen:
+                    expected.setdefault(key, {})[path] = tokens
+                    seen.add(key)
+            if current == "/":
+                break
+            current = dirname(current) or "/"
+
+    for key, (_, usage) in limits.items():
+        holders = expected.get(key, {})
+        if set(usage.node_paths) != set(holders) or usage.value != sum(
+            holders.values()
+        ):
+            raise DefinitionError("invalid_runtime")
+    _same_names(in_flight, document.secrets.job_passwords)
+    for path in in_flight:
+        if document.secrets.job_passwords[path].attempt_id != runtime[path].attempt_id:
+            raise DefinitionError("invalid_secret")
+
+
 def capture_checkpoint(
     bunch: Bunch, *, registry=None, saved_at: str | None = None
 ) -> CheckpointDocument:
@@ -369,16 +551,19 @@ def capture_checkpoint(
             definition = export_definition(
                 bunch, registry=registry, checkpoint_root=True
             )
-            nodes = {_path(node): _capture_node(node, registry) for node in walk(bunch)}
+            live_nodes = {_path(node): node for node in walk(bunch)}
+            nodes = {
+                path: _capture_node(node, registry) for path, node in live_nodes.items()
+            }
             passwords = {}
-            for node in walk(bunch):
+            for node in live_nodes.values():
                 if isinstance(node, Task) and node.state.node_status in _IN_FLIGHT:
                     if not node.attempt_id or not node.job_password:
                         raise DefinitionError("incomplete_checkpoint")
                     passwords[node.node_path] = JobSecret(
                         attempt_id=node.attempt_id, password=node.job_password
                     )
-            return CheckpointDocument(
+            document = CheckpointDocument(
                 format_version=FORMAT_VERSION,
                 saved_at=saved_at or datetime.now(timezone.utc).isoformat(),
                 definition=definition.model_dump(mode="json"),
@@ -393,6 +578,10 @@ def capture_checkpoint(
                     bunch.server_config.to_dict()
                 ),
             )
+            _validate_checkpoint_view(
+                document, definition, registry, live_nodes=live_nodes
+            )
+            return document
         except DefinitionError:
             raise
         except Exception:
@@ -540,6 +729,10 @@ def restore_checkpoint(
             )
             if not isinstance(root, Bunch):
                 raise DefinitionError("invalid_structure")
+            definition = parse_definition(
+                document.definition, model=registry.document_model()
+            )
+            _validate_checkpoint_view(document, definition, registry)
             nodes = {_path(node): node for node in walk(root)}
             _same_names(nodes, document.runtime.nodes)
             for path, node in nodes.items():

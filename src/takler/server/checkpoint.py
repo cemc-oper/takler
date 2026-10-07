@@ -381,6 +381,12 @@ class CheckpointManager:
             try:
                 payload = self.build_payload()
             except Exception as exc:
+                # A failed newer view must also supersede any older worker
+                # that has not entered the publication lock yet.
+                with self._publish_lock:
+                    if sequence > self._last_attempted_sequence:
+                        self._last_attempted_sequence = sequence
+                        self._last_attempt_succeeded = False
                 return sequence, None, "", exc
             saved_at = self._captured_at or datetime.now().astimezone().isoformat()
             return sequence, payload, saved_at, None

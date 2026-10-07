@@ -1,7 +1,4 @@
-"""FIX-01 contracts for Scheduler transitions and checkpoint publication.
-
-The remaining strict xfail records the publication defect assigned to FIX-03.
-"""
+"""Lifecycle and checkpoint publication contracts."""
 
 import json
 
@@ -24,9 +21,6 @@ from takler.server.scheduler import Scheduler
 
 
 TASK_PATH = "/f/c/t"
-PUBLICATION_BUG = pytest.mark.xfail(
-    strict=True, reason="FIX-03: invalid view must not replace valid checkpoint"
-)
 
 
 def limited_scheduler(capacity=1, active=False):
@@ -347,7 +341,6 @@ def test_delete_ancestor_in_limit_with_active_descendants_is_atomic():
     assert_recoverable(scheduler.bunch, 0, set())
 
 
-@PUBLICATION_BUG
 def test_two_invalid_saves_preserve_recoverable_main_and_backup(tmp_path):
     scheduler, _, _, task, limit = limited_scheduler()
     manager = CheckpointManager(
