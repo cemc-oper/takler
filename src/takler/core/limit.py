@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, Optional, Set, List, Dict
 
+from takler.exceptions import FlowStateError
+
 from .util import SerializationType
 
 
@@ -224,10 +226,10 @@ class InLimitManager:
         """
         Delete the :py:class:`~takler.core.limit.InLimit` with limit name ``name``.
 
-        The matched ``InLimit`` is removed from ``in_limit_list`` **first**, and then the tokens
-        occupied by the current node on the corresponding ``Limit`` are released. Doing it in this
-        order keeps ``in_limit()`` from seeing an item whose tokens have already been released while
-        the item itself is still in the list.
+        A container's in-limit cannot be removed while a descendant task is
+        in flight: its reservation would lose the reference needed to release
+        it later. A reservation on this node is reconciled against the
+        remaining local and ancestor references before committing the removal.
 
         Parameters
         ----------
@@ -241,20 +243,75 @@ class InLimitManager:
             tokens of the ``Limit``. ``False`` if there is no such ``InLimit``, and in that case
             ``in_limit_list`` is left unchanged.
         """
+        from .state import NodeStatus
+        from .task_node import Task
+
         target: Optional[InLimit] = None
         for index, item in enumerate(self.in_limit_list):
             if item.limit_name == name:
-                target = self.in_limit_list.pop(index)
+                target = item
                 break
 
         if target is None:
             return False
 
+        descendant_paths = set()
+        pending = list(self.node.children)
+        while pending:
+            descendant = pending.pop()
+            if isinstance(descendant, Task):
+                descendant_paths.add(descendant.node_path)
+                if descendant.state.node_status in (
+                    NodeStatus.submitted,
+                    NodeStatus.active,
+                ):
+                    raise FlowStateError(
+                        "cannot delete an ancestor in-limit with an in-flight descendant"
+                    )
+            pending.extend(descendant.children)
+
         if target.limit is None:
             self.resolve_in_limit(target)
 
-        if target.limit is not None:
-            target.limit.decrement(target.tokens, self.node.node_path)
+        limit = target.limit
+        node_path = self.node.node_path
+        if limit is not None and descendant_paths & limit.node_paths:
+            raise FlowStateError("cannot delete an in-limit with a descendant holder")
+
+        def effective_tokens(exclude=None):
+            current = self.node
+            while current is not None:
+                manager = self if current is self.node else current.in_limit_manager
+                for item in manager.in_limit_list:
+                    if item is exclude:
+                        continue
+                    if item.limit is None:
+                        manager.resolve_in_limit(item)
+                    if item.limit is limit:
+                        return item.tokens
+                current = current.parent
+            return None
+
+        old_tokens = (
+            effective_tokens()
+            if limit is not None and node_path in limit.node_paths
+            else None
+        )
+        if limit is not None and node_path in limit.node_paths:
+            if old_tokens is None or limit.value < old_tokens:
+                raise FlowStateError("limit reservation cannot be reconciled")
+        new_tokens = (
+            effective_tokens(exclude=target) if old_tokens is not None else None
+        )
+        if old_tokens is not None and new_tokens is not None:
+            if limit.value - old_tokens + new_tokens > limit.limit:
+                raise FlowStateError("in-limit deletion would exceed capacity")
+
+        self.in_limit_list.pop(index)
+        if old_tokens is not None and old_tokens != new_tokens:
+            limit.decrement(old_tokens, node_path)
+            if new_tokens is not None:
+                limit.increment(new_tokens, node_path)
 
         return True
 

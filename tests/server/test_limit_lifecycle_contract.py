@@ -1,7 +1,6 @@
 """FIX-01 contracts for Scheduler transitions and checkpoint publication.
 
-The strict xfails record defects assigned to FIX-02/03. Remove each marker when
-the corresponding implementation makes the asserted contract pass.
+The remaining strict xfail records the publication defect assigned to FIX-03.
 """
 
 import json
@@ -25,9 +24,6 @@ from takler.server.scheduler import Scheduler
 
 
 TASK_PATH = "/f/c/t"
-LIFECYCLE_BUG = pytest.mark.xfail(
-    strict=True, reason="FIX-02: lifecycle must release or retain correct holders"
-)
 PUBLICATION_BUG = pytest.mark.xfail(
     strict=True, reason="FIX-03: invalid view must not replace valid checkpoint"
 )
@@ -71,7 +67,6 @@ def test_in_flight_tree_roundtrips_before_requeue(active):
     assert_recoverable(scheduler.bunch, 0, set())
 
 
-@LIFECYCLE_BUG
 @pytest.mark.parametrize("active", [False, True])
 @pytest.mark.parametrize("target", [TASK_PATH, "/f/c", "/f"])
 def test_scheduler_requeue_releases_descendant_holders(target, active):
@@ -81,6 +76,29 @@ def test_scheduler_requeue_releases_descendant_holders(target, active):
     assert task.attempt_id is None
     assert (limit.value, limit.node_paths) == (0, set())
     assert task.check_dependencies()
+    assert_recoverable(scheduler.bunch, 0, set())
+
+
+def test_requeue_one_of_two_holders_preserves_the_other_and_is_idempotent():
+    scheduler, _, container, first, limit = limited_scheduler(capacity=2)
+    second = container.add_task("second")
+    assert second.run()
+    assert (limit.value, limit.node_paths) == (2, {TASK_PATH, second.node_path})
+    for _ in range(2):
+        assert (
+            scheduler.run_command_requeue(RequeueCommand(node_paths=[TASK_PATH])).flag
+            == 0
+        )
+        assert (limit.value, limit.node_paths) == (1, {second.node_path})
+        assert_recoverable(scheduler.bunch, 1, {second.node_path})
+    assert first.check_dependencies()
+    assert (
+        scheduler.run_command_requeue(
+            RequeueCommand(node_paths=[container.node_path])
+        ).flag
+        == 0
+    )
+    assert (limit.value, limit.node_paths) == (0, set())
     assert_recoverable(scheduler.bunch, 0, set())
 
 
@@ -107,7 +125,6 @@ def test_force_terminal_releases_holder(state):
     assert_recoverable(scheduler.bunch, 0, set())
 
 
-@LIFECYCLE_BUG
 @pytest.mark.parametrize("state", [ForceState.SUBMITTED, ForceState.ACTIVE])
 def test_force_in_flight_from_queued_preserves_recoverable_identity_and_holder(state):
     scheduler, _, _, task, limit = limited_scheduler()
@@ -130,7 +147,25 @@ def test_force_in_flight_from_queued_preserves_recoverable_identity_and_holder(s
     assert_recoverable(scheduler.bunch, 1, {TASK_PATH})
 
 
-@LIFECYCLE_BUG
+def test_recursive_force_in_flight_rejects_without_partial_status_change():
+    scheduler, flow, container, first, limit = limited_scheduler(capacity=2)
+    second = container.add_task("second")
+    second.requeue()
+    before = capture_checkpoint(scheduler.bunch).model_dump(mode="json")
+    response = scheduler.run_command_force(
+        ForceCommand(paths=[flow.node_path], state=ForceState.ACTIVE, recursive=True)
+    )
+    assert response.flag != 0
+    after = capture_checkpoint(scheduler.bunch).model_dump(mode="json")
+    assert after["runtime"] == before["runtime"]
+    assert (first.state.node_status, second.state.node_status) == (
+        NodeStatus.submitted,
+        NodeStatus.queued,
+    )
+    assert (limit.value, limit.node_paths) == (1, {TASK_PATH})
+    assert_recoverable(scheduler.bunch, 1, {TASK_PATH})
+
+
 @pytest.mark.parametrize("active", [False, True])
 def test_force_begin_resets_in_flight_descendant_holders(active):
     scheduler, _, _, task, limit = limited_scheduler(active=active)
@@ -173,7 +208,6 @@ def test_parent_and_local_limits_roundtrip_with_shared_reference():
     assert_recoverable(bunch, 0, set())
 
 
-@LIFECYCLE_BUG
 def test_operator_run_at_capacity_rejects_without_partial_mutation():
     bunch = Bunch()
     flow = bunch.add_flow("f")
@@ -191,8 +225,68 @@ def test_operator_run_at_capacity_rejects_without_partial_mutation():
     )
     assert response.flag != 0
     assert second.state.node_status is NodeStatus.queued
+    assert (second.try_no, second.attempt_id) == (0, None)
     assert (limit.value, limit.node_paths) == (1, {first.node_path})
     assert_recoverable(bunch, 1, {first.node_path})
+    with pytest.raises(FlowStateError, match="capacity"):
+        second.run()
+    assert (second.try_no, second.attempt_id) == (0, None)
+    assert (limit.value, limit.node_paths) == (1, {first.node_path})
+
+
+def test_before_run_capacity_change_blocks_body_and_restores_identity(monkeypatch):
+    bunch = Bunch()
+    flow = bunch.add_flow("f")
+    limit = flow.add_limit("slots", 1)
+    flow.add_in_limit("slots")
+    first = flow.add_task("first")
+    second = flow.add_task("second")
+    assert Scheduler(bunch).run_command_begin(BeginCommand(flow_name="f")).flag == 0
+    monkeypatch.setattr(second, "before_run", first.run)
+    with pytest.raises(FlowStateError, match="capacity"):
+        second.run()
+    assert (second.state.node_status, second.try_no, second.attempt_id) == (
+        NodeStatus.queued,
+        0,
+        None,
+    )
+    assert (limit.value, limit.node_paths) == (1, {first.node_path})
+    assert_recoverable(bunch, 1, {first.node_path})
+
+
+def test_delete_local_shared_limit_adjusts_holder_to_ancestor_tokens():
+    bunch = Bunch()
+    flow = bunch.add_flow("f")
+    limit = flow.add_limit("slots", 3)
+    flow.add_in_limit("slots", tokens=1)
+    task = flow.add_task("t")
+    task.add_in_limit("slots", "/f", tokens=2)
+    scheduler = Scheduler(bunch)
+    assert scheduler.run_command_begin(BeginCommand(flow_name="f")).flag == 0
+    assert task.run()
+    assert (limit.value, limit.node_paths) == (2, {"/f/t"})
+    assert task.in_limit_manager.delete_in_limit("slots")
+    assert (limit.value, limit.node_paths) == (1, {"/f/t"})
+    assert_recoverable(bunch, 1, {"/f/t"})
+    task.complete()
+    assert (limit.value, limit.node_paths) == (0, set())
+
+
+def test_delete_local_limit_rejects_fallback_over_capacity():
+    bunch = Bunch()
+    flow = bunch.add_flow("f")
+    limit = flow.add_limit("slots", 2)
+    flow.add_in_limit("slots", tokens=3)
+    task = flow.add_task("t")
+    local = task.add_in_limit("slots", "/f", tokens=1)
+    assert Scheduler(bunch).run_command_begin(BeginCommand(flow_name="f")).flag == 0
+    assert task.run()
+    with pytest.raises(FlowStateError, match="capacity"):
+        task.in_limit_manager.delete_in_limit("slots")
+    assert task.in_limit_manager.in_limit_list == [local]
+    assert (limit.value, limit.node_paths) == (1, {"/f/t"})
+    task.complete()
+    assert (limit.value, limit.node_paths) == (0, set())
 
 
 def test_repeat_rollover_releases_holder_and_roundtrips():
@@ -233,7 +327,6 @@ def test_replace_idle_flow_preserves_external_holder_and_roundtrips():
     assert restored.find_node("/f/replacement") is not None
 
 
-@LIFECYCLE_BUG
 def test_delete_ancestor_in_limit_with_active_descendants_is_atomic():
     scheduler, _, container, task, limit = limited_scheduler(capacity=2)
     other = container.add_task("other")
@@ -271,8 +364,8 @@ def test_two_invalid_saves_preserve_recoverable_main_and_backup(tmp_path):
         scheduler.run_command_requeue(RequeueCommand(node_paths=[TASK_PATH])).flag == 0
     )
     assert task.state.node_status is NodeStatus.queued
-    # FIX-02 will make this command release the token. Until then, FIX-03 must
-    # reject the inconsistent view before either valid file is replaced.
+    # Requeue now releases the token. Inject an inconsistent holder so FIX-03
+    # must reject the view before either valid file is replaced.
     if (limit.value, limit.node_paths) == (0, set()):
         limit.increment(1, TASK_PATH)
     assert [manager.write_checkpoint(), manager.write_checkpoint()] == [False, False]

@@ -16,6 +16,8 @@ def test_force_token_accounting(recursive, target):
     task = scheduler.bunch.find_node(TASK_PATH)
     limit = task.add_limit("slots", 1)
     task.add_in_limit("slots")
+    if recursive or target == TASK_PATH:
+        task.run()
     scheduler._force_path(target, "active", recursive)
     expected = 1 if recursive or target == TASK_PATH else 0
     assert limit.value == expected

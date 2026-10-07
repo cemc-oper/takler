@@ -1231,22 +1231,34 @@ class Node(ABC):
 
     def check_in_limit_up(self) -> bool:
         """
-        Check if all ``InLimit`` have enough tokens up along the tree.
+        Check capacity for the distinct Limits required by this node.
+
+        The nearest in-limit wins when the same Limit appears more than once
+        along the ancestry. A task that already holds a Limit does not need a
+        second reservation to retry its current path.
 
         Returns
         -------
         bool
             If all ``InLimit`` have enough tokens, return True.
         """
-        if not self.in_limit_manager.in_limit():
+        if self.unresolved_limits_up():
             return False
-
-        the_parent = self.parent
-        while the_parent is not None:
-            if not the_parent.in_limit_manager.in_limit():
-                return False
-            the_parent = the_parent.parent
-
+        seen = set()
+        current = self
+        while current is not None:
+            for item in current.in_limit_manager.in_limit_list:
+                limit = item.limit
+                if limit is None:
+                    return False
+                identity = id(limit)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                additional = 0 if self.node_path in limit.node_paths else item.tokens
+                if limit.value + additional > limit.limit:
+                    return False
+            current = current.parent
         return True
 
     def increment_in_limit(self, limit_set: Set[Limit]):

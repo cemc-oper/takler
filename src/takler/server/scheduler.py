@@ -730,10 +730,35 @@ class Scheduler:
                     f"state {state} is not supported for Node: {variable_path}",
                     value=state,
                 ) from exc
-            if node_status == NodeStatus.queued:
-                from takler.serialization.builder import walk
+            from takler.serialization.builder import walk
 
-                targets = walk(variable) if recursive else (variable,)
+            targets = tuple(walk(variable)) if recursive else (variable,)
+            if node_status in (NodeStatus.submitted, NodeStatus.active):
+                # A status override does not start a job. Preflight the whole
+                # recursive target before changing any status or reservation.
+                for target in targets:
+                    if not isinstance(target, Task):
+                        continue
+                    flow = target.get_flow()
+                    if (
+                        target.state.node_status
+                        not in (NodeStatus.submitted, NodeStatus.active)
+                        or target.try_no == 0
+                        or not target.attempt_id
+                        or not target.job_password
+                        or (
+                            flow is not None
+                            and target.definition_generation
+                            != flow.definition_generation
+                        )
+                    ):
+                        raise FlowStateError(
+                            "force in-flight status requires a current task attempt",
+                            flow_name=flow.name if flow is not None else None,
+                        )
+                    if not target.check_in_limit_up():
+                        raise FlowStateError("task limit has no capacity")
+            if node_status == NodeStatus.queued:
                 for target in targets:
                     if isinstance(target, Task):
                         target.clear_current_attempt()

@@ -1850,7 +1850,7 @@ def test_guide_attributes_in_limit_reference_resolution():
 
 def test_guide_attributes_limit_tokens_lifecycle():
     """guide/attributes/limit.rst 占用与释放 section: tokens are occupied at ``submitted``
-    and released at ``complete``/``aborted``; requeue does NOT release;
+    and released at ``complete``/``aborted`` or requeue;
     the same limit is occupied only once per task run even when several
     in-limit markers point at it; ``tokens`` occupies more than one token.
     """
@@ -1869,7 +1869,7 @@ def test_guide_attributes_limit_tokens_lifecycle():
     assert limit.value == 1  # occupied once despite two markers
 
     task1.requeue()
-    assert limit.value == 1  # requeue does not release
+    assert limit.value == 0  # requeue releases the old attempt's reservation
 
     task1.set_node_status(NodeStatus.submitted)
     task1.set_node_status(NodeStatus.complete)

@@ -2,6 +2,7 @@ import pytest
 
 from takler.core import Limit, InLimit, Flow, Task
 from takler.core.limit import InLimitManager
+from takler.exceptions import FlowStateError
 
 from ..conftest import SimpleFlow
 
@@ -563,7 +564,7 @@ def test_in_limit_manager_delete_in_limit_with_tokens():
     assert node_path in limit_two.node_paths
 
 
-def test_node_delete_in_limit_releases_tokens(flow_with_limit):
+def test_node_delete_in_limit_rejects_active_descendant(flow_with_limit):
     flow1 = flow_with_limit.flow1
     container1 = flow_with_limit.container1
     task1 = flow_with_limit.task1
@@ -575,10 +576,16 @@ def test_node_delete_in_limit_releases_tokens(flow_with_limit):
     assert total_limit.value == 1
     assert section_limit.value == 1
 
-    # container1 holds the section_limit InLimit, but the token is occupied with task1's path,
-    # so deleting on container1 does not release task1's token.
-    assert container1.in_limit_manager.delete_in_limit("section_limit")
-    assert container1.in_limit_manager.in_limit_list == []
+    # The descendant owns the reservation. Removing its ancestor reference
+    # would strand that holder when the task completes.
+    with pytest.raises(FlowStateError):
+        container1.in_limit_manager.delete_in_limit("section_limit")
+    assert container1.in_limit_manager.in_limit_list == [
+        flow_with_limit.section_limit_in_limit
+    ]
     assert section_limit.value == 1
 
+    task1.complete()
+    assert section_limit.value == 0
+    assert container1.in_limit_manager.delete_in_limit("section_limit")
     assert not container1.in_limit_manager.delete_in_limit("section_limit")

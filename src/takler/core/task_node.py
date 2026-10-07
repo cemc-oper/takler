@@ -309,6 +309,14 @@ class Task(Node):
         """
         ensure_synchronous_task(self)
         self._require_running()
+
+        def require_limit_capacity():
+            if self.unresolved_limits_up():
+                raise FlowStateError("task has unresolved in-limit reference")
+            if not self.check_in_limit_up():
+                raise FlowStateError("task limit has no capacity")
+
+        require_limit_capacity()
         # Allocate before any overridable hook, while preserving the existing
         # before_run -> do_run -> after_run template order for extensions.
         prior_attempt = {
@@ -341,6 +349,7 @@ class Task(Node):
             # A trusted extension hook may change service state. No task body
             # may start after that transition, and unused identity is restored.
             self._require_running()
+            require_limit_capacity()
         except (FlowStateError, UnsupportedValueError):
             restore_prior_attempt()
             raise
@@ -361,6 +370,9 @@ class Task(Node):
         self.try_no = 0
         self.clear_current_attempt()
         super(Task, self).requeue(reset_repeat=reset_repeat)
+        # Node.requeue changes status without side effects. Reconcile this
+        # task's reservation after the reset, including repeated requeues.
+        self.update_limits()
 
     def clear_current_attempt(self):
         """Discard the current run association before a future execution."""

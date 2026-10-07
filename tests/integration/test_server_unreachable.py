@@ -18,7 +18,7 @@ import pytest
 
 from takler.client.service_client import TaklerServiceClient
 from takler.core import Flow, NodeStatus
-from takler.protocol.commands import BeginCommand, ForceCommand
+from takler.protocol.commands import BeginCommand
 from takler.server import TaklerServer
 from takler.server.connect_config import get_port
 
@@ -143,11 +143,8 @@ def test_query_survives_a_five_minute_outage(
         first.bunch.add_flow(flow)
         await first.start()
         first.scheduler.run_command_begin(BeginCommand(flow_name="flow1"))
-        # Simulate an already submitted job with its run identity and password.
-        first.bunch.find_node(NODE_PATH).increment_try_no()
-        first.scheduler.run_command_force(
-            ForceCommand(paths=[NODE_PATH], state="submitted", recursive=False)
-        )
+        # A real Task.run transition creates the submitted identity and password.
+        assert first.bunch.find_node(NODE_PATH).run()
 
         # 2. The server goes away; the port is refused from here on.
         await _stop_listening(first)
