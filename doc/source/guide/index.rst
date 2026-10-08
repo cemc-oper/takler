@@ -42,5 +42,6 @@
    task-script
    job-management
    cli
+   query
    tui
    ecflow-differences

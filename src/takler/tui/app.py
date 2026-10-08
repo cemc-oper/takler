@@ -1,10 +1,9 @@
 """Main Textual application for the takler TUI.
 
-The app is the orchestrator: it owns the gRPC :class:`~takler.tui.service.TaklerTuiService`,
-runs the background refresh worker, routes a fetched
-:class:`~takler.tui.show_parser.ShowSnapshot` into the tree / tabs /
-toolbar, wires the per-node menus, and dispatches server control
-actions.
+The app owns :class:`~takler.tui.service.TaklerTuiService`, runs background
+initial-summary refreshes and selected-node detail reads, and routes the
+resulting compact view into the tree, tabs, and toolbar. It also dispatches
+server control actions.
 
 The visible pieces live in dedicated widgets:
 
@@ -46,7 +45,7 @@ from .menu import (
 )
 from .query_view import QueryTuiView
 from .service import TaklerTuiService
-from .show_parser import NodeInfo, ShowSnapshot, parse_show
+from .show_parser import NodeInfo, ShowSnapshot
 from .tabs import InfoTab, JobTab, OutputTab, ParametersTab, ScriptTab
 from .widgets import NodeTree, StatusBar, Toolbar
 
@@ -221,10 +220,9 @@ class TaklerTuiApp(App):
     def action_refresh(self) -> None:
         """Kick off a background refresh.
 
-        The gRPC ``show`` call and the (potentially expensive)
-        ``parse_show`` parsing run on a worker thread so the UI
-        stays responsive. Results are applied back on the main thread
-        via :meth:`_apply_snapshot`.
+        QueryDocument pagination and compact-view construction run on a worker
+        thread so the UI stays responsive. Results are applied on the main
+        thread via :meth:`_apply_snapshot`.
 
         Resets the auto-refresh countdown so a manual refresh also
         restarts the timer.
@@ -236,11 +234,14 @@ class TaklerTuiApp(App):
     @work(thread=True, exclusive=True, group="refresh")
     def _refresh_worker(self, sequence: int, scope_path: str) -> None:
         try:
-            if hasattr(self.service, "read_snapshot"):
-                compact = self.service.read_snapshot(
-                    scope_path=None if scope_path == "/" else scope_path,
-                    cancelled=lambda: sequence != self._refresh_seq,
-                )
+            compact = self.service.read_snapshot(
+                scope_path=None if scope_path == "/" else scope_path,
+                cancelled=lambda: sequence != self._refresh_seq,
+            )
+            if isinstance(compact, ShowSnapshot):
+                # Older widget test doubles return an already parsed view.
+                snapshot = compact
+            else:
                 snapshot = QueryTuiView(compact)
                 root_snapshot = (
                     compact
@@ -260,15 +261,6 @@ class TaklerTuiApp(App):
                 if root is None:
                     return
                 snapshot.apply_root_detail(root)
-            else:
-                payload = self.service.show(
-                    show_parameter=True,
-                    show_trigger=True,
-                    show_limit=True,
-                    show_event=True,
-                    show_meter=True,
-                )
-                snapshot = parse_show(payload)
         except Exception as exc:  # pragma: no cover - network errors
             if isinstance(exc, QueryResponseError) and exc.code == "cancelled":
                 return

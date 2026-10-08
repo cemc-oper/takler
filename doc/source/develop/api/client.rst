@@ -8,10 +8,13 @@
 服务客户端
 ----------
 
-``TaklerServiceClient`` 封装全部 16 个原有命令和 R2 初始查询方法；
+``TaklerServiceClient`` 封装原有命令和 R2 初始查询方法；
 重试与凭据在内部装配，调用方只需要 host 与 port 。
 ``query_snapshot`` 完整读取指定范围后返回只读摘要，``query_detail``
 按需取得独立实时采样的详情。长期连接可使用对应 ``run_query_*`` 方法。
+摘要只有所有页校验完成后才换入；``QueryDocument v1`` 目前声明
+``since=false``，没有增量同步或跨重启视图缓存。具体预算和错误处理见
+:doc:`/guide/query`。
 
 线路相关的一切 —— 连接生命周期、请求/响应编码、凭据 metadata 、重
 试循环 —— 都在 ``ClientTransport`` 抽象（ ``takler.client.transport``

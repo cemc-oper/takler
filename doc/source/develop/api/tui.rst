@@ -11,7 +11,9 @@ TUI
 ----------
 
 ``TaklerTuiApp`` 是 Textual 应用入口； ``TaklerTuiService`` 是
-``TaklerServiceClient`` 的薄封装，负责轮询 show 输出。
+``TaklerServiceClient`` 的薄封装，负责读取完整紧凑摘要，并对已选节点
+按需取详情。状态变化导致捕获冲突时只作有界重试；接口行为见
+:doc:`/guide/query`。
 
 .. automodule:: takler.tui.app
    :members:
@@ -19,12 +21,16 @@ TUI
 .. automodule:: takler.tui.service
    :members:
 
-show 解析与状态样式
--------------------
+查询视图与状态样式
+------------------
 
-``show_parser`` 把 show 命令的 JSON 载荷重建为只读视图
-（ ``ShowSnapshot`` / ``NodeInfo`` ）； ``state_style`` 把节点状态映
-射为终端样式。
+``query_view`` 将 QuerySnapshot 索引为惰性 TUI 视图，节点信息只在
+显示或选中时实例化。``show_parser`` 是旧全量 show 的只读解析器，
+仍供兼容接口和测试使用；当前 TUI 服务默认走紧凑查询。
+``state_style`` 把节点状态映射为终端样式。
+
+.. automodule:: takler.tui.query_view
+   :members:
 
 .. automodule:: takler.tui.show_parser
    :members:

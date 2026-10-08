@@ -1,10 +1,8 @@
 """Unit tests for :class:`takler.tui.service.TaklerTuiService`.
 
 The service is a thin wrapper over ``TaklerServiceClient``; these tests
-substitute a recording fake for the client (patched at the module
-attribute) and pin the mapping: lazy connection reuse, the ``show``
-flag set, ``ping``'s never-raise contract, and the control-command
-forwarding.
+substitute a recording fake for the client and pin compact query connection
+reuse, ``ping``'s never-raise contract, and control-command forwarding.
 """
 
 from __future__ import annotations
@@ -95,31 +93,18 @@ def test_address_properties_delegate_to_the_client(service: TaklerTuiService) ->
     assert service.listen_address == "fake-host:33083"
 
 
-def test_show_opens_the_connection_once_and_passes_all_flags(
+def test_query_snapshot_opens_and_reuses_connection(
     service: TaklerTuiService,
 ) -> None:
-    payload = service.show()
-    assert payload == "SHOW-PAYLOAD"
-
+    first = service.read_snapshot(scope_path="/flow")
+    assert first == {"scope_path": "/flow", "depth": None}
     inner = service._inner
     assert inner.started == 1
-    assert inner.transport.calls == [
-        (
-            Command.SHOW,
-            {
-                "show_trigger": True,
-                "show_parameter": True,
-                "show_limit": True,
-                "show_event": True,
-                "show_meter": True,
-            },
-        )
-    ]
-
-    # A second call reuses the connection.
-    service.show(show_meter=False)
+    assert inner.snapshot_calls == 1
+    assert inner.transport.calls == []
+    service.read_snapshot(scope_path="/other", depth=1)
     assert inner.started == 1
-    assert inner.transport.calls[1][1]["show_meter"] is False
+    assert inner.snapshot_calls == 2
 
 
 def test_query_snapshot_retries_only_transient_capture_changes(
@@ -189,7 +174,7 @@ def test_close_shuts_down_only_when_connected(service: TaklerTuiService) -> None
     service.close()  # never opened: no shutdown
     assert service._inner.shutdowns == 0
 
-    service.show()
+    service.read_snapshot()
     service.close()
     assert service._inner.shutdowns == 1
     service.close()  # idempotent

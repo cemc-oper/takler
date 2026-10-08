@@ -1,7 +1,7 @@
 """The client used by ``takler-client-py``, the TUI and user scripts.
 
 ``TaklerServiceClient`` is the command surface: one method per command, the
-console printing of a command's outcome and the ``show`` response parsing.
+console printing of a command's outcome, and QueryDocument v1 pagination.
 Everything the wire imposes -- the connection lifecycle, the request/response
 encoding, the Credential_Metadata, the retry loop with its per-attempt
 deadline and status-code mapping -- lives in the

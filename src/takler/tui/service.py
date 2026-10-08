@@ -1,8 +1,8 @@
 """Thin wrapper around :class:`~takler.client.TaklerServiceClient`.
 
 The CLI service client prints to stdout and creates / closes a connection on
-every call. The TUI wants the raw payload (for the show response) and a
-single long-lived connection; this module provides both.
+every call. The TUI keeps one connection for compact summary and selected
+detail reads, so this module returns structured query results.
 
 Everything on the wire goes through the client's
 :class:`~takler.client.transport.ClientTransport` abstraction (M3 task 8):
@@ -132,28 +132,6 @@ class TaklerTuiService:
                 return None
             self._ensure_open()
             return self._inner.run_query_detail(snapshot, path, groups)
-
-    def show(
-        self,
-        show_parameter: bool = True,
-        show_trigger: bool = True,
-        show_limit: bool = True,
-        show_event: bool = True,
-        show_meter: bool = True,
-    ) -> str:
-        """Return the raw ``show`` text payload."""
-        self._ensure_open()
-        response = self._inner.transport.call(
-            Command.SHOW,
-            {
-                "show_trigger": show_trigger,
-                "show_parameter": show_parameter,
-                "show_limit": show_limit,
-                "show_event": show_event,
-                "show_meter": show_meter,
-            },
-        )
-        return response.output
 
     def ping(self) -> Tuple[bool, str]:
         """Return ``(ok, message)``.

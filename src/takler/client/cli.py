@@ -588,7 +588,10 @@ def show(
     show_all: bool = typer.Option(False, help="show all items, ignore other options."),
 ):
     """
-    [query] print service status and bunch tree with current task attempts.
+    [query] read a complete paged summary; scope or depth limits the tree.
+
+    Detail flags sample selected nodes live after the summary (at most 4096).
+    If state changes during a large capture, retry or select a smaller scope.
     """
     if show_all:
         show_trigger = True

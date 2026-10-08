@@ -132,6 +132,24 @@ takler-client-py show
 
 For events, meters, time dependencies, families and more, see the [documentation](https://takler.readthedocs.io/) (中文文档).
 
+### Query a large tree
+
+`show` reads a bounded, paged summary with QueryDocument v1. Select a scope
+before requesting per-node details:
+
+```bash
+takler-client-py show --scope /test
+takler-client-py show --scope /test/t1 --show-parameter --show-trigger
+takler-tui --scope /test
+```
+
+The summary has one `as_of` time. Requested details are sampled later and
+marked as live; they are not a second copy of that snapshot. The TUI loads
+details when a node is selected and retains the last complete view if a refresh
+fails. This version does not support revision-based incremental updates or
+cross-restart query cache recovery. See the [initial query guide](doc/source/guide/query.rst)
+for pagination, limits, errors and the distinction from checkpoints.
+
 ## Recovery and control
 
 `server-status` shows whether the service is running or halted;

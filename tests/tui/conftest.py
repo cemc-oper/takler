@@ -1,13 +1,12 @@
 """Shared fixtures for the TUI test suite.
 
-The whole suite runs against an in-memory :class:`~takler.core.Bunch`
-serialised exactly the way the server's ``show`` command produces it
-(``json.dumps(project_show(bunch))``), so ``parse_show`` and every widget
-downstream of it see the same payload shape as in production.
+Legacy widget tests use an in-memory :class:`~takler.core.Bunch` serialized
+as the old ``show`` payload. Compact-query tests use QuerySnapshot and live
+detail projections instead; the production TUI service follows that path.
 
 :class:`FakeTuiService` is the test double for
 :class:`~takler.tui.service.TaklerTuiService`: it returns the canned
-payload for ``show`` and records every control call, so pilot tests can
+payload for the legacy app test seam and records every control call, so pilot tests can
 assert which command a key press or menu pick would have sent to the
 server without any network.
 """
@@ -105,6 +104,18 @@ class FakeTuiService:
     def show(self, **flags: Any) -> str:
         self.show_calls.append(flags)
         return self._payload
+
+    def read_snapshot(self, *, scope_path=None, depth=None, cancelled=None):
+        """Supply a legacy parsed view to widget tests without an old RPC."""
+        return parse_show(
+            self.show(
+                show_parameter=True,
+                show_trigger=True,
+                show_limit=True,
+                show_event=True,
+                show_meter=True,
+            )
+        )
 
     def ping(self) -> Tuple[bool, str]:
         self.calls.append(("ping", {}))

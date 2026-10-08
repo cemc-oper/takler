@@ -33,6 +33,7 @@
 --------
 
 ``QueryDocument v1`` 的 Python 基类由 HTTP 与 gRPC 共用；初始页与详情
-的完整版本、字段和预算契约见 R2 任务文档。
+的版本、字段和预算见 :doc:`/guide/query`。服务端只提供初始快照与
+按需详情；``since`` 与 reset 响应尚未启用。
 
 .. autoclass:: takler.protocol.query_v1.QueryModel

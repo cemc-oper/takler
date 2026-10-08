@@ -66,16 +66,26 @@ def test_show_cli_contract(client, transport, server_runner_factory, free_port_f
             "-c",
             """
 import os
+import json
 from takler.tui.service import TaklerTuiService
-from takler.tui.show_parser import parse_show
+from takler.tui.query_view import QueryTuiView
 with TaklerTuiService(os.environ['TAKLER_HOST'], os.environ['TAKLER_PORT'],
                      transport_name=os.environ['TAKLER_TRANSPORT']) as service:
-    output = service.show()
-view = parse_show(output)
-assert view.get('/flow/custom').suspended
+    snapshot = service.read_snapshot()
+    view = QueryTuiView(snapshot)
+    root = service.read_detail(snapshot, '/', ['parameters', 'service'])
+    view.apply_root_detail(root)
+    detail = service.read_detail(snapshot, '/flow/custom', ['parameters'])
+    view.apply_detail('/flow/custom', detail)
+assert view.get('/flow/custom').suspended is True
 assert view.lookup_parameter('/flow/custom', 'ROOT_SETTING') == 'root-value'
 assert view.resolve_parameter('/flow/custom', 'BUSINESS_TOKEN').redacted
-print(output)
+print(json.dumps({
+    'path': '/flow/custom',
+    'suspended': view.get('/flow/custom').suspended,
+    'root_setting': view.lookup_parameter('/flow/custom', 'ROOT_SETTING'),
+    'redacted': view.resolve_parameter('/flow/custom', 'BUSINESS_TOKEN').text,
+}))
 """,
         ]
     env = {k: v for k, v in os.environ.items() if not k.startswith("TAKLER_")}
@@ -88,7 +98,7 @@ print(output)
         no_proxy="127.0.0.1,localhost",
     )
     result = subprocess.run(
-        [*command, "show", "--show-all"],
+        [*command, *([] if client == "tui" else ["show", "--show-all"])],
         env=env,
         capture_output=True,
         text=True,
@@ -102,8 +112,10 @@ print(output)
     if client == "tui":
         payload = result.stdout
         data = json.loads(payload)
-        assert data["flows"][0]["children"][0]["node_kind"] == "task"
-        assert parse_show(payload).get("/flow/custom").suspended
+        assert data["path"] == "/flow/custom"
+        assert data["suspended"] is True
+        assert data["root_setting"] == "root-value"
+        assert data["redacted"] == "<redacted>"
     else:
         assert "|- custom [suspend (unknown)]" in result.stdout
     view = parse_show(
