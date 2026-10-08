@@ -11,6 +11,7 @@
    takler_client show --scope /forecast/prepare
    takler-client-py show --scope /forecast/prepare/task1 --show-parameter --show-trigger
    takler-client-py sync --flow forecast --depth 2 --polls 5 --interval 1
+   takler_client sync --flow forecast --depth 2 --polls 5 --interval 1s
    takler-tui --scope /forecast
 
 ``--scope`` 是规范绝对路径，``--flow`` 是 Flow 名称，两者不能同时使用。
@@ -67,13 +68,15 @@ Task attempt，身份失效时拒绝旧详情。不要把摘要和详情解释�
 QueryDocument v1 的 capabilities 声明 ``snapshot=true``、
 ``detail=true``、``since=true``。服务端提供摘要的 revision 增量、
 有界分页和 reset；初始页和增量目前只接受 ``summary`` 字段组。
-Python 客户端可用 ``run_query_since(snapshot)`` 在同一连接上读取并合并增量；
+Python 客户端可用 ``run_query_since(snapshot)`` 在同一连接上读取并合并增量，
+Go 客户端可用 ``ReadQuerySince(snapshot)``；
 只有完整批次通过校验后才推进水位。局部结构失效在结果的 ``stale_scopes``
 中标记，调用方可重取相应范围。服务端要求重置时抛出带
 ``reset_scope`` 的 ``QueryResponseError``，旧视图标为陈旧。高层
-``query_sync`` 和 CLI ``sync`` 会在失效或 reset 后重取所选范围，
+``query_sync`` / ``SyncQuery`` 和两端 CLI ``sync`` 会在失效或 reset 后重取所选范围，
 CLI 只输出最终完整视图。``--polls`` 决定初始快照后的增量读取次数，
-``--interval`` 决定后续读取间隔。Go 客户端与 TUI 的增量缓存仍待后续任务接入，
+``--interval`` 决定后续读取间隔；Python 接受秒数，Go 接受 ``1s`` 等时长。
+TUI 的增量缓存仍待后续任务接入，
 TUI 定时刷新仍重新取得所选范围的完整摘要；不提供跨重启查询缓存。查询不提供取消运行中
 任务、迟报、远程 artifact 或新的只读角色；其它与 ecFlow 的差异见
 :doc:`/guide/ecflow-differences`。本机 100k 完成态树测试不代表

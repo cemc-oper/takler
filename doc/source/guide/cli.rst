@@ -296,16 +296,19 @@ parameter 缺省不显示；显式启用时对所选节点实时读取详情，
 :doc:`/guide/attributes/index` ；分页、资源预算及失败处理见
 :doc:`/guide/query` 。
 
-``sync`` （仅 Python）
-~~~~~~~~~~~~~~~~~~~~~~~
+``sync``
+~~~~~~~~
 
 ::
 
     takler-client-py sync [--scope PATH | --flow NAME] [--depth N]
                           [--polls N] [--interval SECONDS]
+    takler_client sync [--scope PATH | --flow NAME] [--depth N]
+                       [--polls N] [--interval DURATION]
 
 先读完整摘要，再按 ``--polls`` 次数读取 revision 增量；默认一次，
-后续两次读取之间由 ``--interval`` 指定秒数，默认一秒。完整批次校验
+后续两次读取之间由 ``--interval`` 指定，Python 使用秒数，Go 使用 ``1s``
+等时长；默认一秒。完整批次校验
 成功后才推进水位，reset 或局部结构失效会重读所选范围。只在全部读取
 成功后打印最终摘要及 revision/session；当前进程结束后不保存缓存。
 持续界面刷新仍由 TUI 后续增量接入任务负责。
@@ -343,8 +346,8 @@ child 命令          init / complete / abort /            相同
 控制命令            requeue / suspend / resume / run /   相同
                     force / free-dep / load / replace /
                     begin / server-halt / server-resume
-查询命令            show / ping / coroutine /            相同，另外提供 sync
-                    server-status                        （show 的显示方式不同）
+查询命令            show / sync / ping / coroutine /     相同（show 的显示方式不同）
+                    server-status
 TLS / 鉴权选项      全部子命令接受 ``--tls-ca`` /        无命令行选项，只用环境变量与
                     ``--tls-server-name`` /              ``connect.yaml``
                     ``--secret-file``
