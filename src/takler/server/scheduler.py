@@ -44,6 +44,7 @@ from takler.protocol.commands import (
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
 from takler.server.batch import batch_targets
 from takler.server.zombie import ChildAction, ZombieDetector
+from takler.server.query_changes import QueryChanges
 
 
 logger = get_logger("server.scheduler")
@@ -80,6 +81,8 @@ class Scheduler:
         self.query_redacted_parameters = query_redacted_parameters
         self.query_state_lock = asyncio.Lock()
         self.query_revision = 0
+        self.query_changes = QueryChanges()
+        bunch._query_tracker = self.query_changes
         from takler.server.query_service import QueryService
 
         self.query_service = QueryService(self)
@@ -144,9 +147,11 @@ class Scheduler:
                 try:
                     async with self.query_state_lock:
                         self.query_revision += 1
+                        self.query_changes.begin()
                         try:
                             self._process_flow(name, flow, time_now)
                         finally:
+                            self.query_changes.end()
                             self.query_revision += 1
                 except Exception as exc:  # noqa: BLE001 - boundary is intentional
                     # Unified diagnostic log (task 3.5): always record the
@@ -251,6 +256,18 @@ class Scheduler:
         if self.bunch.server_state.status is ServerStatus.halted:
             return
         flow.resolve_dependencies()
+
+    def notify_query_change(
+        self, path: str, *groups: str, invalidate: bool = False
+    ) -> None:
+        """Public extension hook for visible writes outside built-in node methods.
+
+        Call this on the scheduler's writer after changing state. Use
+        ``invalidate=True`` when an extension cannot name affected fields or
+        changes structure. The enclosing command/flow transaction also commits
+        this hint when execution raises after a partial write.
+        """
+        self.query_changes.mark(path, *groups, invalidate=invalidate)
 
     def _require_begun(self, node: Optional[Node]):
         """Reject control operations on a node whose flow has not begun.
@@ -778,6 +795,7 @@ class Scheduler:
                 variable.set_node_status(node_status)
             return True
         elif isinstance(variable, Event):
+            old_value = variable.value
             if state == "set":
                 variable.value = True
             elif state == "clear":
@@ -786,6 +804,8 @@ class Scheduler:
                 raise UnsupportedValueError(
                     f"state {state} is not supported for Event", value=state
                 )
+            if variable.value != old_value:
+                host_node.notify_query_change("runtime")
             return True
         raise NodeTypeError("force requires a Node or Event", node_path=variable_path)
 
@@ -848,6 +868,7 @@ class Scheduler:
         if self.bunch.find_flow(flow.name) is not None:
             raise FlowStateError("flow already exists", flow_name=flow.name)
         self.bunch.add_flow(flow)
+        self.notify_query_change(flow.node_path, invalidate=True)
         # Loading registers the definition; only an explicit begin starts it.
         logger.info(f"load json flow...done [flow name: {flow.name}]")
 
@@ -855,7 +876,9 @@ class Scheduler:
         """Replace in memory and begin; periodic checkpoint persists later."""
         from takler.server.flow_replace import replace_flow
 
-        return replace_flow(self.bunch, command)
+        result = replace_flow(self.bunch, command)
+        self.notify_query_change(command.target_path, invalidate=True)
+        return result
 
     @batch_targets("flow_name")
     def run_command_begin(self, command: BeginCommand):
@@ -947,6 +970,7 @@ class Scheduler:
         if HaltCause.manual not in causes:
             causes.append(HaltCause.manual)
             self.bunch.server_state = ServerState.from_causes(causes)
+            self.notify_query_change("/", "service")
         return self.server_status_response(message="service halted in memory")
 
     def run_command_server_resume(self, command) -> ServerStatusResponse:
@@ -957,6 +981,7 @@ class Scheduler:
         ]
         if causes != self.bunch.server_state.halt_causes:
             self.bunch.server_state = ServerState.from_causes(causes)
+            self.notify_query_change("/", "service")
         if HaltCause.checkpoint_failure in causes:
             return self.server_status_response(
                 flag=33,

@@ -411,6 +411,34 @@ class CheckpointManager:
         reason: Optional[str],
     ) -> None:
         """Apply only the newest resolved write to the live service state."""
+        scheduler = getattr(self, "query_scheduler", None)
+        before = (
+            self.last_checkpoint_at,
+            self.checkpoint_failure_reason,
+            self.bunch.server_state,
+        )
+        if scheduler is not None:
+            scheduler.query_revision += 1
+        try:
+            self._apply_outcome(sequence, success, published, saved_at, reason)
+        finally:
+            if scheduler is not None:
+                if before != (
+                    self.last_checkpoint_at,
+                    self.checkpoint_failure_reason,
+                    self.bunch.server_state,
+                ):
+                    scheduler.notify_query_change("/", "service")
+                scheduler.query_revision += 1
+
+    def _apply_outcome(
+        self,
+        sequence: int,
+        success: bool,
+        published: bool,
+        saved_at: str,
+        reason: Optional[str],
+    ) -> None:
         if success and published and sequence > self._last_success_sequence:
             self.last_checkpoint_at = saved_at
             self._last_success_sequence = sequence

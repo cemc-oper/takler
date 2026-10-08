@@ -271,6 +271,7 @@ class TaklerServer:
             connect_config=connect_config,
         )
         self.scheduler.checkpoint_manager = self.checkpoint_manager
+        self.checkpoint_manager.query_scheduler = self.scheduler
 
     @property
     def security_settings(self) -> Optional[SecuritySettings]:

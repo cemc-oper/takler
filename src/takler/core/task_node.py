@@ -337,6 +337,7 @@ class Task(Node):
             )
         }
         Task.increment_try_no(self)
+        self.notify_query_change("summary", "runtime", "artifacts")
         self._run_identity_prepared = True
 
         def restore_prior_attempt():
@@ -367,6 +368,8 @@ class Task(Node):
             raise
 
     def requeue(self, reset_repeat: bool = True):
+        if self.try_no:
+            self.notify_query_change("runtime")
         self.try_no = 0
         self.clear_current_attempt()
         super(Task, self).requeue(reset_repeat=reset_repeat)
@@ -376,6 +379,21 @@ class Task(Node):
 
     def clear_current_attempt(self):
         """Discard the current run association before a future execution."""
+        if any(
+            getattr(self, field) is not None
+            for field in (
+                "attempt_id",
+                "task_id",
+                "aborted_reason",
+                "submitted_at",
+                "started_at",
+                "ended_at",
+                "job_path",
+                "jobout_path",
+                "orvix_info_path",
+            )
+        ):
+            self.notify_query_change("summary", "runtime", "artifacts")
         self.task_id = None
         self.aborted_reason = None
         self.job_password = None
@@ -396,6 +414,7 @@ class Task(Node):
 
     def init(self, task_id: str = ""):
         self.task_id = task_id
+        self.notify_query_change("runtime", "artifacts")
         if self.attempt_id is not None and self.started_at is None:
             self.started_at = datetime.now(timezone.utc).isoformat()
         self.set_node_status(node_status=NodeStatus.active)
@@ -403,6 +422,7 @@ class Task(Node):
         self.handle_status_change()
 
     def complete(self):
+        self.notify_query_change("runtime")
         if self.attempt_id is not None:
             self.ended_at = datetime.now(timezone.utc).isoformat()
         self.set_node_status(node_status=NodeStatus.complete)
@@ -410,6 +430,7 @@ class Task(Node):
         self.handle_status_change()
 
     def abort(self, reason: str = ""):
+        self.notify_query_change("runtime")
         if self.attempt_id is not None:
             self.ended_at = datetime.now(timezone.utc).isoformat()
         self.set_node_status(node_status=NodeStatus.aborted)
@@ -433,6 +454,7 @@ class Task(Node):
         self.submitted_at = None
         self.started_at = None
         self.ended_at = None
+        self.notify_query_change("summary", "runtime", "artifacts")
         self.job_path = None
         self.jobout_path = None
         self.orvix_info_path = None

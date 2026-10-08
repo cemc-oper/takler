@@ -75,6 +75,8 @@ class Limit:
             return
         self.node_paths.add(node_path)
         self.value += tokens
+        if self.node is not None:
+            self.node.notify_query_change("runtime")
 
     def decrement(self, tokens: int, node_path: str):
         """
@@ -95,13 +97,18 @@ class Limit:
         if self.value < 0:
             self.value = 0
             self.node_paths.clear()
+        if self.node is not None:
+            self.node.notify_query_change("runtime")
 
     def reset(self):
         """
         reset the limit. Clear node path list and set current value to 0.
         """
+        changed = self.value != 0
         self.node_paths.clear()
         self.value = 0
+        if changed and self.node is not None:
+            self.node.notify_query_change("runtime")
 
     # Serialization ----------------------------------------------------------
 

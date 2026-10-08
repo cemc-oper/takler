@@ -338,6 +338,7 @@ class Node(ABC):
         flow = self.get_flow()
         if flow is not None and flow.bunch is not None:
             flow.ensure_definition_generation(child_node)
+        self.notify_query_change(invalidate=True)
         return child_node
 
     def find_child_index(self, child: Union[str, Node]) -> int:
@@ -367,6 +368,7 @@ class Node(ABC):
         old_child = self.children[child_index]
         new_child_node.parent = self
         self.children[child_index] = new_child_node
+        self.notify_query_change(invalidate=True)
         return old_child
 
     def delete_child(self, child: Union[str, Node]) -> Node:
@@ -378,9 +380,12 @@ class Node(ABC):
             )
         child_node = self.children.pop(child_node_index)
         child_node.delete_children()
+        self.notify_query_change(invalidate=True)
         return child_node
 
     def delete_children(self):
+        if self.children:
+            self.notify_query_change(invalidate=True)
         while len(self.children) > 0:
             node = self.children.pop(0)
             node.delete_children()
@@ -432,6 +437,16 @@ class Node(ABC):
             return self.parent.get_bunch()
         else:
             return None
+
+    def notify_query_change(self, *groups: str, invalidate: bool = False) -> None:
+        """Report an extension's visible mutation to the ephemeral query index."""
+        root = self.get_root()
+        bunch = root.get_bunch()
+        if bunch is not None and bunch.find_flow(root.name) is not root:
+            return  # A replaced Flow may still be referenced by an old callback.
+        tracker = getattr(bunch if bunch is not None else root, "_query_tracker", None)
+        if tracker is not None:
+            tracker.mark(self.node_path, *groups, invalidate=invalidate)
 
     def get_flow(self) -> "Optional[Flow]":
         """
@@ -553,6 +568,7 @@ class Node(ABC):
             return
 
         self.state.node_status = node_status
+        self.notify_query_change("summary")
 
     def set_node_status(self, node_status: NodeStatus):
         """
@@ -621,6 +637,7 @@ class Node(ABC):
                 self.set_node_status_only(node_status=node_status)
             if self.repeat is not None:
                 if self.repeat.increment():
+                    self.notify_query_change("runtime")
                     self.requeue(reset_repeat=False)
                     self.swim_status_change_only()
                     return
@@ -687,6 +704,7 @@ class Node(ABC):
             expression.create_ast(self)
 
         self.trigger_expression = expression
+        self.notify_query_change("definition")
 
     def evaluate_trigger(self) -> bool:
         """
@@ -754,6 +772,7 @@ class Node(ABC):
             expression.create_ast(self)
 
         self.complete_trigger_expression = expression
+        self.notify_query_change("definition")
 
     def evaluate_complete_trigger(self) -> bool:
         if self.complete_trigger_expression is None:
@@ -850,6 +869,7 @@ class Node(ABC):
             for k, v in param.items():
                 p = Parameter(name=k, value=v)
                 self.user_parameters[k] = p
+                self.notify_query_change("parameters", invalidate=True)
         elif isinstance(param, list):
             if value is not None:
                 raise TypeError("value must be None if param is list.")
@@ -857,17 +877,20 @@ class Node(ABC):
                 if not isinstance(p, Parameter):
                     raise TypeError("param must be a list of Parameter.")
                 self.user_parameters[p.name] = p
+                self.notify_query_change("parameters", invalidate=True)
         elif isinstance(param, str):
             if value is None or isinstance(value, list) or isinstance(value, dict):
                 raise TypeError("value cannot be None/list/dict if param is str.")
             name = param
             p = Parameter(name=name, value=value)
             self.user_parameters[name] = p
+            self.notify_query_change("parameters", invalidate=True)
             return p
         elif isinstance(param, Parameter):
             if value is not None:
                 raise TypeError("value must be None if param is Parameter.")
             self.user_parameters[param.name] = param
+            self.notify_query_change("parameters", invalidate=True)
             return param
         else:
             raise TypeError(f"{param} is str, list, dict or Parameter.")
@@ -1014,12 +1037,16 @@ class Node(ABC):
 
         event = Event(name, initial_value=initial_value)
         self.events.append(event)
+        self.notify_query_change("definition", "runtime")
         return event
 
     def set_event(self, name: str, value: bool) -> bool:
         event = self.find_event(name)
         if event is not None:
+            old_value = event.value
             event.value = value
+            if event.value != old_value:
+                self.notify_query_change("runtime")
             return True
 
         return False
@@ -1036,7 +1063,10 @@ class Node(ABC):
     def reset_event(self, name: str) -> bool:
         event = self.find_event(name)
         if event is not None:
+            old_value = event.value
             event.reset()
+            if event.value != old_value:
+                self.notify_query_change("runtime")
             return True
 
         return False
@@ -1062,12 +1092,16 @@ class Node(ABC):
         """
         meter = Meter(name, min_value=min_value, max_value=max_value)
         self.meters.append(meter)
+        self.notify_query_change("definition", "runtime")
         return meter
 
     def set_meter(self, name: str, value: int) -> bool:
         meter = self.find_meter(name)
         if meter is not None:
+            old_value = meter.value
             meter.value = value
+            if meter.value != old_value:
+                self.notify_query_change("runtime")
             return True
 
         return False
@@ -1081,7 +1115,10 @@ class Node(ABC):
     def reset_meter(self, name: str) -> bool:
         meter = self.find_meter(name)
         if meter is not None:
+            old_value = meter.value
             meter.reset()
+            if meter.value != old_value:
+                self.notify_query_change("runtime")
             return True
 
         return False
@@ -1109,6 +1146,7 @@ class Node(ABC):
         """
         in_limit = InLimit(limit_name, node_path=node_path, tokens=tokens)
         self.in_limit_manager.add_in_limit(in_limit)
+        self.notify_query_change("definition")
         return in_limit
 
     def add_limit(self, name: str, limit: int) -> Limit:
@@ -1132,6 +1170,7 @@ class Node(ABC):
         item = Limit(name, limit)
         item.set_node(self)
         self.limits.append(item)
+        self.notify_query_change("definition", "runtime")
         return item
 
     def add_limit_object(self, limit: Limit) -> Limit:
@@ -1163,6 +1202,7 @@ class Node(ABC):
             )
         limit.set_node(self)
         self.limits.append(limit)
+        self.notify_query_change("definition", "runtime")
         return limit
 
     def find_limit(self, name: str) -> Optional[Limit]:
@@ -1322,6 +1362,7 @@ class Node(ABC):
             The ``r`` passed in.
         """
         self.repeat = Repeat(r)
+        self.notify_query_change("definition", "runtime")
         return r
 
     # Time Attribute -----------------------------------------------------------
@@ -1341,6 +1382,7 @@ class Node(ABC):
         """
         time_attr = TimeAttribute(time)
         self.times.append(time_attr)
+        self.notify_query_change("definition")
         return time_attr
 
     def add_time_attribute(self, time_attr: TimeAttribute) -> TimeAttribute:
@@ -1363,6 +1405,7 @@ class Node(ABC):
             The ``time_attr`` passed in.
         """
         self.times.append(time_attr)
+        self.notify_query_change("definition")
         return time_attr
 
     def resolve_time_dependencies(self) -> bool:
@@ -1407,6 +1450,17 @@ class Node(ABC):
 
         Requeue operation sets node's status to ``self.default_node_status`` (``NodeStatus.queued`` by default)
         """
+        if (
+            any(event.value != event.initial_value for event in self.events)
+            or any(meter.value != meter.min_value for meter in self.meters)
+            or (
+                reset_repeat
+                and self.repeat is not None
+                and self.repeat.r is not None
+                and self.repeat.value() != self.repeat.start()
+            )
+        ):
+            self.notify_query_change("runtime")
         self.set_node_status_only(self.default_node_status)
 
         # reset complete trigger
@@ -1439,13 +1493,17 @@ class Node(ABC):
 
         Suspended nodes does not run automatically, see ``Node.resolve_dependencies`` method.
         """
-        self.state.suspended = True
+        if not self.state.suspended:
+            self.state.suspended = True
+            self.notify_query_change("summary")
 
     def resume(self):
         """
         Resume the node.
         """
-        self.state.suspended = False
+        if self.state.suspended:
+            self.state.suspended = False
+            self.notify_query_change("summary")
 
     def free_dependencies(
         self, dep_type: Optional[Literal["all", "time", "trigger"]] = None

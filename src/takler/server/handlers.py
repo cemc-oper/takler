@@ -331,6 +331,7 @@ class CommandHandlers:
             )
             if mutates:
                 self.scheduler.query_revision += 1
+                self.scheduler.query_changes.begin()
             try:
                 return await self._handle_command(
                     method_name,
@@ -377,6 +378,7 @@ class CommandHandlers:
                 )
             finally:
                 if mutates:
+                    self.scheduler.query_changes.end()
                     self.scheduler.query_revision += 1
 
     async def handle(

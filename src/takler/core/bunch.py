@@ -66,6 +66,7 @@ class Bunch(NodeContainer):
             limit.node = self
         for child in self.children:
             child.parent = self
+        self.notify_query_change(invalidate=True)
 
     # Attr ------------------------------------------------
 
@@ -97,6 +98,7 @@ class Bunch(NodeContainer):
         flow.ensure_definition_generation()
         self.flows[flow.name] = flow
         flow.bunch = self
+        self.notify_query_change(invalidate=True)
         return flow
 
     def validate_limit_references(self) -> List[str]:
@@ -121,6 +123,7 @@ class Bunch(NodeContainer):
             )
 
         flow = self.flows.pop(flow_name)
+        self.notify_query_change(invalidate=True)
 
         return flow
 

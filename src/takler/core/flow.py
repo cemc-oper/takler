@@ -128,7 +128,10 @@ class Flow(NodeContainer):
         ----------
         time
         """
+        previous = self.calendar.flow_time
         self.calendar.update(time)
+        if self.calendar.flow_time != previous:
+            self.notify_query_change("runtime")
         self.update_generated_parameters()
         self.calendar_changed(self.calendar)
 
@@ -178,6 +181,7 @@ class Flow(NodeContainer):
         self.requeue_calendar()
         super(Flow, self).requeue()
         self.begun = True
+        self.notify_query_change("runtime")
 
 
 class FlowGeneratedParameters(BaseModel):
