@@ -28,3 +28,11 @@
 
 .. automodule:: takler.protocol.error_code
    :members:
+
+查询 DTO
+--------
+
+``QueryDocument v1`` 的 Python 基类由 HTTP 与 gRPC 共用；初始页与详情
+的完整版本、字段和预算契约见 R2 任务文档。
+
+.. autoclass:: takler.protocol.query_v1.QueryModel

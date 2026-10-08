@@ -128,6 +128,7 @@ class SummaryNode(QueryModel):
     type_id: StrictStr
     status: StrictStr
     suspended: StrictBool
+    attempt_id: StrictStr | None = None
 
     @model_validator(mode="after")
     def validate_node(self):
@@ -136,6 +137,10 @@ class SummaryNode(QueryModel):
             self.node_kind not in KINDS
             or self.status not in STATUSES
             or not self.type_id
+            or (
+                self.attempt_id is not None
+                and (self.node_kind != "task" or not self.attempt_id)
+            )
         ):
             raise ValueError("invalid summary node")
         return self

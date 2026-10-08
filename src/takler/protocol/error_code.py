@@ -28,6 +28,7 @@ from takler.exceptions import (
     NodeNotFoundError,
     NodeTypeError,
     PermissionDeniedError,
+    QueryResponseError,
     ServerResponseError,
     ServerHaltedError,
     TaklerError,
@@ -107,7 +108,9 @@ ERROR_NAME_BY_CODE: Dict[int, str] = {
 def error_code_for_exception(exc: BaseException) -> int:
     """Return the Error_Code that classifies ``exc``.
 
-    The lookup uses the exact exception type and does not walk the MRO, so a
+    QueryDocument failures reuse the existing request/server response codes
+    according to their typed query code. Other lookups use the exact exception
+    type and do not walk the MRO, so a
     ``TaklerError`` subclass without its own code falls back to
     :data:`GENERIC_TAKLER_ERROR` instead of borrowing an ancestor's, more
     specific, code. Anything that is not a ``TaklerError`` maps to
@@ -119,6 +122,20 @@ def error_code_for_exception(exc: BaseException) -> int:
     Returns:
         The classification code to put into ``ServiceResponse.flag``.
     """
+    if type(exc) is QueryResponseError:
+        return (
+            15
+            if exc.code
+            in {
+                "invalid_request",
+                "unsupported_version",
+                "unsupported_capability",
+                "permission_denied",
+                "stale_identity",
+                "field_too_large",
+            }
+            else 42
+        )
     code = ERROR_CODE_BY_TYPE.get(type(exc))
     if code is not None:
         return code

@@ -281,15 +281,18 @@ invalid_request（flag=15）；两种失败均非零退出且旧树不变。
 ::
 
     takler-client-py show [--show-trigger / --no-show-trigger]
+                          [--scope PATH | --flow NAME] [--depth N]
                           [--show-parameter / --no-show-parameter]
                           [--show-limit / --no-show-limit]
                           [--show-event / --no-show-event]
                           [--show-meter / --no-show-meter]
                           [--show-all / --no-show-all]
 
-以文本树形式打印 bunch 的全部节点。 limit 、 event 、 meter 缺省
-显示， trigger 与 parameter 缺省不显示； ``--show-all`` 等价于全部
-打开（覆盖其余开关）。树中各属性的含义见
+默认分批读取并打印 bunch 摘要； ``--scope`` 、 ``--flow`` 和
+``--depth`` 限定读取范围与相对深度。limit、event、meter、trigger 和
+parameter 缺省不显示；显式启用时对所选节点实时读取详情，
+``--show-all`` 等价于全部打开（覆盖其余详情开关）。详情有自己的采样时点，
+不能视为初始摘要的同一时刻状态。树中各属性的含义见
 :doc:`/guide/attributes/index` 。
 
 ``ping``

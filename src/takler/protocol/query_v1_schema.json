@@ -182,6 +182,18 @@
             "suspended": {
               "title": "Suspended",
               "type": "boolean"
+            },
+            "attempt_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Attempt Id"
             }
           },
           "required": [

@@ -362,6 +362,7 @@ def test_non_retryable_status_table_is_exact() -> None:
         404: InvalidRequestError,
         405: InvalidRequestError,
         415: InvalidRequestError,
+        413: InvalidRequestError,
     }
     assert not (RETRYABLE_HTTP_STATUSES & set(NON_RETRYABLE_EXCEPTION_BY_HTTP_STATUS))
 

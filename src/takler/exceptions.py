@@ -41,6 +41,7 @@ __all__ = [
     "ServerResponseError",
     "PermissionDeniedError",
     "SecurityConfigError",
+    "QueryResponseError",
 ]
 
 
@@ -171,6 +172,15 @@ class ClientConnectionError(TransportError):
 
 class ServerResponseError(TaklerError):
     """The server response cannot be parsed, or is itself an error text."""
+
+
+class QueryResponseError(TaklerError):
+    """A typed QueryDocument failure returned by the server or client budget."""
+
+    def __init__(self, code: str, message: str = "", reset_scope: str | None = None):
+        super().__init__(f"{code}: {message}" if message else code)
+        self.code = code
+        self.reset_scope = reset_scope
 
 
 class PermissionDeniedError(TaklerError):

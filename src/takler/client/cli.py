@@ -577,11 +577,14 @@ def server_resume(
 def show(
     host: str = typer.Option(None, help=HOST_HELP_STRING),
     port: str = typer.Option(None, help=PORT_HELP_STRING),
+    scope_path: Optional[str] = typer.Option(None, "--scope", help="subtree path"),
+    flow_name: Optional[str] = typer.Option(None, "--flow", help="flow name"),
+    depth: Optional[int] = typer.Option(None, "--depth", help="relative tree depth"),
     show_trigger: bool = typer.Option(False, help="show triggers"),
     show_parameter: bool = typer.Option(False, help="show parameters"),
-    show_limit: bool = typer.Option(True, help="show limits"),
-    show_event: bool = typer.Option(True, help="show events"),
-    show_meter: bool = typer.Option(True, help="show meters"),
+    show_limit: bool = typer.Option(False, help="show limits"),
+    show_event: bool = typer.Option(False, help="show events"),
+    show_meter: bool = typer.Option(False, help="show meters"),
     show_all: bool = typer.Option(False, help="show all items, ignore other options."),
 ):
     """
@@ -597,7 +600,10 @@ def show(
     _run_client_command(
         host,
         port,
-        lambda client: client.show(
+        lambda client: client.query_show(
+            scope_path=scope_path,
+            flow_name=flow_name,
+            depth=depth,
             show_trigger=show_trigger,
             show_parameter=show_parameter,
             show_limit=show_limit,

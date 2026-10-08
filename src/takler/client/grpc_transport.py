@@ -70,6 +70,11 @@ from takler.logging import get_logger
 from takler.protocol.commands import Command, ProtocolModel
 from takler.server.protocol import adapter
 from takler.server.protocol.takler_pb2_grpc import TaklerServerStub
+from takler.server.protocol.takler_pb2_grpc import TaklerQueryStub
+from takler.server.protocol.query_adapter import query_from_pb2, query_to_pb2
+from takler.protocol.query_v1 import QueryModel
+from takler.protocol.wire import WireError
+from takler.exceptions import ServerResponseError, TransportError
 
 
 logger = get_logger("client")
@@ -309,6 +314,7 @@ class GrpcTransport(ClientTransport):
         self.port: str = str(port)
         self.channel: Optional[grpc.Channel] = None
         self.stub: Optional[TaklerServerStub] = None
+        self.query_stub: Optional[TaklerQueryStub] = None
         self.single_timeout: float = single_timeout
         self.retry_window: Optional[float] = retry_window
         self.clock: Callable[[], float] = clock
@@ -355,6 +361,7 @@ class GrpcTransport(ClientTransport):
 
     def create_stub(self):
         self.stub = TaklerServerStub(self.channel)
+        self.query_stub = TaklerQueryStub(self.channel)
         return self.stub
 
     def open(self) -> None:
@@ -373,10 +380,39 @@ class GrpcTransport(ClientTransport):
         """
         if self.channel is None:
             self.stub = None
+            self.query_stub = None
             return
         self.channel.close()
         self.channel = None
         self.stub = None
+        self.query_stub = None
+
+    def query(self, document: QueryModel) -> QueryModel:
+        if self.query_stub is None:
+            raise TransportError("query transport is not open")
+        method = {
+            "capabilities_request": "GetCapabilities",
+            "page_request": "ReadPage",
+            "detail_request": "ReadDetail",
+            "chunk_request": "ReadDetailChunk",
+        }.get(document.kind)
+        if method is None:
+            raise InvalidRequestError("unsupported query request kind")
+        rpc = getattr(self.query_stub, method)
+        payload = query_to_pb2(document)
+        policy = self._retry_policy(CommandKind.QUERY)
+        metadata = self._build_metadata(CommandKind.QUERY)
+        response = run_with_retry(
+            policy,
+            f"query {method}",
+            self.listen_address,
+            lambda: rpc(payload, timeout=policy.single_timeout, metadata=metadata),
+            classify_grpc_error,
+        )
+        try:
+            return query_from_pb2(response)
+        except WireError:
+            raise ServerResponseError("invalid query response") from None
 
     # The call ---------------------------------------------------------
 

@@ -46,6 +46,11 @@ from takler.exceptions import (
 )
 from takler.logging import get_logger
 from takler.protocol.commands import Command, ProtocolModel
+from takler.protocol.query_v1 import (
+    QueryModel,
+    decode_query_document,
+    encode_query_document,
+)
 from takler.protocol.envelope import Envelope
 from takler.protocol.wire import (
     READ_ONLY,
@@ -93,6 +98,7 @@ NON_RETRYABLE_EXCEPTION_BY_HTTP_STATUS = {
     404: InvalidRequestError,
     405: InvalidRequestError,
     415: InvalidRequestError,
+    413: InvalidRequestError,
 }
 
 #: httpx transport errors that mean "the server could not be reached or the
@@ -449,6 +455,48 @@ class HttpTransport(ClientTransport):
             validate_batch_response(command, payload, decoded)
             if command in BATCH_COMMANDS
             else decoded
+        )
+
+    def query(self, document: QueryModel) -> QueryModel:
+        if self.client is None:
+            raise TransportError("query transport is not open")
+        route = {
+            "capabilities_request": "capabilities",
+            "page_request": "pages",
+            "detail_request": "details",
+            "chunk_request": "chunks",
+        }.get(document.kind)
+        if route is None:
+            raise InvalidRequestError("unsupported query request kind")
+        body = encode_query_document(document)
+        headers = dict(build_credential_pairs(CommandKind.QUERY, self.secret_file))
+        headers["content-type"] = "application/json"
+        policy = self._retry_policy(CommandKind.QUERY)
+
+        def attempt():
+            response = self.client.post(
+                f"/v1/query/{route}",
+                content=body,
+                headers=headers,
+                timeout=policy.single_timeout,
+            )
+            if response.status_code != 200:
+                raise _HttpStatusFailure(
+                    response.status_code, _response_details(response)
+                )
+            if not is_json_content_type(response.headers.get("content-type", "")):
+                raise ServerResponseError("invalid query response content type")
+            try:
+                return decode_query_document(response.content)
+            except WireError:
+                raise ServerResponseError("invalid query response") from None
+
+        return run_with_retry(
+            policy,
+            f"query {route}",
+            self.listen_address,
+            attempt,
+            classify_http_error,
         )
 
     def _retry_policy(self, kind: CommandKind) -> RetryPolicy:

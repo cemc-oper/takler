@@ -61,6 +61,7 @@ from takler.client.retry import CommandKind
 from takler.exceptions import TaklerError
 from takler.logging import get_logger
 from takler.protocol.commands import Command, ProtocolModel
+from takler.protocol.query_v1 import QueryModel
 from takler.server.connect_config import ConnectConfig
 
 __all__ = [
@@ -131,6 +132,10 @@ class ClientTransport(Protocol):
                 (requirement 9.5).
             TransportError: Any other transport-level failure.
         """
+        ...
+
+    def query(self, document: QueryModel) -> QueryModel:
+        """Send a QueryDocument v1 request and decode its typed response."""
         ...
 
 

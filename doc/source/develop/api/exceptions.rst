@@ -29,6 +29,7 @@ takler 自有异常全部定义在 ``takler.exceptions`` ，根类是
     * :py:exc:`~takler.exceptions.ClientConnectionError`
 
   * :py:exc:`~takler.exceptions.ServerResponseError`
+  * :py:exc:`~takler.exceptions.QueryResponseError`
   * :py:exc:`~takler.exceptions.PermissionDeniedError`
   * :py:exc:`~takler.exceptions.SecurityConfigError`
 
@@ -56,5 +57,6 @@ takler 自有异常全部定义在 ``takler.exceptions`` ，根类是
    takler.exceptions.TransportError
    takler.exceptions.ClientConnectionError
    takler.exceptions.ServerResponseError
+   takler.exceptions.QueryResponseError
    takler.exceptions.PermissionDeniedError
    takler.exceptions.SecurityConfigError

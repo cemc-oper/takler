@@ -31,6 +31,7 @@ from takler.exceptions import (
     JobSubmissionError,
     NodeNotFoundError,
     PermissionDeniedError,
+    QueryResponseError,
     ServerResponseError,
     TaklerError,
     TransportError,
@@ -184,3 +185,14 @@ def test_exit_code_module_only_depends_on_the_shared_table():
                 alias.name for alias in node.names if alias.name.startswith("takler")
             )
     assert takler_imports == {"takler.protocol.error_code"}
+
+
+def test_query_failure_exit_classification_uses_shared_error_code():
+    for code, expected in [
+        ("invalid_request", EXIT_REQUEST_ERROR),
+        ("stale_identity", EXIT_REQUEST_ERROR),
+        ("snapshot_expired", EXIT_SERVER_ERROR),
+        ("resource_exhausted", EXIT_SERVER_ERROR),
+    ]:
+        error = QueryResponseError(code, "query failed")
+        assert exit_code_for_exception(error) == expected

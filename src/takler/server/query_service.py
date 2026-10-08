@@ -229,7 +229,9 @@ class QueryService:
             node_size = (
                 len(
                     json.dumps(
-                        node.model_dump(), ensure_ascii=False, separators=(",", ":")
+                        node.model_dump(exclude_unset=True),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
                     ).encode()
                 )
                 + 2

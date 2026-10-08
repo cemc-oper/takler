@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import sys
 import time
+import tempfile
+import shutil
 from datetime import datetime
 from typing import Callable, List, Optional, TypeVar, Union
 
@@ -47,6 +49,7 @@ from takler.client.transport import (
     build_client_transport,
     resolve_transport,
 )
+from takler.client.query_client import QueryClient, QuerySnapshot, print_query_show
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 from takler.query import parse_show
 from takler.exceptions import ServerResponseError
@@ -171,6 +174,7 @@ class TaklerServiceClient:
                 secret_file=resolve_secret_file(secret_file, connect_config),
             )
         self.transport: ClientTransport = transport
+        self.query_client = QueryClient(transport)
 
     # Address and TLS knobs delegate to the transport, so the long-standing
     # attribute surface stays valid -- and stays writable, which is what the
@@ -599,6 +603,103 @@ class TaklerServiceClient:
         return response
 
     # Query command ----------------------------------------------------
+
+    def query_snapshot(
+        self,
+        *,
+        scope_path: str | None = None,
+        flow_name: str | None = None,
+        depth: int | None = None,
+    ) -> QuerySnapshot:
+        return self._guarded(
+            lambda: self.run_query_snapshot(
+                scope_path=scope_path,
+                flow_name=flow_name,
+                depth=depth,
+            )
+        )
+
+    def run_query_snapshot(
+        self,
+        *,
+        scope_path: str | None = None,
+        flow_name: str | None = None,
+        depth: int | None = None,
+    ) -> QuerySnapshot:
+        return self.query_client.read_snapshot(
+            scope_path=scope_path,
+            flow_name=flow_name,
+            depth=depth,
+        )
+
+    def query_detail(self, snapshot: QuerySnapshot, path: str, field_groups: list[str]):
+        return self._guarded(
+            lambda: self.run_query_detail(snapshot, path, field_groups)
+        )
+
+    def run_query_detail(
+        self, snapshot: QuerySnapshot, path: str, field_groups: list[str]
+    ):
+        return self.query_client.read_detail(snapshot, path, field_groups)
+
+    def query_show(
+        self,
+        *,
+        scope_path: str | None = None,
+        flow_name: str | None = None,
+        depth: int | None = None,
+        show_parameter: bool = False,
+        show_trigger: bool = False,
+        show_limit: bool = False,
+        show_event: bool = False,
+        show_meter: bool = False,
+    ) -> QuerySnapshot:
+        return self._guarded(
+            lambda: self.run_query_show(
+                scope_path=scope_path,
+                flow_name=flow_name,
+                depth=depth,
+                show_parameter=show_parameter,
+                show_trigger=show_trigger,
+                show_limit=show_limit,
+                show_event=show_event,
+                show_meter=show_meter,
+            )
+        )
+
+    def run_query_show(
+        self,
+        *,
+        scope_path: str | None = None,
+        flow_name: str | None = None,
+        depth: int | None = None,
+        show_parameter: bool = False,
+        show_trigger: bool = False,
+        show_limit: bool = False,
+        show_event: bool = False,
+        show_meter: bool = False,
+    ) -> QuerySnapshot:
+        snapshot = self.run_query_snapshot(
+            scope_path=scope_path,
+            flow_name=flow_name,
+            depth=depth,
+        )
+        with tempfile.SpooledTemporaryFile(
+            max_size=1_048_576, mode="w+t", encoding="utf-8"
+        ) as output:
+            print_query_show(
+                snapshot,
+                self.run_query_detail,
+                output,
+                show_parameter=show_parameter,
+                show_trigger=show_trigger,
+                show_limit=show_limit,
+                show_event=show_event,
+                show_meter=show_meter,
+            )
+            output.seek(0)
+            shutil.copyfileobj(output, sys.stdout)
+        return snapshot
 
     def server_status(self):
         return self._guarded(self.run_request_server_status)

@@ -65,16 +65,16 @@ def iter_query_summaries(
     while pending:
         node, path, level, current_generation = pending.pop()
         kind, type_id = query_node_type(node)
-        yield (
-            SummaryNode(
-                path=path,
-                node_kind=kind,
-                type_id=type_id,
-                status=node.state.node_status.name,
-                suspended=node.state.suspended,
-            ),
-            current_generation,
+        summary_fields = dict(
+            path=path,
+            node_kind=kind,
+            type_id=type_id,
+            status=node.state.node_status.name,
+            suspended=node.state.suspended,
         )
+        if isinstance(node, Task) and node.attempt_id is not None:
+            summary_fields["attempt_id"] = node.attempt_id
+        yield SummaryNode(**summary_fields), current_generation
         if depth is not None and level >= depth:
             continue
         children = node.flows.values() if isinstance(node, Bunch) else node.children
