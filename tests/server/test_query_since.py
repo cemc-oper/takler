@@ -182,6 +182,33 @@ def test_local_structure_changes_invalidate_only_affected_subtree():
     asyncio.run(exercise())
 
 
+def test_detail_definition_and_inherited_parameters_invalidate_summary_cache():
+    async def exercise():
+        bunch = Bunch("root")
+        flow = bunch.add_flow(Flow("f"))
+        task = flow.add_task("t")
+        service = Scheduler(bunch).query_service
+        root = await service.page(_page_request())
+        selected = await service.page(_page_request(scope_path="/f/t"))
+        flow.add_parameter("INHERITED", "new")
+        local = await service.since(_since_request(root))
+        assert [(op.op, op.path) for op in local.operations] == [
+            ("invalidate_scope", "/f")
+        ]
+        reset = await service.since(_since_request(selected, scope_path="/f/t"))
+        assert reset.kind == "reset" and reset.reason == "structure_changed"
+        next_revision = local.target_revision
+        task.add_event("new_event")
+        definition = await service.since(
+            _since_request(root, since_revision=next_revision)
+        )
+        assert [(op.op, op.path) for op in definition.operations] == [
+            ("invalidate_scope", "/f/t")
+        ]
+
+    asyncio.run(exercise())
+
+
 def test_time_expiry_and_query_identity():
     async def exercise():
         bunch = Bunch("root")

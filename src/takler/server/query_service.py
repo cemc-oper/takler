@@ -421,8 +421,8 @@ class QueryService:
         invalidations: set[str] = set()
         for batch in batches:
             for change in batch.changes:
-                if change.invalidate and (
-                    not change.groups or "summary" in change.groups
+                if change.invalidate or change.groups.intersection(
+                    {"definition", "parameters"}
                 ):
                     if change.path == scope or scope.startswith(
                         change.path.rstrip("/") + "/"

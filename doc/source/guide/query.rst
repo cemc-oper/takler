@@ -70,7 +70,7 @@ QueryDocument v1 的 capabilities 声明 ``snapshot=true``、
 有界分页和 reset；初始页和增量目前只接受 ``summary`` 字段组。
 Python 客户端可用 ``run_query_since(snapshot)`` 在同一连接上读取并合并增量，
 Go 客户端可用 ``ReadQuerySince(snapshot)``；
-只有完整批次通过校验后才推进水位。局部结构失效在结果的 ``stale_scopes``
+只有完整批次通过校验后才推进水位。局部结构、定义和参数继承变更会在结果的 ``stale_scopes``
 中标记，调用方可重取相应范围。服务端要求重置时抛出带
 ``reset_scope`` 的 ``QueryResponseError``，旧视图标为陈旧。高层
 ``query_sync`` / ``SyncQuery`` 和两端 CLI ``sync`` 会在失效或 reset 后重取所选范围，
