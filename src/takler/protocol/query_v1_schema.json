@@ -528,6 +528,37 @@
           "title": "DefinitionGroup",
           "type": "object"
         },
+        "DetailBlobRef": {
+          "additionalProperties": false,
+          "properties": {
+            "pointer": {
+              "title": "Pointer",
+              "type": "string"
+            },
+            "blob_id": {
+              "title": "Blob Id",
+              "type": "string"
+            },
+            "total_bytes": {
+              "maximum": 16777216,
+              "minimum": 0,
+              "title": "Total Bytes",
+              "type": "integer"
+            },
+            "sha256": {
+              "title": "Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "pointer",
+            "blob_id",
+            "total_bytes",
+            "sha256"
+          ],
+          "title": "DetailBlobRef",
+          "type": "object"
+        },
         "DetailGroups": {
           "additionalProperties": false,
           "properties": {
@@ -985,6 +1016,13 @@
         },
         "groups": {
           "$ref": "#/$defs/DetailGroups"
+        },
+        "blob_refs": {
+          "items": {
+            "$ref": "#/$defs/DetailBlobRef"
+          },
+          "title": "Blob Refs",
+          "type": "array"
         }
       },
       "required": [

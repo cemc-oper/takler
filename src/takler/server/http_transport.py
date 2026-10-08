@@ -11,7 +11,7 @@ does that import lazily and reports a missing extra as a startup error.
 
 The wire contract is the JSON :class:`~takler.protocol.envelope.Envelope`:
 
-* one endpoint, ``POST /v1/commands/{command}``, where ``{command}`` is the
+* the legacy endpoint, ``POST /v1/commands/{command}``, where ``{command}`` is the
   CLI word of one of the seventeen commands (``init`` .. ``coroutine``); the
   body is the request envelope and the answer is the response envelope, whose
   ``trace_id`` echoes the request's;
@@ -44,6 +44,10 @@ listener; see ``doc/source/operation/deployment.rst``). The pair is resolved
 and validated by ``TaklerServer`` before any listener starts, mirroring the
 gRPC side: a half configured or unreadable pair aborts the start-up rather
 than degrading to plaintext.
+
+R2 QueryDocument v1 uses four additional POST routes under ``/v1/query`` for
+capabilities, pages, details, and chunks. They share one scheduler QueryService
+with gRPC and pass through the same operator gate before document parsing.
 """
 
 from __future__ import annotations
@@ -54,6 +58,7 @@ from typing import Callable, Dict, Optional
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import Response
 
 from takler.logging import get_logger
 from takler.protocol.commands import Command
@@ -67,11 +72,18 @@ from takler.protocol.wire import (
 from takler.server.audit import AuditLogger
 from takler.server.auth import (
     SERVICE_METHOD_PREFIX,
+    QUERY_METHOD_PREFIX,
     AuthGate,
     CallCredentials,
     RejectionReason,
     reset_call_credentials,
     set_call_credentials,
+)
+from takler.protocol.query_v1 import (
+    MAX_PAGE_BYTES,
+    decode_query_document,
+    encode_query_document,
+    query_failure_for_invalid_request,
 )
 from takler.server.connect_config import ExceptionPolicy
 from takler.server.handlers import METHOD_NAME_BY_COMMAND, CommandHandlers
@@ -145,9 +157,8 @@ def create_app(
             standalone test gets.
 
     Returns:
-        The application. It serves exactly one route,
-        ``POST /v1/commands/{command}``; FastAPI's own ``/docs`` comes along
-        with it and doubles as the transport's self-description.
+        The application serves the legacy command route and four query routes;
+        FastAPI's own ``/docs`` comes along as transport self-description.
     """
     if gate is None:
         gate = AuthGate()
@@ -266,6 +277,66 @@ def create_app(
                 reset_call_credentials(token)
 
         return Envelope.for_response(command, response, trace_id=envelope.trace_id)
+
+    async def run_query(request: Request, method: str, expected: str) -> Response:
+        outcome = gate.authorize(
+            QUERY_METHOD_PREFIX + method,
+            request.headers.items(),
+            peer=_peer_of(request),
+        )
+        if outcome.rejection is not None:
+            detail = gate.refuse(
+                QUERY_METHOD_PREFIX + method, outcome.credentials, outcome.rejection
+            )
+            raise HTTPException(
+                status_code=HTTP_STATUS_BY_REJECTION[outcome.rejection], detail=detail
+            )
+        if not is_json_content_type(request.headers.get("content-type", "")):
+            raise HTTPException(status_code=415, detail="expected application/json")
+        raw = bytearray()
+        async for part in request.stream():
+            raw.extend(part)
+            if len(raw) > MAX_PAGE_BYTES:
+                raise HTTPException(status_code=413, detail="query document too large")
+        try:
+            document = decode_query_document(bytes(raw), expected=expected)
+        except WireError:
+            reply = query_failure_for_invalid_request(bytes(raw))
+        else:
+            token = (
+                set_call_credentials(outcome.credentials)
+                if outcome.credentials is not None
+                else None
+            )
+            try:
+                if method == "GetCapabilities":
+                    reply = handlers.scheduler.query_service.capabilities()
+                elif method == "ReadPage":
+                    reply = await handlers.scheduler.query_service.page(document)
+                elif method == "ReadDetail":
+                    reply = await handlers.scheduler.query_service.detail(document)
+                else:
+                    reply = await handlers.scheduler.query_service.chunk(document)
+            finally:
+                if token is not None:
+                    reset_call_credentials(token)
+        return Response(encode_query_document(reply), media_type="application/json")
+
+    @app.post(API_PREFIX + "/query/capabilities")
+    async def query_capabilities(request: Request):
+        return await run_query(request, "GetCapabilities", "capabilities_request")
+
+    @app.post(API_PREFIX + "/query/pages")
+    async def query_pages(request: Request):
+        return await run_query(request, "ReadPage", "page_request")
+
+    @app.post(API_PREFIX + "/query/details")
+    async def query_details(request: Request):
+        return await run_query(request, "ReadDetail", "detail_request")
+
+    @app.post(API_PREFIX + "/query/chunks")
+    async def query_chunks(request: Request):
+        return await run_query(request, "ReadDetailChunk", "chunk_request")
 
     return app
 

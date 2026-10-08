@@ -9,6 +9,7 @@ from takler.protocol.query_v1 import (
     MODEL_BY_KIND,
     decode_query_document,
     encode_query_document,
+    query_failure_for_invalid_request,
 )
 from takler.protocol.wire import WireError
 from takler.server.auth import (
@@ -41,6 +42,21 @@ def test_query_v1_wrong_grpc_kind_rejected():
     document = decode_query_document(VECTORS[0]["raw"])
     with pytest.raises(WireError):
         query_from_pb2(query_to_pb2(document), expected="page_request")
+
+
+def test_unsupported_version_and_since_are_typed():
+    assert (
+        query_failure_for_invalid_request(
+            b'{"kind":"page_request","schema_version":2}'
+        ).code
+        == "unsupported_version"
+    )
+    assert (
+        query_failure_for_invalid_request(
+            b'{"kind":"since_request","schema_version":1}'
+        ).code
+        == "unsupported_capability"
+    )
 
 
 def test_query_service_methods_are_explicitly_operator_only():

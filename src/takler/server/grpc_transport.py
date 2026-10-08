@@ -3,13 +3,16 @@
 ``GrpcTransport`` is the :class:`~takler.server.transport.ServerTransport`
 that speaks gRPC: it owns the ``grpc.aio`` server lifecycle (``start`` /
 ``run`` / ``stop``) and the listen-address bookkeeping, and -- as the
-generated servicer's implementation -- adapts each of the 16 RPCs to the
+generated servicer's implementation -- adapts legacy command RPCs to the
 transport-neutral handler layer: every method converts its pb2 request into
 the command's DTO (``takler.server.protocol.adapter``), hands it to
 :class:`~takler.server.handlers.CommandHandlers` and converts the response
 DTO back. Everything a command needs beyond its encoding -- the exception
 boundary, the Error_Code mapping, the control audit -- lives in that handler
 layer and is shared with any other transport.
+
+R2 QueryDocument v1 registers a second generated service with capabilities,
+page, detail, and chunk methods backed by the scheduler's shared QueryService.
 
 Authentication is not the transport's business either: every RPC passes the
 :class:`~takler.server.auth.AuthInterceptor` -- the gRPC adapter of the
@@ -24,6 +27,9 @@ import grpc
 
 from takler.protocol.commands import Command
 from takler.server.protocol import adapter, takler_pb2_grpc
+from takler.server.protocol.query_adapter import query_from_pb2, query_to_pb2
+from takler.protocol.query_v1 import query_failure_for_invalid_request
+from takler.protocol.wire import WireError
 from takler.logging import get_logger
 from takler.server.audit import AuditLogger
 from takler.server.handlers import CommandHandlers
@@ -50,9 +56,13 @@ def _peer_of(context) -> Optional[str]:
         return None
 
 
-class GrpcTransport(takler_pb2_grpc.TaklerServerServicer, ServerTransport):
+class GrpcTransport(
+    takler_pb2_grpc.TaklerServerServicer,
+    takler_pb2_grpc.TaklerQueryServicer,
+    ServerTransport,
+):
     """
-    gRPC 服务端，把 16 个 RPC 适配到传输中立的命令 handler。
+    gRPC 服务端，把命令 RPC 适配到 handler，并注册查询服务。
 
     Attributes
     ----------
@@ -152,6 +162,7 @@ class GrpcTransport(takler_pb2_grpc.TaklerServerServicer, ServerTransport):
         """
         self.grpc_server = grpc.aio.server(interceptors=self.interceptors)
         takler_pb2_grpc.add_TaklerServerServicer_to_server(self, self.grpc_server)
+        takler_pb2_grpc.add_TaklerQueryServicer_to_server(self, self.grpc_server)
         if self.server_credentials is None:
             self.grpc_server.add_insecure_port(self.listen_address)
             logger.warning(
@@ -186,6 +197,35 @@ class GrpcTransport(takler_pb2_grpc.TaklerServerServicer, ServerTransport):
         logger.info("service shutting down..done")
 
     # RPC methods ----------------------------------------------------
+
+    async def _query(self, request, expected: str):
+        try:
+            document = query_from_pb2(request, expected=expected)
+        except WireError:
+            return query_to_pb2(query_failure_for_invalid_request(request.json))
+        service = self.scheduler.query_service
+        if expected == "capabilities_request":
+            reply = service.capabilities()
+        elif expected == "page_request":
+            reply = await service.page(document)
+        elif expected == "detail_request":
+            reply = await service.detail(document)
+        else:
+            reply = await service.chunk(document)
+        return query_to_pb2(reply)
+
+    async def GetCapabilities(self, request, context):
+        return await self._query(request, "capabilities_request")
+
+    async def ReadPage(self, request, context):
+        return await self._query(request, "page_request")
+
+    async def ReadDetail(self, request, context):
+        return await self._query(request, "detail_request")
+
+    async def ReadDetailChunk(self, request, context):
+        return await self._query(request, "chunk_request")
+
     #
     # Every method is the same one-liner: parse the pb2 request into the
     # command's DTO (inside the handlers' exception boundary, so a validation

@@ -216,6 +216,18 @@
       "kind": "page",
       "valid": false,
       "raw": "{\"kind\":\"page\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"snapshot_id\":\"snapshot-1\",\"as_of\":\"2026-10-07T12:00:00Z\",\"expires_at\":\"2026-10-07T12:02:00Z\",\"page_index\":0,\"total_nodes\":2,\"complete\":false,\"next_cursor\":\"\",\"root_name\":\"lab\",\"flow_generations\":{\"/flow\":\"generation-1\"},\"nodes\":[{\"path\":\"/\",\"node_kind\":\"bunch\",\"type_id\":\"takler.bunch\",\"status\":\"unknown\",\"suspended\":false},{\"path\":\"/flow\",\"node_kind\":\"flow\",\"type_id\":\"takler.flow\",\"status\":\"complete\",\"suspended\":false}]}"
+    },
+    {
+      "id": "valid_detail_blob_ref",
+      "kind": "detail",
+      "valid": true,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"parameters\"],\"groups\":{\"parameters\":{\"user\":[{\"name\":\"PAYLOAD\",\"value\":null}]}},\"blob_refs\":[{\"pointer\":\"/groups/parameters/user/0/value\",\"blob_id\":\"blob-2\",\"total_bytes\":7,\"sha256\":\"5aa762ae383fbb727af3c7a36d4940a5b8c40a989452d2304fc958ff3f354e7a\"}]}"
+    },
+    {
+      "id": "invalid_detail_blob_digest",
+      "kind": "detail",
+      "valid": false,
+      "raw": "{\"kind\":\"detail\",\"schema_version\":1,\"session_id\":\"session-1\",\"query_id\":\"query-1\",\"path\":\"/flow\",\"flow_generation\":\"generation-1\",\"attempt_id\":null,\"sample_mode\":\"live\",\"as_of\":\"2026-10-07T12:00:01Z\",\"requested_groups\":[\"parameters\"],\"groups\":{\"parameters\":{\"user\":[{\"name\":\"PAYLOAD\",\"value\":null}]}},\"blob_refs\":[{\"pointer\":\"/groups/parameters/user/0/value\",\"blob_id\":\"blob-2\",\"total_bytes\":7,\"sha256\":\"bad\"}]}"
     }
   ]
 }

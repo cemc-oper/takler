@@ -78,6 +78,11 @@ class Scheduler:
         query_redacted_parameters: tuple[str, ...] = (),
     ):
         self.query_redacted_parameters = query_redacted_parameters
+        self.query_state_lock = asyncio.Lock()
+        self.query_revision = 0
+        from takler.server.query_service import QueryService
+
+        self.query_service = QueryService(self)
         self.bunch: Bunch = bunch
         self.last_checkpoint_at: Optional[str] = None
         self.restore_summary: Optional[dict] = None
@@ -137,7 +142,12 @@ class Scheduler:
             fatal = False
             for name, flow in list(self.bunch.flows.items()):
                 try:
-                    self._process_flow(name, flow, time_now)
+                    async with self.query_state_lock:
+                        self.query_revision += 1
+                        try:
+                            self._process_flow(name, flow, time_now)
+                        finally:
+                            self.query_revision += 1
                 except Exception as exc:  # noqa: BLE001 - boundary is intentional
                     # Unified diagnostic log (task 3.5): always record the
                     # operation identifier (flow name) plus the error detail

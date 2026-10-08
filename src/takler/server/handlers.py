@@ -322,43 +322,62 @@ class CommandHandlers:
                 return None
             return _audit_target(command, request)
 
-        return await self._handle_command(
-            method_name,
-            request_info,
-            op,
-            error_response=(
-                lambda exc: BatchResponse(
-                    flag=15
-                    if isinstance(exc, ValidationError)
-                    else error_code_for_exception(exc),
-                    message="invalid request"
-                    if isinstance(exc, ValidationError)
-                    else "command failed",
-                    results=[],
-                )
+        async with self.scheduler.query_state_lock:
+            mutates = command not in (
+                Command.SHOW,
+                Command.PING,
+                Command.COROUTINE,
+                Command.SERVER_STATUS,
             )
-            if command in BATCH_COMMANDS
-            else (lambda exc: _raise_query_error())
-            if query_errors
-            and command in (Command.SHOW, Command.PING, Command.COROUTINE)
-            else (
-                lambda exc: self.scheduler.server_status_response(
-                    flag=15
-                    if isinstance(exc, ValidationError)
-                    else error_code_for_exception(exc),
-                    message="invalid request"
-                    if isinstance(exc, ValidationError)
-                    else str(exc)
-                    if error_code_for_exception(exc) == 33
-                    else "command failed",
+            if mutates:
+                self.scheduler.query_revision += 1
+            try:
+                return await self._handle_command(
+                    method_name,
+                    request_info,
+                    op,
+                    error_response=(
+                        lambda exc: BatchResponse(
+                            flag=15
+                            if isinstance(exc, ValidationError)
+                            else error_code_for_exception(exc),
+                            message="invalid request"
+                            if isinstance(exc, ValidationError)
+                            else "command failed",
+                            results=[],
+                        )
+                    )
+                    if command in BATCH_COMMANDS
+                    else (lambda exc: _raise_query_error())
+                    if query_errors
+                    and command in (Command.SHOW, Command.PING, Command.COROUTINE)
+                    else (
+                        lambda exc: self.scheduler.server_status_response(
+                            flag=15
+                            if isinstance(exc, ValidationError)
+                            else error_code_for_exception(exc),
+                            message="invalid request"
+                            if isinstance(exc, ValidationError)
+                            else str(exc)
+                            if error_code_for_exception(exc) == 33
+                            else "command failed",
+                        )
+                    )
+                    if command
+                    in (
+                        Command.SERVER_STATUS,
+                        Command.SERVER_HALT,
+                        Command.SERVER_RESUME,
+                    )
+                    else _ERROR_RESPONSE_BY_COMMAND.get(
+                        command, command_error_response
+                    ),
+                    audit_target=audit_target,
+                    peer=peer,
                 )
-            )
-            if command
-            in (Command.SERVER_STATUS, Command.SERVER_HALT, Command.SERVER_RESUME)
-            else _ERROR_RESPONSE_BY_COMMAND.get(command, command_error_response),
-            audit_target=audit_target,
-            peer=peer,
-        )
+            finally:
+                if mutates:
+                    self.scheduler.query_revision += 1
 
     async def handle(
         self,

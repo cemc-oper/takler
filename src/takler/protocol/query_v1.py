@@ -311,6 +311,23 @@ class DetailGroups(QueryModel):
     service: ServiceGroup | None = None
 
 
+class DetailBlobRef(QueryModel):
+    pointer: StrictStr
+    blob_id: StrictStr
+    total_bytes: StrictInt = Field(ge=0, le=16 * 1024 * 1024)
+    sha256: StrictStr
+
+    @model_validator(mode="after")
+    def validate_ref(self):
+        if (
+            not self.pointer.startswith("/groups/")
+            or not self.blob_id
+            or not re.fullmatch(r"[0-9a-f]{64}", self.sha256)
+        ):
+            raise ValueError("invalid blob reference")
+        return self
+
+
 class DetailReply(QueryModel):
     kind: Literal["detail"]
     schema_version: Literal[1]
@@ -323,6 +340,7 @@ class DetailReply(QueryModel):
     as_of: StrictStr
     requested_groups: list[StrictStr]
     groups: DetailGroups
+    blob_refs: list[DetailBlobRef] = Field(default_factory=list)
 
     @field_validator("as_of")
     @classmethod
@@ -447,6 +465,32 @@ def decode_query_document(
         return model.model_validate(value)
     except ValueError:
         raise WireError("invalid query document") from None
+
+
+def query_failure_for_invalid_request(raw: bytes | str) -> FailureReply:
+    """Classify unsupported query versions and A-phase since requests."""
+    code = "invalid_request"
+    try:
+        if len(raw if isinstance(raw, bytes) else raw.encode("utf-8")) > MAX_PAGE_BYTES:
+            raise WireError("query document too large")
+        value = strict_json(raw)
+        if isinstance(value, dict):
+            if "schema_version" in value and value["schema_version"] != 1:
+                code = "unsupported_version"
+            elif value.get("kind") in {"since_request", "since"}:
+                code = "unsupported_capability"
+    except (WireError, UnicodeError, ValueError):
+        pass
+    return FailureReply(
+        kind="error",
+        schema_version=1,
+        code=code,
+        message="unsupported query version"
+        if code == "unsupported_version"
+        else "since is unavailable"
+        if code == "unsupported_capability"
+        else "invalid query document",
+    )
 
 
 def encode_query_document(document: QueryModel) -> bytes:
