@@ -2,6 +2,7 @@
 
 import pytest
 
+from takler.protocol.query_v1 import FailureReply, SinceRequest
 from takler.server.connect_config import Address, ConnectConfig, HttpSettings, Server
 from takler.tui.app import TaklerTuiApp
 from takler.tui.service import TaklerTuiService
@@ -37,6 +38,19 @@ def test_query_snapshot_detail_blob_and_show(
     try:
         assert client.query_client.capabilities().snapshot is True
         snapshot = client.run_query_snapshot(scope_path="/flow")
+        since_reply = client.query_client.transport.query(
+            SinceRequest(
+                kind="since_request",
+                schema_version=1,
+                scope_path="/flow",
+                field_groups=["summary"],
+                session_id=snapshot.session_id,
+                query_id=snapshot.query_id,
+                since_revision=1,
+            )
+        )
+        assert isinstance(since_reply, FailureReply)
+        assert since_reply.code == "unsupported_capability"
         assert snapshot.ordered_paths == ("/flow", "/flow/task")
         assert snapshot.flow_generations["/flow"]
         assert snapshot.get("/flow/task").attempt_id == "test-attempt"

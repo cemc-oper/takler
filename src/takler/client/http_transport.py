@@ -465,6 +465,7 @@ class HttpTransport(ClientTransport):
             "page_request": "pages",
             "detail_request": "details",
             "chunk_request": "chunks",
+            "since_request": "since",
         }.get(document.kind)
         if route is None:
             raise InvalidRequestError("unsupported query request kind")

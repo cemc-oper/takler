@@ -954,6 +954,11 @@ class TaklerQueryStub:
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
                 response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
                 _registered_method=True)
+        self.ReadSince = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/ReadSince',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
 
 
 class TaklerQueryServicer:
@@ -983,6 +988,12 @@ class TaklerQueryServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ReadSince(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_TaklerQueryServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1003,6 +1014,11 @@ def add_TaklerQueryServicer_to_server(servicer, server):
             ),
             'ReadDetailChunk': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadDetailChunk,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+            'ReadSince': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadSince,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
                     response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
             ),
@@ -1113,6 +1129,33 @@ class TaklerQuery:
             request,
             target,
             '/takler_protocol.TaklerQuery/ReadDetailChunk',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadSince(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/ReadSince',
             takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
             takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
             options,

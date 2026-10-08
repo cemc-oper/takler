@@ -983,7 +983,13 @@ PRIVILEGE_BY_METHOD: Dict[str, PrivilegeLevel] = {
 # its exact-method tests stay stable. Every query method reads operator data.
 QUERY_PRIVILEGE_BY_METHOD: Dict[str, PrivilegeLevel] = {
     QUERY_METHOD_PREFIX + name: PrivilegeLevel.OPERATOR
-    for name in ("GetCapabilities", "ReadPage", "ReadDetail", "ReadDetailChunk")
+    for name in (
+        "GetCapabilities",
+        "ReadPage",
+        "ReadDetail",
+        "ReadDetailChunk",
+        "ReadSince",
+    )
 }
 
 

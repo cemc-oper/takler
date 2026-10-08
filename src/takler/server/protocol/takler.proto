@@ -230,7 +230,8 @@ message BatchResponse {
 }
 
 // R2 QueryDocument v1 is the same strict UTF-8 JSON on HTTP and gRPC.
-// These methods are protocol declarations; R2-05/07 provide the query engine.
+// ReadSince remains unavailable until revision tracking and the change window
+// are connected. The other methods serve the initial query and live detail.
 // They are separate from legacy TaklerServer methods so old command clients
 // and their exact method/privilege table remain stable.
 message QueryDocumentPayload {
@@ -242,4 +243,5 @@ service TaklerQuery {
   rpc ReadPage(QueryDocumentPayload) returns (QueryDocumentPayload) {}
   rpc ReadDetail(QueryDocumentPayload) returns (QueryDocumentPayload) {}
   rpc ReadDetailChunk(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+  rpc ReadSince(QueryDocumentPayload) returns (QueryDocumentPayload) {}
 }

@@ -10,6 +10,7 @@ from takler.protocol.query_v1 import (
     ChunkRequest,
     DetailRequest,
     PageRequest,
+    SinceRequest,
     encode_query_document,
 )
 from takler.server.auth import (
@@ -227,13 +228,22 @@ async def _http_and_grpc_query_routes():
     from takler.server.grpc_transport import GrpcTransport
     from takler.server.handlers import CommandHandlers
     from takler.server.http_transport import create_app
-    from takler.server.protocol import takler_pb2_grpc
+    from takler.server.protocol import takler_pb2, takler_pb2_grpc
     from takler.server.protocol.query_adapter import query_from_pb2, query_to_pb2
 
     bunch = Bunch("root")
     flow = bunch.add_flow(Flow("f"))
     flow.add_task("t").add_parameter("PAYLOAD", "x" * 300_000)
     scheduler = Scheduler(bunch)
+    since_request = SinceRequest(
+        kind="since_request",
+        schema_version=1,
+        scope_path="/f",
+        field_groups=["summary"],
+        session_id="session-1",
+        query_id="query-1",
+        since_revision=1,
+    )
     app = create_app(CommandHandlers(scheduler))
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://query"
@@ -251,6 +261,23 @@ async def _http_and_grpc_query_routes():
             json={"kind": "capabilities_request", "schema_version": 1},
         )
         assert capabilities.json()["since"] is False
+        since_response = await client.post(
+            "/v1/query/since",
+            content=encode_query_document(since_request),
+            headers={"content-type": "application/json"},
+        )
+        assert since_response.status_code == 200
+        assert decode_query_document(since_response.content, expected="error").code == (
+            "unsupported_capability"
+        )
+        malformed_since = await client.post(
+            "/v1/query/since",
+            json={"kind": "since_request", "schema_version": 1},
+        )
+        assert (
+            decode_query_document(malformed_since.content, expected="error").code
+            == "invalid_request"
+        )
         detail_request = DetailRequest(
             kind="detail_request",
             schema_version=1,
@@ -309,6 +336,24 @@ async def _http_and_grpc_query_routes():
                     expected="capabilities",
                 ).since
                 is False
+            )
+            assert (
+                query_from_pb2(
+                    await stub.ReadSince(query_to_pb2(since_request)),
+                    expected="error",
+                ).code
+                == "unsupported_capability"
+            )
+            assert (
+                query_from_pb2(
+                    await stub.ReadSince(
+                        takler_pb2.QueryDocumentPayload(
+                            json=b'{"kind":"since_request","schema_version":1}'
+                        )
+                    ),
+                    expected="error",
+                ).code
+                == "invalid_request"
             )
             grpc_detail = query_from_pb2(
                 await stub.ReadDetail(query_to_pb2(detail_request)),

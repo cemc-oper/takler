@@ -6,10 +6,12 @@ from pathlib import Path
 import pytest
 
 from takler.protocol.query_v1 import (
+    MAX_PAGE_BYTES,
     MODEL_BY_KIND,
     decode_query_document,
     encode_query_document,
     query_failure_for_invalid_request,
+    query_since_unavailable,
 )
 from takler.protocol.wire import WireError
 from takler.server.auth import (
@@ -55,8 +57,15 @@ def test_unsupported_version_and_since_are_typed():
         query_failure_for_invalid_request(
             b'{"kind":"since_request","schema_version":1}'
         ).code
-        == "unsupported_capability"
+        == "invalid_request"
     )
+    assert query_since_unavailable().code == "unsupported_capability"
+
+
+def test_incremental_document_budget_is_checked_before_json_parse():
+    oversized = b" " * (MAX_PAGE_BYTES + 1)
+    with pytest.raises(WireError, match="too large"):
+        decode_query_document(oversized)
 
 
 def test_query_service_methods_are_explicitly_operator_only():

@@ -395,6 +395,7 @@ class GrpcTransport(ClientTransport):
             "page_request": "ReadPage",
             "detail_request": "ReadDetail",
             "chunk_request": "ReadDetailChunk",
+            "since_request": "ReadSince",
         }.get(document.kind)
         if method is None:
             raise InvalidRequestError("unsupported query request kind")

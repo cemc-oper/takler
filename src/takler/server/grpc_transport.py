@@ -28,7 +28,10 @@ import grpc
 from takler.protocol.commands import Command
 from takler.server.protocol import adapter, takler_pb2_grpc
 from takler.server.protocol.query_adapter import query_from_pb2, query_to_pb2
-from takler.protocol.query_v1 import query_failure_for_invalid_request
+from takler.protocol.query_v1 import (
+    query_failure_for_invalid_request,
+    query_since_unavailable,
+)
 from takler.protocol.wire import WireError
 from takler.logging import get_logger
 from takler.server.audit import AuditLogger
@@ -210,6 +213,8 @@ class GrpcTransport(
             reply = await service.page(document)
         elif expected == "detail_request":
             reply = await service.detail(document)
+        elif expected == "since_request":
+            reply = query_since_unavailable()
         else:
             reply = await service.chunk(document)
         return query_to_pb2(reply)
@@ -225,6 +230,9 @@ class GrpcTransport(
 
     async def ReadDetailChunk(self, request, context):
         return await self._query(request, "chunk_request")
+
+    async def ReadSince(self, request, context):
+        return await self._query(request, "since_request")
 
     #
     # Every method is the same one-liner: parse the pb2 request into the

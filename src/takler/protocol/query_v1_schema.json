@@ -47,7 +47,6 @@
           "type": "boolean"
         },
         "since": {
-          "const": false,
           "title": "Since",
           "type": "boolean"
         },
@@ -230,6 +229,20 @@
         "snapshot_id": {
           "title": "Snapshot Id",
           "type": "string"
+        },
+        "base_revision": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Revision"
         },
         "as_of": {
           "title": "As Of",
@@ -1180,6 +1193,579 @@
         "message"
       ],
       "title": "FailureReply",
+      "type": "object"
+    },
+    "since_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "since_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "scope_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope Path"
+        },
+        "flow_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flow Name"
+        },
+        "depth": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth"
+        },
+        "field_groups": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Field Groups",
+          "type": "array"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "query_id": {
+          "title": "Query Id",
+          "type": "string"
+        },
+        "since_revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Since Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "field_groups",
+        "session_id",
+        "query_id",
+        "since_revision"
+      ],
+      "title": "SinceRequest",
+      "type": "object"
+    },
+    "since": {
+      "$defs": {
+        "ClearField": {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "clear_field",
+              "title": "Op",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "flow_generation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Flow Generation"
+            },
+            "attempt_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Attempt Id"
+            },
+            "pointer": {
+              "title": "Pointer",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "flow_generation",
+            "attempt_id",
+            "pointer"
+          ],
+          "title": "ClearField",
+          "type": "object"
+        },
+        "InvalidateScope": {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "invalidate_scope",
+              "title": "Op",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "reason": {
+              "enum": [
+                "structure_changed",
+                "inheritance_changed",
+                "identity_changed"
+              ],
+              "title": "Reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "reason"
+          ],
+          "title": "InvalidateScope",
+          "type": "object"
+        },
+        "RemoveSubtree": {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "remove_subtree",
+              "title": "Op",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "flow_generation": {
+              "title": "Flow Generation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "flow_generation"
+          ],
+          "title": "RemoveSubtree",
+          "type": "object"
+        },
+        "ReplaceGroup": {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "replace_group",
+              "title": "Op",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "flow_generation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Flow Generation"
+            },
+            "attempt_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Attempt Id"
+            },
+            "group": {
+              "title": "Group",
+              "type": "string"
+            },
+            "value": {
+              "additionalProperties": true,
+              "title": "Value",
+              "type": "object"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "flow_generation",
+            "attempt_id",
+            "group",
+            "value"
+          ],
+          "title": "ReplaceGroup",
+          "type": "object"
+        },
+        "SetField": {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "set_field",
+              "title": "Op",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "flow_generation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Flow Generation"
+            },
+            "attempt_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Attempt Id"
+            },
+            "pointer": {
+              "title": "Pointer",
+              "type": "string"
+            },
+            "value": {
+              "title": "Value"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "flow_generation",
+            "attempt_id",
+            "pointer",
+            "value"
+          ],
+          "title": "SetField",
+          "type": "object"
+        },
+        "SummaryNode": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "node_kind": {
+              "title": "Node Kind",
+              "type": "string"
+            },
+            "type_id": {
+              "title": "Type Id",
+              "type": "string"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "suspended": {
+              "title": "Suspended",
+              "type": "boolean"
+            },
+            "attempt_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Attempt Id"
+            }
+          },
+          "required": [
+            "path",
+            "node_kind",
+            "type_id",
+            "status",
+            "suspended"
+          ],
+          "title": "SummaryNode",
+          "type": "object"
+        },
+        "UpsertSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "const": "upsert_summary",
+              "title": "Op",
+              "type": "string"
+            },
+            "path": {
+              "title": "Path",
+              "type": "string"
+            },
+            "flow_generation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Flow Generation"
+            },
+            "node": {
+              "$ref": "#/$defs/SummaryNode"
+            }
+          },
+          "required": [
+            "op",
+            "path",
+            "flow_generation",
+            "node"
+          ],
+          "title": "UpsertSummary",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "since",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "query_id": {
+          "title": "Query Id",
+          "type": "string"
+        },
+        "batch_id": {
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "from_revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "From Revision",
+          "type": "integer"
+        },
+        "target_revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Target Revision",
+          "type": "integer"
+        },
+        "as_of": {
+          "title": "As Of",
+          "type": "string"
+        },
+        "expires_at": {
+          "title": "Expires At",
+          "type": "string"
+        },
+        "page_index": {
+          "minimum": 0,
+          "title": "Page Index",
+          "type": "integer"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Cursor"
+        },
+        "unchanged": {
+          "title": "Unchanged",
+          "type": "boolean"
+        },
+        "operations": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "clear_field": "#/$defs/ClearField",
+                "invalidate_scope": "#/$defs/InvalidateScope",
+                "remove_subtree": "#/$defs/RemoveSubtree",
+                "replace_group": "#/$defs/ReplaceGroup",
+                "set_field": "#/$defs/SetField",
+                "upsert_summary": "#/$defs/UpsertSummary"
+              },
+              "propertyName": "op"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/UpsertSummary"
+              },
+              {
+                "$ref": "#/$defs/ReplaceGroup"
+              },
+              {
+                "$ref": "#/$defs/SetField"
+              },
+              {
+                "$ref": "#/$defs/ClearField"
+              },
+              {
+                "$ref": "#/$defs/RemoveSubtree"
+              },
+              {
+                "$ref": "#/$defs/InvalidateScope"
+              }
+            ]
+          },
+          "title": "Operations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "query_id",
+        "batch_id",
+        "from_revision",
+        "target_revision",
+        "as_of",
+        "expires_at",
+        "page_index",
+        "complete",
+        "next_cursor",
+        "unchanged",
+        "operations"
+      ],
+      "title": "SinceReply",
+      "type": "object"
+    },
+    "reset": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "reset",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "query_id": {
+          "title": "Query Id",
+          "type": "string"
+        },
+        "since_revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Since Revision",
+          "type": "integer"
+        },
+        "reset_scope": {
+          "title": "Reset Scope",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "history_expired",
+            "identity_changed",
+            "scope_changed",
+            "structure_changed",
+            "budget_exceeded",
+            "session_changed"
+          ],
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "query_id",
+        "since_revision",
+        "reset_scope",
+        "reason"
+      ],
+      "title": "ResetReply",
       "type": "object"
     }
   }

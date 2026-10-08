@@ -1,8 +1,8 @@
 """Transport-neutral R2 query v1 wire models.
 
-Both HTTP and gRPC carry the same strict JSON document. R2-04A defines the
-protocol; R2-05/07 add the producer and snapshot storage. These models never
-import a scheduler, generated binding, or transport.
+Both HTTP and gRPC carry the same strict JSON document. R2-04B adds the
+incremental wire shapes; the producer and revision window are separate work.
+These models never import a scheduler, generated binding, or transport.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -19,6 +19,7 @@ from pydantic import (
     StrictBool,
     StrictInt,
     StrictStr,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
@@ -29,6 +30,7 @@ from takler.protocol.wire import WireError, strict_json
 MAX_PAGE_NODES = 2048
 MAX_PAGE_BYTES = 262_144
 MAX_CHUNK_BYTES = 65_536
+MAX_REVISION = 9_223_372_036_854_775_807
 GROUPS = frozenset(
     {"summary", "definition", "parameters", "runtime", "artifacts", "service"}
 )
@@ -85,7 +87,7 @@ class CapabilitiesReply(QueryModel):
     schema_version: Literal[1]
     snapshot: Literal[True]
     detail: Literal[True]
-    since: Literal[False]
+    since: StrictBool
     max_page_nodes: Literal[2048]
     max_decoded_page_bytes: Literal[262144]
     max_chunk_bytes: Literal[65536]
@@ -152,6 +154,7 @@ class PageReply(QueryModel):
     session_id: StrictStr
     query_id: StrictStr
     snapshot_id: StrictStr
+    base_revision: StrictInt | None = Field(default=None, ge=1, le=MAX_REVISION)
     as_of: StrictStr
     expires_at: StrictStr
     page_index: StrictInt = Field(ge=0)
@@ -433,6 +436,283 @@ class FailureReply(QueryModel):
         return self
 
 
+class SinceRequest(PageRequest):
+    kind: Literal["since_request"]
+    session_id: StrictStr
+    query_id: StrictStr
+    since_revision: StrictInt = Field(ge=1, le=MAX_REVISION)
+
+    @model_validator(mode="after")
+    def validate_since(self):
+        if not self.session_id or not self.query_id:
+            raise ValueError("missing query identity")
+        return self
+
+
+class UpsertSummary(QueryModel):
+    op: Literal["upsert_summary"]
+    path: StrictStr
+    flow_generation: StrictStr | None
+    node: SummaryNode
+
+    @model_validator(mode="after")
+    def validate_upsert(self):
+        if self.path != self.node.path or not valid_path(self.path):
+            raise ValueError("summary path mismatch")
+        if self.path == "/" and self.flow_generation is not None:
+            raise ValueError("root generation")
+        if self.path != "/" and not self.flow_generation:
+            raise ValueError("missing flow generation")
+        return self
+
+
+class ReplaceGroup(QueryModel):
+    op: Literal["replace_group"]
+    path: StrictStr
+    flow_generation: StrictStr | None
+    attempt_id: StrictStr | None
+    group: StrictStr
+    value: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_replace(self):
+        _validate_operation_identity(self.path, self.flow_generation)
+        _validate_attempt(self.attempt_id)
+        _validate_group_value(self.group, self.value)
+        return self
+
+
+class SetField(QueryModel):
+    op: Literal["set_field"]
+    path: StrictStr
+    flow_generation: StrictStr | None
+    attempt_id: StrictStr | None
+    pointer: StrictStr
+    value: Any
+
+    @model_validator(mode="after")
+    def validate_set(self):
+        _validate_operation_identity(self.path, self.flow_generation)
+        _validate_attempt(self.attempt_id)
+        _validate_field_pointer(self.pointer)
+        _validate_set_value(self.pointer, self.value)
+        return self
+
+
+class ClearField(QueryModel):
+    op: Literal["clear_field"]
+    path: StrictStr
+    flow_generation: StrictStr | None
+    attempt_id: StrictStr | None
+    pointer: StrictStr
+
+    @model_validator(mode="after")
+    def validate_clear(self):
+        _validate_operation_identity(self.path, self.flow_generation)
+        _validate_attempt(self.attempt_id)
+        _validate_field_pointer(self.pointer)
+        _validate_clear_pointer(self.pointer)
+        return self
+
+
+class RemoveSubtree(QueryModel):
+    op: Literal["remove_subtree"]
+    path: StrictStr
+    flow_generation: StrictStr
+
+    @model_validator(mode="after")
+    def validate_remove(self):
+        if valid_path(self.path) == "/" or not self.flow_generation:
+            raise ValueError("invalid subtree removal")
+        return self
+
+
+class InvalidateScope(QueryModel):
+    op: Literal["invalidate_scope"]
+    path: StrictStr
+    reason: Literal["structure_changed", "inheritance_changed", "identity_changed"]
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value):
+        return valid_path(value)
+
+
+def _validate_operation_identity(path: str, generation: str | None) -> None:
+    valid_path(path)
+    if (path == "/" and generation is not None) or (path != "/" and not generation):
+        raise ValueError("invalid operation generation")
+
+
+def _validate_attempt(attempt: str | None) -> None:
+    if attempt == "":
+        raise ValueError("empty attempt identity")
+
+
+def _validate_group_value(group: str, value: dict[str, Any]) -> None:
+    if group not in DETAIL_GROUPS:
+        raise ValueError("invalid replacement group")
+    DetailGroups.model_validate({group: value})
+    _validate_json_value(value)
+
+
+def _validate_field_pointer(pointer: str) -> None:
+    # RFC 6901 tokens; nested edits are limited to a named local parameter.
+    parts = pointer.split("/")
+    if len(parts) not in {4, 5} or parts[:2] != ["", "groups"]:
+        raise ValueError("invalid field pointer")
+    if parts[2] not in DETAIL_GROUPS or any(not part for part in parts[3:]):
+        raise ValueError("invalid field pointer")
+    for part in parts[3:]:
+        if re.search(r"~(?![01])", part):
+            raise ValueError("invalid pointer escape")
+    field = parts[3].replace("~1", "/").replace("~0", "~")
+    model = {
+        "definition": DefinitionGroup,
+        "parameters": ParametersGroup,
+        "runtime": RuntimeGroup,
+        "artifacts": ArtifactsGroup,
+        "service": ServiceGroup,
+    }[parts[2]]
+    if field not in model.model_fields:
+        raise ValueError("unknown group field")
+    if len(parts) == 5 and (parts[2], field) != ("parameters", "user"):
+        raise ValueError("unsupported nested field")
+
+
+def _validate_set_value(pointer: str, value: Any) -> None:
+    parts = pointer.split("/")
+    if len(parts) == 5:
+        parameter = ParameterValue.model_validate(value)
+        name = parts[4].replace("~1", "/").replace("~0", "~")
+        if parameter.name != name:
+            raise ValueError("parameter pointer/name mismatch")
+    else:
+        model = {
+            "definition": DefinitionGroup,
+            "parameters": ParametersGroup,
+            "runtime": RuntimeGroup,
+            "artifacts": ArtifactsGroup,
+            "service": ServiceGroup,
+        }[parts[2]]
+        field = parts[3].replace("~1", "/").replace("~0", "~")
+        TypeAdapter(model.model_fields[field].annotation).validate_python(
+            value, strict=True
+        )
+    _validate_json_value(value)
+
+
+def _validate_clear_pointer(pointer: str) -> None:
+    parts = pointer.split("/")
+    if len(parts) == 5:
+        return  # A named local parameter may be removed to reveal inheritance.
+    model = {
+        "definition": DefinitionGroup,
+        "parameters": ParametersGroup,
+        "runtime": RuntimeGroup,
+        "artifacts": ArtifactsGroup,
+        "service": ServiceGroup,
+    }[parts[2]]
+    field = parts[3].replace("~1", "/").replace("~0", "~")
+    if model.model_fields[field].is_required():
+        raise ValueError("cannot clear required group field")
+
+
+def _validate_json_value(value: Any) -> None:
+    # Any is needed for nested field values; reject NaN and non-JSON objects.
+    json.dumps(value, allow_nan=False)
+
+
+DeltaOperation = Annotated[
+    UpsertSummary
+    | ReplaceGroup
+    | SetField
+    | ClearField
+    | RemoveSubtree
+    | InvalidateScope,
+    Field(discriminator="op"),
+]
+
+
+class SinceReply(QueryModel):
+    kind: Literal["since"]
+    schema_version: Literal[1]
+    session_id: StrictStr
+    query_id: StrictStr
+    batch_id: StrictStr
+    from_revision: StrictInt = Field(ge=1, le=MAX_REVISION)
+    target_revision: StrictInt = Field(ge=1, le=MAX_REVISION)
+    as_of: StrictStr
+    expires_at: StrictStr
+    page_index: StrictInt = Field(ge=0)
+    complete: StrictBool
+    next_cursor: StrictStr | None
+    unchanged: StrictBool
+    operations: list[DeltaOperation]
+
+    @field_validator("as_of", "expires_at")
+    @classmethod
+    def validate_time(cls, value):
+        return valid_utc(value)
+
+    @model_validator(mode="after")
+    def validate_batch(self):
+        if not self.session_id or not self.query_id or not self.batch_id:
+            raise ValueError("missing batch identity")
+        if self.target_revision < self.from_revision:
+            raise ValueError("revision went backwards")
+        if datetime.fromisoformat(self.expires_at.replace("Z", "+00:00")) <= (
+            datetime.fromisoformat(self.as_of.replace("Z", "+00:00"))
+        ):
+            raise ValueError("batch expires before capture")
+        if self.complete != (self.next_cursor is None):
+            raise ValueError("cursor/complete mismatch")
+        if not self.complete and (not self.next_cursor or not self.operations):
+            raise ValueError("nonterminal page must advance")
+        if self.unchanged != (self.target_revision == self.from_revision):
+            raise ValueError("unchanged/revision mismatch")
+        if self.unchanged and (
+            self.operations or self.page_index != 0 or not self.complete
+        ):
+            raise ValueError("unchanged batch must be a single empty page")
+        seen = set()
+        for operation in self.operations:
+            if isinstance(operation, (SetField, ClearField)):
+                key = ("field", operation.path, operation.pointer)
+            elif isinstance(operation, ReplaceGroup):
+                key = ("group", operation.path, operation.group)
+            else:
+                key = (operation.op, operation.path)
+            if key in seen:
+                raise ValueError("duplicate operation identity")
+            seen.add(key)
+        return self
+
+
+class ResetReply(QueryModel):
+    kind: Literal["reset"]
+    schema_version: Literal[1]
+    session_id: StrictStr
+    query_id: StrictStr
+    since_revision: StrictInt = Field(ge=1, le=MAX_REVISION)
+    reset_scope: StrictStr
+    reason: Literal[
+        "history_expired",
+        "identity_changed",
+        "scope_changed",
+        "structure_changed",
+        "budget_exceeded",
+        "session_changed",
+    ]
+
+    @model_validator(mode="after")
+    def validate_reset(self):
+        if not self.session_id or not self.query_id:
+            raise ValueError("missing reset identity")
+        valid_path(self.reset_scope)
+        return self
+
+
 MODEL_BY_KIND = {
     "capabilities_request": CapabilitiesRequest,
     "capabilities": CapabilitiesReply,
@@ -443,6 +723,9 @@ MODEL_BY_KIND = {
     "chunk_request": ChunkRequest,
     "chunk": ChunkReply,
     "error": FailureReply,
+    "since_request": SinceRequest,
+    "since": SinceReply,
+    "reset": ResetReply,
 }
 
 
@@ -473,7 +756,7 @@ def decode_query_document(
 
 
 def query_failure_for_invalid_request(raw: bytes | str) -> FailureReply:
-    """Classify unsupported query versions and A-phase since requests."""
+    """Classify malformed documents and unsupported query versions."""
     code = "invalid_request"
     try:
         if len(raw if isinstance(raw, bytes) else raw.encode("utf-8")) > MAX_PAGE_BYTES:
@@ -482,8 +765,6 @@ def query_failure_for_invalid_request(raw: bytes | str) -> FailureReply:
         if isinstance(value, dict):
             if "schema_version" in value and value["schema_version"] != 1:
                 code = "unsupported_version"
-            elif value.get("kind") in {"since_request", "since"}:
-                code = "unsupported_capability"
     except (WireError, UnicodeError, ValueError):
         pass
     return FailureReply(
@@ -492,9 +773,17 @@ def query_failure_for_invalid_request(raw: bytes | str) -> FailureReply:
         code=code,
         message="unsupported query version"
         if code == "unsupported_version"
-        else "since is unavailable"
-        if code == "unsupported_capability"
         else "invalid query document",
+    )
+
+
+def query_since_unavailable() -> FailureReply:
+    """Return the A-phase response to a valid incremental request."""
+    return FailureReply(
+        kind="error",
+        schema_version=1,
+        code="unsupported_capability",
+        message="since is unavailable",
     )
 
 
