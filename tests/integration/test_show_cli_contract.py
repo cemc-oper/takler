@@ -99,8 +99,8 @@ print(output)
     assert "<redacted>" in result.stdout
     for value in ("ROOT_SECRET", "CUSTOM_SECRET", "TASK_SECRET"):
         assert value not in result.stdout + result.stderr
-    if client in ("go", "tui"):
-        payload = result.stdout.split("\n", 1)[1] if client == "go" else result.stdout
+    if client == "tui":
+        payload = result.stdout
         data = json.loads(payload)
         assert data["flows"][0]["children"][0]["node_kind"] == "task"
         assert parse_show(payload).get("/flow/custom").suspended
@@ -119,3 +119,52 @@ print(output)
     )
     assert view.lookup_parameter("/flow/custom", "ROOT_SETTING") == "root-value"
     assert view.resolve_parameter("/flow/custom", "BUSINESS_TOKEN").redacted
+
+
+@pytest.mark.skipif(
+    not os.environ.get("TAKLER_SHOW_GO_CLIENT"),
+    reason="paired Go client is unavailable",
+)
+@pytest.mark.parametrize("transport", ["grpc", "http"])
+def test_go_show_reads_chunked_detail(
+    transport, server_runner_factory, free_port_fixture
+):
+    grpc_port, http_port = free_port_fixture(), free_port_fixture()
+    runner = server_runner_factory(
+        port=grpc_port,
+        connect_config=ConnectConfig(
+            server=Server(
+                address=Address(
+                    hostname="127.0.0.1", ip="127.0.0.1", port=str(grpc_port)
+                ),
+                http=HttpSettings(host="127.0.0.1", port=str(http_port)),
+            )
+        ),
+    )
+    task = runner.server.bunch.add_flow("flow").add_task("task")
+    task.add_parameter("WIDE", "x" * 300000)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("TAKLER_")}
+    env.update(
+        TAKLER_TRANSPORT=transport,
+        NO_PROXY="127.0.0.1,localhost",
+        no_proxy="127.0.0.1,localhost",
+    )
+    result = subprocess.run(
+        [
+            os.environ["TAKLER_SHOW_GO_CLIENT"],
+            "show",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(http_port if transport == "http" else grpc_port),
+            "--scope",
+            "/flow/task",
+            "--show-parameter",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "param WIDE '" + "x" * 300000 + "'" in result.stdout
