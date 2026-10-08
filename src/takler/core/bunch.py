@@ -98,7 +98,9 @@ class Bunch(NodeContainer):
         flow.ensure_definition_generation()
         self.flows[flow.name] = flow
         flow.bunch = self
-        self.notify_query_change(invalidate=True)
+        tracker = getattr(self, "_query_tracker", None)
+        if tracker is not None:
+            tracker.mark("/" + flow.name, invalidate=True)
         return flow
 
     def validate_limit_references(self) -> List[str]:
@@ -123,7 +125,9 @@ class Bunch(NodeContainer):
             )
 
         flow = self.flows.pop(flow_name)
-        self.notify_query_change(invalidate=True)
+        tracker = getattr(self, "_query_tracker", None)
+        if tracker is not None:
+            tracker.mark("/" + flow_name, invalidate=True)
 
         return flow
 

@@ -2,7 +2,7 @@
 
 import pytest
 
-from takler.protocol.query_v1 import FailureReply, SinceRequest
+from takler.protocol.query_v1 import ResetReply, SinceRequest
 from takler.server.connect_config import Address, ConnectConfig, HttpSettings, Server
 from takler.tui.app import TaklerTuiApp
 from takler.tui.service import TaklerTuiService
@@ -49,8 +49,8 @@ def test_query_snapshot_detail_blob_and_show(
                 since_revision=1,
             )
         )
-        assert isinstance(since_reply, FailureReply)
-        assert since_reply.code == "unsupported_capability"
+        assert isinstance(since_reply, ResetReply)
+        assert since_reply.reason == "structure_changed"
         assert snapshot.ordered_paths == ("/flow", "/flow/task")
         assert snapshot.flow_generations["/flow"]
         assert snapshot.get("/flow/task").attempt_id == "test-attempt"

@@ -64,9 +64,10 @@ Task attempt，身份失效时拒绝旧详情。不要把摘要和详情解释�
 恢复职责。
 
 QueryDocument v1 的 capabilities 声明 ``snapshot=true``、
-``detail=true``、``since=false``。当前没有 revision 增量、reset 批次
-或跨重启查询缓存；TUI 定时刷新会重新取得所选范围的完整摘要。无变化
-和稀疏更新的持续同步尚未提供。查询不提供取消运行中
+``detail=true``、``since=true``。服务端提供摘要的 revision 增量、
+有界分页和 reset；初始页和增量目前只接受 ``summary`` 字段组。
+Python/Go 客户端与 TUI 的增量缓存仍待后续任务接入，TUI 定时刷新
+仍重新取得所选范围的完整摘要；不提供跨重启查询缓存。查询不提供取消运行中
 任务、迟报、远程 artifact 或新的只读角色；其它与 ecFlow 的差异见
 :doc:`/guide/ecflow-differences`。本机 100k 完成态树测试不代表
 100k 运行中任务的生产容量；大树捕获冲突和周期 checkpoint 均可能

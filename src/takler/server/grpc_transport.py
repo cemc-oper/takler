@@ -30,7 +30,6 @@ from takler.server.protocol import adapter, takler_pb2_grpc
 from takler.server.protocol.query_adapter import query_from_pb2, query_to_pb2
 from takler.protocol.query_v1 import (
     query_failure_for_invalid_request,
-    query_since_unavailable,
 )
 from takler.protocol.wire import WireError
 from takler.logging import get_logger
@@ -214,7 +213,7 @@ class GrpcTransport(
         elif expected == "detail_request":
             reply = await service.detail(document)
         elif expected == "since_request":
-            reply = query_since_unavailable()
+            reply = await service.since(document)
         else:
             reply = await service.chunk(document)
         return query_to_pb2(reply)

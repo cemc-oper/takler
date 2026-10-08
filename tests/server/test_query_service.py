@@ -330,19 +330,36 @@ async def _http_and_grpc_query_routes():
         http_page = decode_query_document(response.content, expected="page")
         assert [node.path for node in http_page.nodes] == ["/", "/f", "/f/t"]
         assert http_page.base_revision == scheduler.query_changes.revision
+        valid_since = since_request.model_copy(
+            update={
+                "session_id": http_page.session_id,
+                "query_id": http_page.query_id,
+                "since_revision": http_page.base_revision,
+                "scope_path": None,
+            }
+        )
+        valid_since_response = await client.post(
+            "/v1/query/since",
+            content=encode_query_document(valid_since),
+            headers={"content-type": "application/json"},
+        )
+        assert decode_query_document(
+            valid_since_response.content, expected="since"
+        ).unchanged
         capabilities = await client.post(
             "/v1/query/capabilities",
             json={"kind": "capabilities_request", "schema_version": 1},
         )
-        assert capabilities.json()["since"] is False
+        assert capabilities.json()["since"] is True
         since_response = await client.post(
             "/v1/query/since",
             content=encode_query_document(since_request),
             headers={"content-type": "application/json"},
         )
         assert since_response.status_code == 200
-        assert decode_query_document(since_response.content, expected="error").code == (
-            "unsupported_capability"
+        assert (
+            decode_query_document(since_response.content, expected="reset").reason
+            == "session_changed"
         )
         malformed_since = await client.post(
             "/v1/query/since",
@@ -398,6 +415,9 @@ async def _http_and_grpc_query_routes():
             assert [node.path for node in grpc_page.nodes] == ["/", "/f", "/f/t"]
             assert grpc_page.session_id == http_page.session_id
             assert grpc_page.base_revision == http_page.base_revision
+            assert query_from_pb2(
+                await stub.ReadSince(query_to_pb2(valid_since)), expected="since"
+            ).unchanged
             assert (
                 query_from_pb2(
                     await stub.GetCapabilities(
@@ -410,14 +430,14 @@ async def _http_and_grpc_query_routes():
                     ),
                     expected="capabilities",
                 ).since
-                is False
+                is True
             )
             assert (
                 query_from_pb2(
                     await stub.ReadSince(query_to_pb2(since_request)),
-                    expected="error",
-                ).code
-                == "unsupported_capability"
+                    expected="reset",
+                ).reason
+                == "session_changed"
             )
             assert (
                 query_from_pb2(

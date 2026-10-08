@@ -777,16 +777,6 @@ def query_failure_for_invalid_request(raw: bytes | str) -> FailureReply:
     )
 
 
-def query_since_unavailable() -> FailureReply:
-    """Return the A-phase response to a valid incremental request."""
-    return FailureReply(
-        kind="error",
-        schema_version=1,
-        code="unsupported_capability",
-        message="since is unavailable",
-    )
-
-
 def encode_query_document(document: QueryModel) -> bytes:
     raw = json.dumps(
         document.model_dump(mode="json", exclude_unset=True),

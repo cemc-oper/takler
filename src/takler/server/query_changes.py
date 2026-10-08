@@ -9,12 +9,15 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+import time
 
 
 MAX_CHANGE_BATCHES = 1024
 MAX_CHANGES_PER_BATCH = 2048
 MAX_RETAINED_CHANGES = 8192
+MAX_CHANGE_WINDOW_BYTES = 32 * 1024 * 1024
 MAX_CHANGE_PATH_BYTES = 4096
+MAX_CHANGE_SECONDS = 120
 FIELD_GROUPS = frozenset(
     {"summary", "parameters", "definition", "runtime", "artifacts", "service"}
 )
@@ -31,6 +34,8 @@ class QueryChange:
 class ChangeBatch:
     revision: int
     changes: tuple[QueryChange, ...]
+    created_at: float
+    estimated_bytes: int
 
 
 class QueryChanges:
@@ -41,6 +46,7 @@ class QueryChanges:
         self.oldest_revision = 1
         self._batches: deque[ChangeBatch] = deque()
         self._retained_changes = 0
+        self._retained_bytes = 0
         self._depth = 0
         self._pending: dict[str, QueryChange] = {}
 
@@ -86,20 +92,36 @@ class QueryChanges:
         if not self._pending:
             return
         self.revision += 1
-        batch = ChangeBatch(self.revision, tuple(self._pending.values()))
+        changes = tuple(self._pending.values())
+        size = sum(len(change.path.encode("utf-8")) + 512 for change in changes)
+        batch = ChangeBatch(self.revision, changes, time.monotonic(), size)
         self._batches.append(batch)
         self._retained_changes += len(batch.changes)
+        self._retained_bytes += size
         self._pending.clear()
-        while (
+        self._expire()
+
+    def _expire(self) -> None:
+        cutoff = time.monotonic() - MAX_CHANGE_SECONDS
+        while self._batches and (
             len(self._batches) > MAX_CHANGE_BATCHES
             or self._retained_changes > MAX_RETAINED_CHANGES
+            or self._retained_bytes > MAX_CHANGE_WINDOW_BYTES
+            or self._batches[0].created_at <= cutoff
         ):
             dropped = self._batches.popleft()
             self._retained_changes -= len(dropped.changes)
+            self._retained_bytes -= dropped.estimated_bytes
             self.oldest_revision = dropped.revision
 
     def since(self, revision: int) -> tuple[ChangeBatch, ...] | None:
         """Return consecutive hints, or ``None`` when the waterline expired."""
+        self._expire()
         if revision < self.oldest_revision or revision > self.revision:
             return None
         return tuple(batch for batch in self._batches if batch.revision > revision)
+
+    @property
+    def estimated_bytes(self) -> int:
+        self._expire()
+        return self._retained_bytes

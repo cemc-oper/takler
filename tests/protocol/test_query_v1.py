@@ -11,7 +11,6 @@ from takler.protocol.query_v1 import (
     decode_query_document,
     encode_query_document,
     query_failure_for_invalid_request,
-    query_since_unavailable,
 )
 from takler.protocol.wire import WireError
 from takler.server.auth import (
@@ -59,7 +58,6 @@ def test_unsupported_version_and_since_are_typed():
         ).code
         == "invalid_request"
     )
-    assert query_since_unavailable().code == "unsupported_capability"
 
 
 def test_incremental_document_budget_is_checked_before_json_parse():

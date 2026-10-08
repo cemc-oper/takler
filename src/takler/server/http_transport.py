@@ -84,7 +84,6 @@ from takler.protocol.query_v1 import (
     decode_query_document,
     encode_query_document,
     query_failure_for_invalid_request,
-    query_since_unavailable,
 )
 from takler.server.connect_config import ExceptionPolicy
 from takler.server.handlers import METHOD_NAME_BY_COMMAND, CommandHandlers
@@ -317,7 +316,7 @@ def create_app(
                 elif method == "ReadDetail":
                     reply = await handlers.scheduler.query_service.detail(document)
                 elif method == "ReadSince":
-                    reply = query_since_unavailable()
+                    reply = await handlers.scheduler.query_service.since(document)
                 else:
                     reply = await handlers.scheduler.query_service.chunk(document)
             finally:
