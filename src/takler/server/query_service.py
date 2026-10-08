@@ -69,6 +69,7 @@ class _Snapshot:
     query_id: str
     scope: str
     depth: int | None
+    base_revision: int
     pages: tuple[bytes, ...]
     expires: float
     size: int
@@ -184,6 +185,7 @@ class QueryService:
         owner: str,
         query_id: str,
         snapshot_id: str,
+        base_revision: int,
         budget: int,
     ):
         scope = request.scope_path or (
@@ -208,6 +210,7 @@ class QueryService:
                 session_id=self.session_id,
                 query_id=query_id,
                 snapshot_id=snapshot_id,
+                base_revision=base_revision,
                 as_of=as_of,
                 expires_at=expires_at,
                 page_index=page_index,
@@ -300,18 +303,28 @@ class QueryService:
         snapshot_id = secrets.token_urlsafe(24)
         try:
             captured_at = time.monotonic()
-            revision = self.scheduler.query_revision
-            if revision % 2:
+            capture_guard = self.scheduler.query_revision
+            base_revision = self.scheduler.query_changes.revision
+            if capture_guard % 2:
                 return _error("resource_exhausted", "query state is changing")
             try:
                 scope, pages, size = await asyncio.to_thread(
-                    self._capture, request, owner, query_id, snapshot_id, budget
+                    self._capture,
+                    request,
+                    owner,
+                    query_id,
+                    snapshot_id,
+                    base_revision,
+                    budget,
                 )
             except (RuntimeError, KeyError, IndexError):
                 return _error(
                     "resource_exhausted", "query state changed during capture"
                 )
-            if self.scheduler.query_revision != revision:
+            if (
+                self.scheduler.query_revision != capture_guard
+                or self.scheduler.query_changes.revision != base_revision
+            ):
                 return _error(
                     "resource_exhausted", "query state changed during capture"
                 )
@@ -328,6 +341,8 @@ class QueryService:
                 self._reserved -= 1
         async with self._lock:
             self._purge()
+            if self.scheduler.query_changes.oldest_revision > base_revision:
+                return _error("resource_exhausted", "query change window expired")
             replacement = self._replaceable_snapshot(owner)
             replaced_size = self._snapshots[replacement].size if replacement else 0
             if (
@@ -346,6 +361,7 @@ class QueryService:
                 query_id,
                 scope,
                 request.depth,
+                base_revision,
                 pages,
                 captured_at + SNAPSHOT_SECONDS,
                 size,

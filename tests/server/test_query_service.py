@@ -18,6 +18,7 @@ from takler.server.auth import (
     reset_call_credentials,
     set_call_credentials,
 )
+from takler.server.query_changes import MAX_CHANGE_BATCHES
 from takler.server.scheduler import Scheduler
 
 
@@ -68,8 +69,12 @@ async def _snapshot_pages_survive_live_mutation_and_replay():
         flow.add_task(f"t{index:05}")
     scheduler = Scheduler(bunch)
     service = scheduler.query_service
+    flow.add_task("before")
+    base_revision = scheduler.query_changes.revision
     first = await service.page(page_request())
     assert first.kind == "page" and first.next_cursor
+    assert first.base_revision == base_revision
+    assert service._snapshots[first.snapshot_id].base_revision == base_revision
     assert (
         await service.page(page_request(field_groups=["summary", "runtime"]))
     ).code == "unsupported_capability"
@@ -86,6 +91,7 @@ async def _snapshot_pages_survive_live_mutation_and_replay():
         replay = await service.page(request)
         assert encode_query_document(next_page) == encode_query_document(replay)
         assert next_page.snapshot_id == first.snapshot_id
+        assert next_page.base_revision == base_revision
         assert next_page.as_of == first.as_of
         assert next_page.page_index == index
         assert len(next_page.nodes) <= 2048
@@ -93,8 +99,15 @@ async def _snapshot_pages_survive_live_mutation_and_replay():
         seen.extend(node.path for node in next_page.nodes)
         cursor = next_page.next_cursor
         index += 1
-    assert len(seen) == 4002 and "/f/late" not in seen
+    assert len(seen) == 4003 and "/f/late" not in seen
     assert len(set(seen)) == len(seen)
+    batches = scheduler.query_changes.since(base_revision)
+    assert batches is not None
+    assert any(
+        change.path == "/f" and change.invalidate
+        for batch in batches
+        for change in batch.changes
+    )
     assert (
         await service.page(page_request(cursor=first.next_cursor + "x"))
     ).code == "invalid_request"
@@ -214,6 +227,66 @@ async def _capture_rejects_concurrent_mutation():
     assert not service._snapshots
 
 
+def test_capture_rejects_direct_core_write_without_command_guard():
+    asyncio.run(_capture_rejects_direct_core_write())
+
+
+async def _capture_rejects_direct_core_write():
+    import threading
+
+    bunch = Bunch("root")
+    flow = bunch.add_flow(Flow("f"))
+    scheduler = Scheduler(bunch)
+    service = scheduler.query_service
+    entered = threading.Event()
+    release = threading.Event()
+    capture = service._capture
+
+    def delayed(*args):
+        entered.set()
+        release.wait(timeout=5)
+        return capture(*args)
+
+    service._capture = delayed
+    pending = asyncio.create_task(service.page(page_request()))
+    assert await asyncio.to_thread(entered.wait, 5)
+    flow.add_task("new")
+    assert scheduler.query_revision == 0
+    release.set()
+    result = await pending
+    assert result.kind == "error" and result.code == "resource_exhausted"
+    assert not service._snapshots
+
+
+def test_snapshot_publication_rejects_expired_change_window():
+    asyncio.run(_snapshot_publication_rejects_expired_change_window())
+
+
+async def _snapshot_publication_rejects_expired_change_window():
+    bunch = Bunch("root")
+    flow = bunch.add_flow(Flow("f"))
+    task = flow.add_task("t")
+    task.add_meter("m", 0, MAX_CHANGE_BATCHES + 1)
+    scheduler = Scheduler(bunch)
+    service = scheduler.query_service
+    purge = service._purge
+    calls = 0
+
+    def expire_at_publication():
+        nonlocal calls
+        calls += 1
+        purge()
+        if calls == 2:
+            for value in range(1, MAX_CHANGE_BATCHES + 2):
+                task.set_meter("m", value)
+
+    service._purge = expire_at_publication
+    result = await service.page(page_request())
+    assert result.kind == "error" and result.code == "resource_exhausted"
+    assert not service._snapshots
+    assert scheduler.query_changes.oldest_revision > 1
+
+
 def test_http_and_grpc_query_routes():
     asyncio.run(_http_and_grpc_query_routes())
 
@@ -256,6 +329,7 @@ async def _http_and_grpc_query_routes():
         assert response.status_code == 200
         http_page = decode_query_document(response.content, expected="page")
         assert [node.path for node in http_page.nodes] == ["/", "/f", "/f/t"]
+        assert http_page.base_revision == scheduler.query_changes.revision
         capabilities = await client.post(
             "/v1/query/capabilities",
             json={"kind": "capabilities_request", "schema_version": 1},
@@ -323,6 +397,7 @@ async def _http_and_grpc_query_routes():
             grpc_page = query_from_pb2(response, expected="page")
             assert [node.path for node in grpc_page.nodes] == ["/", "/f", "/f/t"]
             assert grpc_page.session_id == http_page.session_id
+            assert grpc_page.base_revision == http_page.base_revision
             assert (
                 query_from_pb2(
                     await stub.GetCapabilities(
