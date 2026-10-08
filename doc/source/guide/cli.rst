@@ -296,6 +296,20 @@ parameter 缺省不显示；显式启用时对所选节点实时读取详情，
 :doc:`/guide/attributes/index` ；分页、资源预算及失败处理见
 :doc:`/guide/query` 。
 
+``sync`` （仅 Python）
+~~~~~~~~~~~~~~~~~~~~~~~
+
+::
+
+    takler-client-py sync [--scope PATH | --flow NAME] [--depth N]
+                          [--polls N] [--interval SECONDS]
+
+先读完整摘要，再按 ``--polls`` 次数读取 revision 增量；默认一次，
+后续两次读取之间由 ``--interval`` 指定秒数，默认一秒。完整批次校验
+成功后才推进水位，reset 或局部结构失效会重读所选范围。只在全部读取
+成功后打印最终摘要及 revision/session；当前进程结束后不保存缓存。
+持续界面刷新仍由 TUI 后续增量接入任务负责。
+
 ``ping``
 ~~~~~~~~
 
@@ -329,8 +343,8 @@ child 命令          init / complete / abort /            相同
 控制命令            requeue / suspend / resume / run /   相同
                     force / free-dep / load / replace /
                     begin / server-halt / server-resume
-查询命令            show / ping / coroutine /            相同（show 的显示方式不同）
-                    server-status
+查询命令            show / ping / coroutine /            相同，另外提供 sync
+                    server-status                        （show 的显示方式不同）
 TLS / 鉴权选项      全部子命令接受 ``--tls-ca`` /        无命令行选项，只用环境变量与
                     ``--tls-server-name`` /              ``connect.yaml``
                     ``--secret-file``
@@ -358,7 +372,8 @@ unknown 表示无法可靠判断副作用。run 成功不承诺外部作业最�
 重试范围
 --------
 
-只有 ``ping``、``show``、``coroutine`` 可按 ``TAKLER_TIMEOUT`` 对瞬时网络失败重试。
+只有 ``ping``、``show``、``sync``、``coroutine`` 等只读查询可按
+``TAKLER_TIMEOUT`` 对瞬时网络失败重试。
 所有变更命令（含 child、load、replace）在 HTTP/gRPC 下均只发送一次。
 网络失败不能证明变更未发生；收到 outcome unknown 时先查询状态再决定是否重发。
 TLS/配置错误、非法响应及业务失败不重试。大树初始捕获遇到状态变化时

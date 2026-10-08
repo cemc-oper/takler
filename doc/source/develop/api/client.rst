@@ -8,12 +8,15 @@
 服务客户端
 ----------
 
-``TaklerServiceClient`` 封装原有命令和 R2 初始查询方法；
+``TaklerServiceClient`` 封装原有命令和 R2 查询方法；
 重试与凭据在内部装配，调用方只需要 host 与 port 。
 ``query_snapshot`` 完整读取指定范围后返回只读摘要，``query_detail``
 按需取得独立实时采样的详情。长期连接可使用对应 ``run_query_*`` 方法。
-摘要只有所有页校验完成后才换入；服务端 ``QueryDocument v1`` 已声明
-``since=true``，客户端增量缓存尚未接入，也不提供跨重启视图缓存。
+``query_since(snapshot)`` 读取同一查询的摘要增量并在全批成功后原子推进
+revision。长期连接使用对应 ``run_query_*`` 方法。局部失效写入结果的
+``stale_scopes``；reset 抛出带范围的 ``QueryResponseError``。高层
+``query_sync`` 与 CLI ``sync`` 会重建陈旧范围的完整视图。缓存只在
+当前客户端进程内有效，不提供跨重启视图缓存。
 具体预算和错误处理见
 :doc:`/guide/query`。
 

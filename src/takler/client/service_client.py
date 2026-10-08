@@ -52,7 +52,7 @@ from takler.client.transport import (
 from takler.client.query_client import QueryClient, QuerySnapshot, print_query_show
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
 from takler.query import parse_show
-from takler.exceptions import ServerResponseError
+from takler.exceptions import QueryResponseError, ServerResponseError
 from takler.protocol.commands import Command
 from takler.protocol.error_code import error_name_for_code
 from takler.server.connect_config import ConnectConfig
@@ -633,6 +633,52 @@ class TaklerServiceClient:
             depth=depth,
             cancelled=cancelled,
         )
+
+    def query_since(self, snapshot: QuerySnapshot) -> QuerySnapshot:
+        return self._guarded(lambda: self.run_query_since(snapshot))
+
+    def run_query_since(
+        self,
+        snapshot: QuerySnapshot,
+        *,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> QuerySnapshot:
+        return self.query_client.read_since(snapshot, cancelled=cancelled)
+
+    def query_sync(
+        self,
+        *,
+        scope_path: str | None = None,
+        flow_name: str | None = None,
+        depth: int | None = None,
+        polls: int = 1,
+        interval: float = 1.0,
+    ) -> QuerySnapshot:
+        if polls < 1 or interval < 0:
+            raise ValueError("polls must be positive and interval nonnegative")
+
+        def run() -> QuerySnapshot:
+            view = self.run_query_snapshot(
+                scope_path=scope_path, flow_name=flow_name, depth=depth
+            )
+            for index in range(polls):
+                if index:
+                    time.sleep(interval)
+                try:
+                    view = self.run_query_since(view)
+                except QueryResponseError as exc:
+                    if exc.code != "reset_required":
+                        raise
+                    view = self.run_query_snapshot(
+                        scope_path=scope_path, flow_name=flow_name, depth=depth
+                    )
+                if view.stale_scopes:
+                    view = self.run_query_snapshot(
+                        scope_path=scope_path, flow_name=flow_name, depth=depth
+                    )
+            return view
+
+        return self._guarded(run)
 
     def query_detail(self, snapshot: QuerySnapshot, path: str, field_groups: list[str]):
         return self._guarded(

@@ -22,6 +22,7 @@ Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6.
 """
 
 import os
+import sys
 import traceback
 import warnings
 from typing import Any, Callable, Optional, List, Union, Tuple
@@ -35,6 +36,7 @@ from takler.client.exit_code import (
     exit_code_for_exception,
 )
 from takler.client.service_client import TaklerServiceClient
+from takler.client.query_client import print_query_show
 from takler.client.transport import TRANSPORT_HTTP, resolve_transport
 from takler.exceptions import TaklerError
 from takler.logging import get_logger
@@ -614,6 +616,33 @@ def show(
             show_meter=show_meter,
         ),
     )
+
+
+@app.command()
+def sync(
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    scope_path: Optional[str] = typer.Option(None, "--scope", help="subtree path"),
+    flow_name: Optional[str] = typer.Option(None, "--flow", help="flow name"),
+    depth: Optional[int] = typer.Option(None, "--depth", help="relative tree depth"),
+    polls: int = typer.Option(1, min=1, help="number of since reads after snapshot"),
+    interval: float = typer.Option(1.0, min=0, help="seconds between since reads"),
+):
+    """[query] Read a snapshot, poll revision changes, then print the final view."""
+
+    def run(client):
+        view = client.query_sync(
+            scope_path=scope_path,
+            flow_name=flow_name,
+            depth=depth,
+            polls=polls,
+            interval=interval,
+        )
+        print(f"# revision={view.revision} session={view.session_id}")
+        print_query_show(view, lambda *_: None, sys.stdout)
+        return view
+
+    _run_client_command(host, port, run)
 
 
 @app.command()
