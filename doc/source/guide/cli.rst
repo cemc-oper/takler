@@ -369,7 +369,7 @@ TLS/配置错误、非法响应及业务失败不重试。
 ``type_id``、``module``、``class`` 或 ``class_type`` 导入插件，也不重建
 可执行节点。未知执行类型仍可展示名称、路径和状态；任务菜单按服务端的
 ``node_kind`` 决定是否显示 Run，操作仍通过节点路径发送给服务端。
-Go CLI 保留 JSON 输出，并透传同一安全视图。
+Go CLI 同样分页读取摘要，显式详情选项才读取对应字段。
 
 服务端输出根用户参数、安全的 ``generated_parameters`` 和节点级
 ``redacted_parameters``。参数继承依次查询本节点 user、generated、逐级父节点，

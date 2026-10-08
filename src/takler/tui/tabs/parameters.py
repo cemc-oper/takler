@@ -9,6 +9,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from ..show_parser import NodeInfo, ShowSnapshot
+from ._preview import preview
 
 
 class ParametersTab(Vertical):
@@ -54,6 +55,6 @@ class ParametersTab(Vertical):
         )
 
         for name, value in sorted(local.items()):
-            self._table.add_row("local", name, value)
+            self._table.add_row("local", name, preview(value))
         for name, value in sorted(inherited.items()):
-            self._table.add_row("inherited", name, value)
+            self._table.add_row("inherited", name, preview(value))

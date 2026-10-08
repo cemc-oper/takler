@@ -59,6 +59,7 @@ class StatusBar(Horizontal):
         self._right: Static = Static("", id="status-right")
         self._service: Optional[ServiceInfo] = None
         self._selection: Optional[NodeInfo] = None
+        self._stale = False
 
     def compose(self) -> ComposeResult:
         yield self._left
@@ -78,6 +79,8 @@ class StatusBar(Horizontal):
         """Write the left side: the selected node's state badge + path."""
         self._selection = node
         text = Text()
+        if self._stale:
+            text.append("stale  |  ", style="bold yellow")
         if self._service is not None:
             style = "bold red" if self._service.status == "halted" else "green"
             text.append(f"service {self._service.status}", style=style)
@@ -94,4 +97,8 @@ class StatusBar(Horizontal):
     def set_service(self, service: Optional[ServiceInfo]) -> None:
         """Keep service state visible when any tree node is selected."""
         self._service = service
+        self.set_selection(self._selection)
+
+    def set_stale(self, stale: bool) -> None:
+        self._stale = stale
         self.set_selection(self._selection)

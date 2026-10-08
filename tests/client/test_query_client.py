@@ -87,6 +87,18 @@ def test_publishes_only_after_all_pages_and_preserves_old_view_on_failure():
     assert client.current is result
 
 
+def test_cancelled_read_stops_before_next_page_and_keeps_old_view():
+    old = page([node("/", "root"), node("/flow", "flow")], total=2)
+    first = page([node("/", "root"), node("/flow", "flow")], complete=False)
+    transport = ReplayTransport(old, first)
+    client = QueryClient(transport)
+    previous = client.read_snapshot()
+    with pytest.raises(QueryResponseError, match="cancelled"):
+        client.read_snapshot(cancelled=lambda: len(transport.requests) >= 2)
+    assert client.current is previous
+    assert len(transport.requests) == 2
+
+
 @pytest.mark.parametrize(
     "last,match",
     [

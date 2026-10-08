@@ -11,6 +11,7 @@ from textual.widgets import Static
 
 from ..show_parser import NodeInfo, ShowSnapshot
 from ..state_style import state_block, style_for
+from ._preview import preview
 
 
 def _state_text(node: NodeInfo) -> Text:
@@ -104,19 +105,19 @@ class InfoTab(VerticalScroll):
         if node.generated_parameters:
             text.append("\nGenerated parameters\n", style="bold underline")
             for name, value in sorted(node.generated_parameters.items()):
-                text.append(f"  {name} = {value}\n")
+                text.append(f"  {name} = {preview(value)}\n")
 
         if node.trigger:
             text.append("\nTrigger\n", style="bold underline")
-            text.append(f"  {node.trigger}\n")
+            text.append(f"  {preview(node.trigger)}\n")
 
         if node.complete_trigger:
             text.append("\nComplete trigger\n", style="bold underline")
-            text.append(f"  {node.complete_trigger}\n")
+            text.append(f"  {preview(node.complete_trigger)}\n")
 
         if node.repeat:
             text.append("\nRepeat\n", style="bold underline")
-            text.append(f"  {node.repeat}\n")
+            text.append(f"  {preview(node.repeat)}\n")
 
         if node.times:
             text.append("\nTime\n", style="bold underline")
@@ -157,7 +158,7 @@ class InfoTab(VerticalScroll):
             text.append("\nUser parameters\n", style="bold underline")
             for k, v in sorted(node.user_parameters.items()):
                 text.append(f"  {k} = ")
-                text.append(v, style="cyan")
+                text.append(preview(v), style="cyan")
                 text.append("\n")
 
         # Show inherited parameters (parents) so the picture matches the
@@ -167,6 +168,6 @@ class InfoTab(VerticalScroll):
             if inherited:
                 text.append("\nInherited parameters\n", style="bold underline")
                 for k, v in sorted(inherited.items()):
-                    text.append(f"  {k} = {v}\n", style="dim cyan")
+                    text.append(f"  {k} = {preview(v)}\n", style="dim cyan")
 
         self._body.update(text)

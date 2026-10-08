@@ -38,6 +38,28 @@ def test_snapshot_pages_survive_live_mutation_and_replay():
     asyncio.run(_snapshot_pages_survive_live_mutation_and_replay())
 
 
+def test_owner_replacement_expires_old_cursor():
+    async def exercise():
+        bunch = Bunch("root")
+        flow = bunch.add_flow(Flow("f"))
+        for index in range(2300):
+            flow.add_task(f"t{index:05}")
+        service = Scheduler(bunch).query_service
+        first = await service.page(page_request())
+        assert first.next_cursor
+        await service.page(page_request())
+        newest = await service.page(page_request())
+        assert newest.kind == "page"
+        assert (
+            await service.page(page_request(cursor=first.next_cursor))
+        ).code == "snapshot_expired"
+        assert (
+            await service.page(page_request(cursor=newest.next_cursor))
+        ).kind == "page"
+
+    asyncio.run(exercise())
+
+
 async def _snapshot_pages_survive_live_mutation_and_replay():
     bunch = Bunch("root")
     flow = bunch.add_flow(Flow("f"))
@@ -416,7 +438,10 @@ async def _snapshot_and_blob_budgets_and_expiry():
     first = await service.page(page_request())
     second = await service.page(page_request())
     assert first.kind == second.kind == "page"
-    assert (await service.page(page_request())).code == "resource_exhausted"
+    third = await service.page(page_request())
+    assert third.kind == "page"
+    assert first.snapshot_id not in service._snapshots
+    assert second.snapshot_id in service._snapshots
     request = DetailRequest(
         kind="detail_request",
         schema_version=1,

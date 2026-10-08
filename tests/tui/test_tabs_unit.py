@@ -15,6 +15,7 @@ from pathlib import Path
 
 from takler.tui.show_parser import parse_show
 from takler.tui.tabs._artifacts import artifact_prefix
+from takler.tui.tabs._preview import preview
 from takler.tui.tabs.job import JobTab
 from takler.tui.tabs.output import (
     OutputTab,
@@ -27,6 +28,14 @@ from .conftest import show_payload
 
 _collect_files = OutputTab._collect_files
 _pick_output = OutputTab._pick_output
+
+
+def test_long_detail_text_is_bounded_for_live_widgets() -> None:
+    value = "x" * 300000
+    shown = preview(value)
+    assert len(shown) < 4200
+    assert shown.startswith("x" * 4096)
+    assert "300000 chars" in shown
 
 
 # ---------------------------------------------------------------------------

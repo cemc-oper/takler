@@ -80,6 +80,7 @@ def main(
         "--connect-file",
         help="path to a connect.yaml (or env TAKLER_CONNECT_FILE).",
     ),
+    scope: str = typer.Option("/", "--scope", help="initial query subtree path"),
 ) -> None:
     """Launch the TUI."""
     resolved_host, resolved_port, transport_name, connect_config = _resolve(
@@ -91,7 +92,7 @@ def main(
         transport_name=transport_name,
         connect_config=connect_config,
     )
-    TaklerTuiApp(service=service).run()
+    TaklerTuiApp(service=service, scope_path=scope).run()
 
 
 if __name__ == "__main__":

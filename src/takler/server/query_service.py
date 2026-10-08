@@ -161,6 +161,11 @@ class QueryService:
             if blob.expires <= now:
                 del self._blobs[key]
 
+    def _replaceable_snapshot(self, owner: str) -> str | None:
+        """The oldest owner view can give way to a complete newer capture."""
+        owned = [key for key, value in self._snapshots.items() if value.owner == owner]
+        return owned[0] if len(owned) >= MAX_OWNER_SNAPSHOTS else None
+
     def capabilities(self) -> CapabilitiesReply:
         return CapabilitiesReply(
             kind="capabilities",
@@ -280,13 +285,12 @@ class QueryService:
                 if index < 1 or index >= len(snapshot.pages):
                     return _error("invalid_request", "cursor index out of range")
                 return decode_query_document(snapshot.pages[index], expected="page")
-            if self._reserved or len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS:
-                return _error("resource_exhausted", "snapshot count limit")
-            if (
-                sum(s.owner == owner for s in self._snapshots.values())
-                >= MAX_OWNER_SNAPSHOTS
+            replacement = self._replaceable_snapshot(owner)
+            if self._reserved or (
+                len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
+                and replacement is None
             ):
-                return _error("resource_exhausted", "principal snapshot limit")
+                return _error("resource_exhausted", "snapshot count limit")
             budget = (
                 MAX_RETAINED_BYTES
                 - sum(s.size for s in self._snapshots.values())
@@ -324,16 +328,19 @@ class QueryService:
                 self._reserved -= 1
         async with self._lock:
             self._purge()
+            replacement = self._replaceable_snapshot(owner)
+            replaced_size = self._snapshots[replacement].size if replacement else 0
             if (
-                len(self._snapshots) >= MAX_SNAPSHOTS
-                or sum(s.owner == owner for s in self._snapshots.values())
-                >= MAX_OWNER_SNAPSHOTS
+                len(self._snapshots) - bool(replacement) >= MAX_SNAPSHOTS
                 or sum(s.size for s in self._snapshots.values())
                 + sum(len(b.data) for b in self._blobs.values())
                 + size
+                - replaced_size
                 > MAX_RETAINED_BYTES
             ):
                 return _error("resource_exhausted", "snapshot budget exceeded")
+            if replacement is not None:
+                del self._snapshots[replacement]
             self._snapshots[snapshot_id] = _Snapshot(
                 owner,
                 query_id,

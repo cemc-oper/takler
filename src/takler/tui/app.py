@@ -33,6 +33,7 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
+from takler.exceptions import QueryResponseError
 
 from .menu import (
     NODE_ACTIONS,
@@ -43,6 +44,7 @@ from .menu import (
     confirm,
     find_action,
 )
+from .query_view import QueryTuiView
 from .service import TaklerTuiService
 from .show_parser import NodeInfo, ShowSnapshot, parse_show
 from .tabs import InfoTab, JobTab, OutputTab, ParametersTab, ScriptTab
@@ -62,6 +64,8 @@ def _build_bindings() -> list[Binding]:
     ]
     bindings.append(Binding("m", "open_menu", "Menu"))
     bindings.append(Binding("space", "toggle_node", "Expand/Collapse"))
+    bindings.append(Binding("s", "scope_selected", "Open subtree"))
+    bindings.append(Binding("b", "scope_parent", "Parent scope"))
     bindings.append(Binding("q", "quit", "Quit"))
     return bindings
 
@@ -113,10 +117,13 @@ class TaklerTuiApp(App):
     # fills over this interval and triggers a refresh when full.
     AUTO_REFRESH_SECONDS: int = 60
 
-    def __init__(self, service: TaklerTuiService) -> None:
+    def __init__(self, service: TaklerTuiService, scope_path: str = "/") -> None:
         super().__init__()
         self.service = service
-        self._snapshot: Optional[ShowSnapshot] = None
+        self._scope_path = scope_path
+        self._snapshot: Optional[ShowSnapshot | QueryTuiView] = None
+        self._refresh_seq = 0
+        self._detail_seq = 0
         self._tree = NodeTree()
         self._info_tab = InfoTab()
         self._params_tab = ParametersTab()
@@ -223,33 +230,79 @@ class TaklerTuiApp(App):
         restarts the timer.
         """
         self._toolbar.reset_countdown()
-        self._refresh_worker()
+        self._refresh_seq += 1
+        self._refresh_worker(self._refresh_seq, self._scope_path)
 
     @work(thread=True, exclusive=True, group="refresh")
-    def _refresh_worker(self) -> None:
+    def _refresh_worker(self, sequence: int, scope_path: str) -> None:
         try:
-            payload = self.service.show(
-                show_parameter=True,
-                show_trigger=True,
-                show_limit=True,
-                show_event=True,
-                show_meter=True,
-            )
-            snapshot = parse_show(payload)
+            if hasattr(self.service, "read_snapshot"):
+                compact = self.service.read_snapshot(
+                    scope_path=None if scope_path == "/" else scope_path,
+                    cancelled=lambda: sequence != self._refresh_seq,
+                )
+                snapshot = QueryTuiView(compact)
+                root_snapshot = (
+                    compact
+                    if scope_path == "/"
+                    else self.service.read_snapshot(
+                        scope_path="/",
+                        depth=0,
+                        cancelled=lambda: sequence != self._refresh_seq,
+                    )
+                )
+                root = self.service.read_detail(
+                    root_snapshot,
+                    "/",
+                    ["service", "parameters"],
+                    current=lambda: sequence == self._refresh_seq,
+                )
+                if root is None:
+                    return
+                snapshot.apply_root_detail(root)
+            else:
+                payload = self.service.show(
+                    show_parameter=True,
+                    show_trigger=True,
+                    show_limit=True,
+                    show_event=True,
+                    show_meter=True,
+                )
+                snapshot = parse_show(payload)
         except Exception as exc:  # pragma: no cover - network errors
-            self.call_from_thread(
-                self._set_status, f"refresh failed: {exc}", "bold red"
-            )
+            if isinstance(exc, QueryResponseError) and exc.code == "cancelled":
+                return
+            self.call_from_thread(self._refresh_failed, sequence, str(exc))
             return
-        self.call_from_thread(self._apply_snapshot, snapshot)
+        self.call_from_thread(self._apply_snapshot, snapshot, sequence)
 
-    def _apply_snapshot(self, snapshot: ShowSnapshot) -> None:
+    def _refresh_failed(self, sequence: int, message: str) -> None:
+        if sequence == self._refresh_seq:
+            self._status_bar.set_stale(True)
+            self._set_status(f"refresh failed: {message}", "bold red")
+
+    def _apply_snapshot(
+        self, snapshot: ShowSnapshot | QueryTuiView, sequence: int | None = None
+    ) -> None:
         """Apply a freshly-fetched snapshot to the UI (main thread)."""
+        if sequence is not None and sequence != self._refresh_seq:
+            return
+        self._detail_seq += 1
         self._snapshot = snapshot
+        self._status_bar.set_stale(False)
         self._status_bar.set_service(snapshot.service)
-        self._tree.rebuild(snapshot)
+        if isinstance(snapshot, QueryTuiView):
+            self._tree.rebuild_query(snapshot)
+        else:
+            self._tree.rebuild(snapshot)
         node = snapshot.get(self._selected_path) if self._selected_path else None
+        if node is None:
+            self._selected_path = None
+        elif isinstance(snapshot, QueryTuiView):
+            self._tree.reveal_query_path(node.path)
         self._render_tabs(node)
+        if node is not None and isinstance(snapshot, QueryTuiView):
+            self._request_detail(node.path)
         self._toolbar.set_bunch(snapshot.name)
         self._toolbar.set_refreshed(datetime.now())
 
@@ -263,6 +316,58 @@ class TaklerTuiApp(App):
         if self._snapshot is None:
             return
         node = self._snapshot.get(path)
+        self._render_tabs(node)
+        if isinstance(self._snapshot, QueryTuiView):
+            self._request_detail(path)
+
+    def _request_detail(self, path: str) -> None:
+        view = self._snapshot
+        if not isinstance(view, QueryTuiView):
+            return
+        self._detail_seq += 1
+        self._detail_worker(view, path, self._detail_seq)
+
+    @work(thread=True, exclusive=True, group="detail")
+    def _detail_worker(self, view: QueryTuiView, path: str, sequence: int) -> None:
+        try:
+            reply = self.service.read_detail(
+                view.query,
+                path,
+                ["parameters", "definition", "runtime", "artifacts"],
+                current=lambda: (
+                    view is self._snapshot
+                    and path == self._selected_path
+                    and sequence == self._detail_seq
+                ),
+            )
+            if reply is None:
+                return
+        except Exception as exc:  # pragma: no cover - network errors
+            self.call_from_thread(self._detail_failed, view, path, sequence, str(exc))
+            return
+        self.call_from_thread(self._apply_detail, view, path, sequence, reply)
+
+    def _detail_failed(
+        self, view: QueryTuiView, path: str, sequence: int, message: str
+    ) -> None:
+        if (
+            view is self._snapshot
+            and path == self._selected_path
+            and sequence == self._detail_seq
+        ):
+            self._set_status(f"detail failed: {message}", "bold red")
+
+    def _apply_detail(
+        self, view: QueryTuiView, path: str, sequence: int, reply
+    ) -> None:
+        if (
+            view is not self._snapshot
+            or path != self._selected_path
+            or sequence != self._detail_seq
+        ):
+            return
+        node = view.apply_detail(path, reply)
+        self._tree.update_query_detail(path)
         self._render_tabs(node)
 
     def on_tree_node_highlighted(self, event: NodeTree.NodeHighlighted) -> None:
@@ -400,6 +505,23 @@ class TaklerTuiApp(App):
         if not self._tree.is_real_node(tree_node):
             return
         tree_node.toggle()
+
+    def action_scope_selected(self) -> None:
+        """Replace the current view with the selected subtree."""
+        if not isinstance(self._snapshot, QueryTuiView):
+            return
+        path = self._selected_or_warn()
+        if path is not None and path in self._snapshot.query.nodes:
+            self._scope_path = path
+            self.action_refresh()
+
+    def action_scope_parent(self) -> None:
+        if self._scope_path == "/":
+            return
+        previous = self._scope_path
+        self._scope_path = previous.rsplit("/", 1)[0] or "/"
+        self._selected_path = previous
+        self.action_refresh()
 
     def _on_menu_dismissed(self, action_id: Optional[str]) -> None:
         if action_id is None:

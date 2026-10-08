@@ -7,7 +7,7 @@ import binascii
 import hashlib
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping
+from typing import Callable, Mapping
 
 from takler.exceptions import QueryResponseError, ServerResponseError
 from takler.protocol.query_v1 import (
@@ -98,6 +98,7 @@ class QueryClient:
         scope_path: str | None = None,
         flow_name: str | None = None,
         depth: int | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> QuerySnapshot:
         try:
             request = PageRequest(
@@ -122,6 +123,8 @@ class QueryClient:
         expected_total = None
         index = 0
         while True:
+            if cancelled is not None and cancelled():
+                raise QueryResponseError("cancelled", "superseded query")
             reply = self.transport.query(request)
             self._failure(reply)
             if not isinstance(reply, PageReply):
@@ -188,6 +191,8 @@ class QueryClient:
             raise ServerResponseError("query scope root is missing")
         if expected_total is not None and len(order) != expected_total:
             raise ServerResponseError("query node count mismatch")
+        if cancelled is not None and cancelled():
+            raise QueryResponseError("cancelled", "superseded query")
         snapshot = QuerySnapshot(
             *identity,
             scope,

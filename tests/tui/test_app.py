@@ -47,6 +47,8 @@ def test_bindings_cover_every_keyed_action_plus_extras() -> None:
     # Navigation extras.
     assert by_key["m"] == "open_menu"
     assert by_key["space"] == "toggle_node"
+    assert by_key["s"] == "scope_selected"
+    assert by_key["b"] == "scope_parent"
     assert by_key["q"] == "quit"
 
 

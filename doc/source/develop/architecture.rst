@@ -46,9 +46,9 @@
   端口响应同一批命令，两个 transport 共用调度器、鉴权判定层与审计日
   志； ``Scheduler`` 主循环默认每 ``10`` 秒推进一次依赖解析、
   ``CheckpointManager`` 周期性把节点树写成快照文件。
-* **客户端进程** 是无状态的命令行与界面：把运维命令（ ``requeue`` /
-  ``suspend`` / ``show`` 等）翻译成 RPC 发出去，打印响应后退出
-  （ TUI 则持续轮询 ``show`` ）。三个客户端共享同一份 proto 契约，
+* **客户端进程** 把运维命令（ ``requeue`` / ``suspend`` / ``show`` 等）
+  翻译成 RPC；命令行完成单次读取后退出，TUI 保留只读摘要视图、按需
+  读取详情并定时刷新。三个客户端共享同一份 proto 契约，
   见 :doc:`/guide/cli` 。Python 客户端的命令面之下是 transport 抽象
   （ ``ClientTransport`` ）：默认 gRPC ，选择 ``http`` （
   ``server.transport`` / ``TAKLER_TRANSPORT`` ）后同一套命令改走

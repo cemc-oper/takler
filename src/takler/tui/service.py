@@ -15,9 +15,12 @@ without the TUI knowing which.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional, Tuple, Union
+from threading import RLock
+from time import sleep
+from typing import Callable, List, Optional, Tuple, Union
 
 from takler.client.service_client import TaklerServiceClient
+from takler.exceptions import QueryResponseError
 from takler.logging import get_logger
 from takler.protocol.commands import Command
 from takler.server.connect_config import ConnectConfig
@@ -47,6 +50,7 @@ class TaklerTuiService:
             transport_name=transport_name,
         )
         self._connected = False
+        self._query_lock = RLock()
 
     @property
     def host(self) -> str:
@@ -80,6 +84,54 @@ class TaklerTuiService:
         self.close()
 
     # -- Queries -----------------------------------------------------
+
+    def read_snapshot(
+        self,
+        *,
+        scope_path: str | None = None,
+        depth: int | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ):
+        """Read a complete QueryDocument summary on the shared connection."""
+        with self._query_lock:
+            if cancelled is not None and cancelled():
+                raise QueryResponseError("cancelled", "superseded query")
+            self._ensure_open()
+            for attempt in range(3):
+                try:
+                    options = {"scope_path": scope_path, "depth": depth}
+                    if cancelled is not None:
+                        options["cancelled"] = cancelled
+                    return self._inner.run_query_snapshot(**options)
+                except QueryResponseError as exc:
+                    if cancelled is not None and cancelled():
+                        raise QueryResponseError(
+                            "cancelled", "superseded query"
+                        ) from None
+                    if (
+                        exc.code != "resource_exhausted"
+                        or exc.message
+                        not in {
+                            "query state changed during capture",
+                            "query state is changing",
+                        }
+                        or attempt == 2
+                    ):
+                        raise
+                    sleep(0.1 * (attempt + 1))
+
+    def read_detail(
+        self,
+        snapshot,
+        path: str,
+        groups: list[str],
+        current: Callable[[], bool] | None = None,
+    ):
+        with self._query_lock:
+            if current is not None and not current():
+                return None
+            self._ensure_open()
+            return self._inner.run_query_detail(snapshot, path, groups)
 
     def show(
         self,

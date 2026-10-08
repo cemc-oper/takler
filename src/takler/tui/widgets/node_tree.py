@@ -22,6 +22,7 @@ from textual.widgets import Tree
 from textual.widgets.tree import TreeNode
 
 from ..show_parser import NodeInfo, ShowSnapshot
+from ..query_view import QueryTuiView
 from ..state_style import state_block
 
 
@@ -49,7 +50,7 @@ def _attr_label(kind: str, body: str) -> Text:
     label = Text("• ", style="dim")
     label.append(kind, style=style)
     label.append("  ")
-    label.append(body, style="italic dim")
+    label.append(body[:256] + ("…" if len(body) > 256 else ""), style="italic dim")
     return label
 
 
@@ -136,6 +137,154 @@ class NodeTree(Tree[str]):
         # shadowing it silently broke ``Tree`` internals that rely on it
         # (caught by the TUI test skeleton).
         self._path_nodes: Dict[str, TreeNode[str]] = {}
+        self._query_view: QueryTuiView | None = None
+        self._query_loaded: dict[str, int] = {}
+        self._query_attr_nodes: dict[str, list[TreeNode[str]]] = {}
+        self._query_root_loaded = 0
+
+    QUERY_CHILD_BATCH = 256
+
+    def rebuild_query(self, view: QueryTuiView) -> None:
+        """Replace the compact view and recreate only expanded tree rows."""
+        expanded = self._expanded_paths()
+        cursor = self._cursor_path()
+        loaded = self._query_loaded.copy()
+        root_loaded = self._query_root_loaded
+        self.clear()
+        self._path_nodes.clear()
+        self._query_loaded.clear()
+        self._query_attr_nodes.clear()
+        self._query_root_loaded = 0
+        self._query_view = view
+        target = min(max(root_loaded, self.QUERY_CHILD_BATCH), len(view.roots))
+        while self._query_root_loaded < target:
+            self._load_query_roots()
+        for path in view.query.ordered_paths:
+            if path in expanded and path in self._path_nodes:
+                node = self._path_nodes[path]
+                target = min(
+                    loaded.get(path, self.QUERY_CHILD_BATCH),
+                    len(view.children.get(path, [])),
+                )
+                while self._query_loaded.get(path, 0) < target:
+                    self._load_query_children(path)
+                node.expand()
+        self._restore_cursor(cursor)
+
+    def _load_query_roots(self) -> None:
+        view = self._query_view
+        if view is None:
+            return
+        if self._query_root_loaded and self.root.children:
+            last = self.root.children[-1]
+            if last.data is None:
+                last.remove()
+        start = self._query_root_loaded
+        end = min(start + self.QUERY_CHILD_BATCH, len(view.roots))
+        for path in view.roots[start:end]:
+            self._add_query_node(self.root, path)
+        self._query_root_loaded = end
+        if end < len(view.roots):
+            self.root.add_leaf(f"… more ({len(view.roots) - end})", data=None)
+
+    def _add_query_node(self, parent: TreeNode[str], path: str) -> None:
+        assert self._query_view is not None
+        info = self._query_view.get(path)
+        if info is None:
+            return
+        children = self._query_view.children.get(path, [])
+        node = (
+            parent.add(_label_for(info), data=path, expand=False)
+            if children
+            else parent.add_leaf(_label_for(info), data=path)
+        )
+        self._path_nodes[path] = node
+
+    def _load_query_children(self, path: str) -> None:
+        view = self._query_view
+        if view is None or path not in self._path_nodes:
+            return
+        parent = self._path_nodes[path]
+        children = view.children.get(path, [])
+        start = self._query_loaded.get(path, 0)
+        if start and parent.children and parent.children[-1].data is None:
+            parent.children[-1].remove()
+        end = min(start + self.QUERY_CHILD_BATCH, len(children))
+        for child in children[start:end]:
+            self._add_query_node(parent, child)
+        self._query_loaded[path] = end
+        if end < len(children):
+            parent.add_leaf(f"… more ({len(children) - end})", data=None)
+
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
+        if self._query_view is None:
+            return
+        path = event.node.data
+        if isinstance(path, str) and path not in self._query_loaded:
+            self._load_query_children(path)
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        if self._query_view is None or event.node.data is not None:
+            return
+        parent = event.node.parent
+        if parent is self.root:
+            self._load_query_roots()
+            event.stop()
+            return
+        if parent is not None and isinstance(parent.data, str):
+            self._load_query_children(parent.data)
+            event.stop()
+
+    def update_query_detail(self, path: str) -> None:
+        """Add inline attributes only for a detail that was actually fetched."""
+        if self._query_view is None or path not in self._path_nodes:
+            return
+        node = self._path_nodes[path]
+        info = self._query_view.get(path)
+        if info is None:
+            return
+        node.set_label(_label_for(info))
+        for previous in self._query_attr_nodes.pop(path, []):
+            previous.remove()
+        added: list[TreeNode[str]] = []
+        for _, label in _attribute_rows(info):
+            added.append(node.add_leaf(label, data=path))
+        self._query_attr_nodes[path] = added
+        node.allow_expand = bool(added or self._query_view.children.get(path))
+        if added:
+            node.expand()
+
+    def reveal_query_path(self, path: str) -> None:
+        """Expand only the ancestors needed to restore the selected row."""
+        view = self._query_view
+        if view is None or path not in view.query.nodes:
+            return
+        root_path = path if path in view.roots else "/" + path.split("/", 2)[1]
+        if view.query.scope_path != "/":
+            root_path = view.query.scope_path
+        while root_path not in self._path_nodes and self._query_root_loaded < len(
+            view.roots
+        ):
+            self._load_query_roots()
+        parent = path.rsplit("/", 1)[0] or "/"
+        chain: list[str] = []
+        while parent != "/" and parent != view.query.scope_path:
+            chain.append(parent)
+            parent = parent.rsplit("/", 1)[0] or "/"
+        if view.query.scope_path != "/":
+            chain.append(view.query.scope_path)
+        for ancestor in reversed(chain):
+            node = self._path_nodes.get(ancestor)
+            if node is None:
+                break
+            next_index = chain.index(ancestor) - 1
+            child = chain[next_index] if next_index >= 0 else path
+            while child not in self._path_nodes and self._query_loaded.get(
+                ancestor, 0
+            ) < len(view.children.get(ancestor, [])):
+                self._load_query_children(ancestor)
+            node.expand()
+        self.select_path(path)
 
     def on_mount(self) -> None:
         self.show_root = False
@@ -154,6 +303,10 @@ class NodeTree(Tree[str]):
         selection, which is jarring during monitoring.
         """
         first_build = not self._path_nodes
+        self._query_view = None
+        self._query_loaded.clear()
+        self._query_attr_nodes.clear()
+        self._query_root_loaded = 0
         previous_paths = set(self._path_nodes)
         expanded_paths = self._expanded_paths()
         cursor_path = self._cursor_path()

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 import takler.tui.service as service_module
+from takler.exceptions import QueryResponseError
 from takler.protocol.commands import Command
 from takler.tui.service import TaklerTuiService
 
@@ -45,6 +46,17 @@ class FakeInnerClient:
         self.started = 0
         self.shutdowns = 0
         self.control_calls: List[tuple] = []
+        self.snapshot_errors: List[Exception] = []
+        self.snapshot_calls = 0
+
+    def run_query_snapshot(self, **selection):
+        self.snapshot_calls += 1
+        if self.snapshot_errors:
+            raise self.snapshot_errors.pop(0)
+        return selection
+
+    def run_query_detail(self, snapshot, path, groups):
+        return snapshot, path, groups
 
     def start(self) -> None:
         self.started += 1
@@ -108,6 +120,31 @@ def test_show_opens_the_connection_once_and_passes_all_flags(
     service.show(show_meter=False)
     assert inner.started == 1
     assert inner.transport.calls[1][1]["show_meter"] is False
+
+
+def test_query_snapshot_retries_only_transient_capture_changes(
+    service: TaklerTuiService, monkeypatch
+) -> None:
+    monkeypatch.setattr(service_module, "sleep", lambda _: None)
+    service._inner.snapshot_errors = [
+        QueryResponseError("resource_exhausted", "query state changed during capture"),
+        QueryResponseError("resource_exhausted", "query state is changing"),
+    ]
+    assert service.read_snapshot(scope_path="/flow") == {
+        "scope_path": "/flow",
+        "depth": None,
+    }
+    assert service._inner.snapshot_calls == 3
+    service._inner.snapshot_errors = [
+        QueryResponseError("resource_exhausted", "snapshot memory limit")
+    ]
+    with pytest.raises(QueryResponseError):
+        service.read_snapshot()
+    assert service._inner.snapshot_calls == 4
+    assert (
+        service.read_detail(None, "/flow", ["parameters"], current=lambda: False)
+        is None
+    )
 
 
 def test_ping_reports_elapsed_and_never_raises(service: TaklerTuiService) -> None:

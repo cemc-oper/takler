@@ -180,6 +180,7 @@ class QueryResponseError(TaklerError):
     def __init__(self, code: str, message: str = "", reset_scope: str | None = None):
         super().__init__(f"{code}: {message}" if message else code)
         self.code = code
+        self.message = message
         self.reset_scope = reset_scope
 
 

@@ -625,11 +625,13 @@ class TaklerServiceClient:
         scope_path: str | None = None,
         flow_name: str | None = None,
         depth: int | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> QuerySnapshot:
         return self.query_client.read_snapshot(
             scope_path=scope_path,
             flow_name=flow_name,
             depth=depth,
+            cancelled=cancelled,
         )
 
     def query_detail(self, snapshot: QuerySnapshot, path: str, field_groups: list[str]):
