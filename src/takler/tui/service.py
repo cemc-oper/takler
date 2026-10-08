@@ -20,6 +20,7 @@ from time import sleep
 from typing import Callable, List, Optional, Tuple, Union
 
 from takler.client.service_client import TaklerServiceClient
+from takler.client.query_client import QueryClient
 from takler.exceptions import QueryResponseError
 from takler.logging import get_logger
 from takler.protocol.commands import Command
@@ -51,6 +52,7 @@ class TaklerTuiService:
         )
         self._connected = False
         self._query_lock = RLock()
+        self._root_query = QueryClient(self._inner.transport)
 
     @property
     def host(self) -> str:
@@ -132,6 +134,25 @@ class TaklerTuiService:
                 return None
             self._ensure_open()
             return self._inner.run_query_detail(snapshot, path, groups)
+
+    def read_since(self, snapshot, cancelled: Callable[[], bool] | None = None):
+        """Poll and commit a complete delta while serializing shared transport use."""
+        with self._query_lock:
+            if cancelled is not None and cancelled():
+                raise QueryResponseError("cancelled", "superseded query")
+            self._ensure_open()
+            return self._inner.run_query_since(snapshot, cancelled=cancelled)
+
+    def read_root_detail(self, cancelled: Callable[[], bool] | None = None):
+        """Read service status without replacing the selected scope's cursor."""
+        with self._query_lock:
+            if cancelled is not None and cancelled():
+                raise QueryResponseError("cancelled", "superseded query")
+            self._ensure_open()
+            root = self._root_query.read_snapshot(depth=0, cancelled=cancelled)
+            if cancelled is not None and cancelled():
+                raise QueryResponseError("cancelled", "superseded query")
+            return self._root_query.read_detail(root, "/", ["service", "parameters"])
 
     def ping(self) -> Tuple[bool, str]:
         """Return ``(ok, message)``.

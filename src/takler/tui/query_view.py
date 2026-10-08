@@ -61,6 +61,29 @@ class QueryTuiView:
         self._nodes[path] = node
         return node
 
+    def apply_delta(self, snapshot: QuerySnapshot) -> None:
+        """Swap the committed summary while touching only its changed paths."""
+        removed = set(snapshot.removed_paths)
+        by_parent: dict[str, set[str]] = {}
+        for path in removed:
+            self._nodes.pop(path, None)
+            self._ancestors.pop(path, None)
+            self.children.pop(path, None)
+            parent = path.rsplit("/", 1)[0] or "/"
+            if parent not in removed:
+                by_parent.setdefault(parent, set()).add(path)
+        for parent, paths in by_parent.items():
+            if parent in self.children:
+                self.children[parent][:] = [
+                    path for path in self.children[parent] if path not in paths
+                ]
+        if removed:
+            self.roots = [path for path in self.roots if path not in removed]
+        for path in snapshot.changed_paths:
+            self._nodes.pop(path, None)
+            self._ancestors.pop(path, None)
+        self.query = snapshot
+
     def apply_detail(self, path: str, reply) -> NodeInfo | None:
         if path == "/":
             self.apply_root_detail(reply)

@@ -7,7 +7,7 @@ import takler.client.query_client as query_module
 from takler.client import cli
 from takler.client.query_client import QueryClient
 from takler.client.service_client import TaklerServiceClient
-from takler.exceptions import QueryResponseError, ServerResponseError
+from takler.exceptions import QueryResponseError, ServerResponseError, TransportError
 from takler.protocol.query_v1 import (
     CapabilitiesReply,
     InvalidateScope,
@@ -30,7 +30,10 @@ class ReplayTransport:
 
     def query(self, request):
         self.requests.append(request)
-        return self.replies.pop(0)
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
     def open(self):
         pass
@@ -124,6 +127,8 @@ def test_sparse_update_shares_base_and_moves_watermark_only_after_last_page():
     assert old.revision == 5 and old.get("/flow/task").status == "queued"
     assert result.revision == 6 and result.get("/flow/task").status == "active"
     assert result.nodes.base is old.nodes
+    assert result.changed_paths == ("/flow", "/flow/task")
+    assert result.removed_paths == ()
     assert transport.requests[-1].cursor == "next"
     assert len(result.ordered_paths) == 3
 
@@ -165,6 +170,27 @@ def test_unchanged_keeps_same_view_and_does_not_copy_nodes():
     client = QueryClient(ReplayTransport(page(), capability(), delta(target=5)))
     old = client.read_snapshot()
     assert client.read_since(old) is old
+
+
+def test_transport_failure_retries_from_committed_revision():
+    client = QueryClient(
+        ReplayTransport(
+            page(),
+            capability(),
+            delta(upsert("/flow"), complete=False),
+            TransportError("disconnected"),
+            capability(),
+            delta(upsert()),
+        )
+    )
+    old = client.read_snapshot()
+    with pytest.raises(TransportError, match="disconnected"):
+        client.read_since(old)
+    assert client.current is old
+    assert not old.stale_scopes
+    updated = client.read_since(old)
+    assert updated.revision == 6
+    assert updated.get("/flow/task").status == "active"
 
 
 def test_upsert_replaces_attempt_identity_in_full_summary():
@@ -223,6 +249,7 @@ def test_remove_subtree_drops_node_and_rejects_old_generation():
     client = QueryClient(ReplayTransport(page(), capability(), delta(remove)))
     result = client.read_since(client.read_snapshot())
     assert result.revision == 6
+    assert result.removed_paths == ("/flow/task",)
     assert result.get("/flow/task") is None
     assert result.ordered_paths == ("/", "/flow")
 

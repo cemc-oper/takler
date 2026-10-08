@@ -1,7 +1,7 @@
 """Main Textual application for the takler TUI.
 
 The app owns :class:`~takler.tui.service.TaklerTuiService`, runs background
-initial-summary refreshes and selected-node detail reads, and routes the
+summary refreshes, deltas, and selected-node detail reads, and routes the
 resulting compact view into the tree, tabs, and toolbar. It also dispatches
 server control actions.
 
@@ -234,6 +234,43 @@ class TaklerTuiApp(App):
     @work(thread=True, exclusive=True, group="refresh")
     def _refresh_worker(self, sequence: int, scope_path: str) -> None:
         try:
+            current = self._snapshot
+            if (
+                isinstance(current, QueryTuiView)
+                and current.query.scope_path == scope_path
+                and current.query.revision is not None
+            ):
+                try:
+                    updated = self.service.read_since(
+                        current.query,
+                        cancelled=lambda: sequence != self._refresh_seq,
+                    )
+                except QueryResponseError as exc:
+                    if exc.code not in {
+                        "reset_required",
+                        "stale_identity",
+                        "unsupported_capability",
+                    }:
+                        raise
+                else:
+                    if updated is current.query:
+                        self.call_from_thread(self._apply_unchanged, current, sequence)
+                        return
+                    if not updated.stale_scopes:
+                        root_reply = (
+                            self.service.read_detail(
+                                updated,
+                                "/",
+                                ["service", "parameters"],
+                                current=lambda: sequence == self._refresh_seq,
+                            )
+                            if scope_path == "/" and "/" in updated.changed_paths
+                            else None
+                        )
+                        self.call_from_thread(
+                            self._apply_delta, current, updated, root_reply, sequence
+                        )
+                        return
             compact = self.service.read_snapshot(
                 scope_path=None if scope_path == "/" else scope_path,
                 cancelled=lambda: sequence != self._refresh_seq,
@@ -243,20 +280,17 @@ class TaklerTuiApp(App):
                 snapshot = compact
             else:
                 snapshot = QueryTuiView(compact)
-                root_snapshot = (
-                    compact
-                    if scope_path == "/"
-                    else self.service.read_snapshot(
-                        scope_path="/",
-                        depth=0,
-                        cancelled=lambda: sequence != self._refresh_seq,
+                root = (
+                    self.service.read_detail(
+                        compact,
+                        "/",
+                        ["service", "parameters"],
+                        current=lambda: sequence == self._refresh_seq,
                     )
-                )
-                root = self.service.read_detail(
-                    root_snapshot,
-                    "/",
-                    ["service", "parameters"],
-                    current=lambda: sequence == self._refresh_seq,
+                    if scope_path == "/"
+                    else self.service.read_root_detail(
+                        cancelled=lambda: sequence != self._refresh_seq
+                    )
                 )
                 if root is None:
                     return
@@ -267,6 +301,39 @@ class TaklerTuiApp(App):
             self.call_from_thread(self._refresh_failed, sequence, str(exc))
             return
         self.call_from_thread(self._apply_snapshot, snapshot, sequence)
+
+    def _apply_unchanged(self, view: QueryTuiView, sequence: int) -> None:
+        if sequence != self._refresh_seq or view is not self._snapshot:
+            return
+        self._status_bar.set_stale(False)
+        self._toolbar.set_refreshed(datetime.now())
+
+    def _apply_delta(
+        self, view: QueryTuiView, updated, root_reply, sequence: int
+    ) -> None:
+        if sequence != self._refresh_seq or view is not self._snapshot:
+            return
+        changed = updated.changed_paths
+        removed = updated.removed_paths
+        selected_changed = (
+            self._selected_path in changed or self._selected_path in removed
+        )
+        if selected_changed or root_reply is not None:
+            self._detail_seq += 1
+        view.apply_delta(updated)
+        self._tree.apply_query_delta(view, changed, removed)
+        if root_reply is not None:
+            view.apply_root_detail(root_reply)
+            self._status_bar.set_service(view.service)
+        node = view.get(self._selected_path) if self._selected_path else None
+        if node is None and self._selected_path is not None:
+            self._selected_path = None
+            self._render_tabs(None)
+        elif node is not None and (selected_changed or root_reply is not None):
+            self._render_tabs(node)
+            self._request_detail(node.path)
+        self._status_bar.set_stale(False)
+        self._toolbar.set_refreshed(datetime.now())
 
     def _refresh_failed(self, sequence: int, message: str) -> None:
         if sequence == self._refresh_seq:

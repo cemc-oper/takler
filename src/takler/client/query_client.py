@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Callable, Mapping
 
-from takler.exceptions import QueryResponseError, ServerResponseError
+from takler.exceptions import QueryResponseError, ServerResponseError, TransportError
 from takler.protocol.query_v1 import (
     CapabilitiesReply,
     CapabilitiesRequest,
@@ -74,6 +74,8 @@ class QuerySnapshot:
     estimated_bytes: int
     revision: int | None = None
     stale_scopes: tuple[str, ...] = ()
+    changed_paths: tuple[str, ...] = ()
+    removed_paths: tuple[str, ...] = ()
 
     def get(self, path: str) -> QueryNode | None:
         return self.nodes.get(path)
@@ -271,6 +273,8 @@ class QueryClient:
             raise QueryResponseError("stale_identity", "query root needs rebuilding")
         try:
             capability = self.capabilities()
+        except TransportError:
+            raise
         except Exception:
             self._mark_stale(snapshot, snapshot.scope_path)
             raise
@@ -390,6 +394,10 @@ class QueryClient:
                 previous_page = reply
                 request = request.model_copy(update={"cursor": reply.next_cursor})
                 index += 1
+            except TransportError:
+                # The batch was never committed. Retry from the old watermark;
+                # a changed session or expired window will explicitly reset it.
+                raise
             except Exception:
                 if self.current is snapshot:
                     self._mark_stale(snapshot, snapshot.scope_path)
@@ -463,6 +471,8 @@ class QueryClient:
             revision=identity[4],
             stale_scopes=tuple(sorted(stale)),
             estimated_bytes=size,
+            changed_paths=tuple(changes),
+            removed_paths=tuple(removed_paths) if removed else (),
         )
         self.current = result
         return result

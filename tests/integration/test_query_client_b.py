@@ -8,7 +8,10 @@ import subprocess
 from takler.core import NodeStatus
 from takler.exceptions import QueryResponseError
 from takler.server.connect_config import Address, ConnectConfig, HttpSettings, Server
+from takler.tui.app import TaklerTuiApp
+from takler.tui.service import TaklerTuiService
 from tests.integration.test_query_a_matrix import _environment
+from tests.tui.conftest import wait_until
 
 
 @pytest.fixture(scope="module")
@@ -120,3 +123,54 @@ def test_go_sync_cli_reads_real_since_route(
     assert "# revision=" in result.stdout
     assert "task [queued]" in result.stdout
     assert len(calls) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("transport", ["grpc", "http"])
+async def test_tui_merges_real_delta_then_rebuilds_structure(
+    transport, server_runner_factory, free_port_fixture
+):
+    grpc_port, http_port = free_port_fixture(), free_port_fixture()
+    runner = server_runner_factory(
+        port=grpc_port,
+        interval_main_loop=1.0,
+        connect_config=ConnectConfig(
+            server=Server(
+                address=Address(
+                    hostname="127.0.0.1", ip="127.0.0.1", port=str(grpc_port)
+                ),
+                http=HttpSettings(host="127.0.0.1", port=str(http_port)),
+            )
+        ),
+    )
+    flow = runner.server.bunch.add_flow("flow")
+    task = flow.add_task("task")
+    service = TaklerTuiService(
+        "127.0.0.1",
+        http_port if transport == "http" else grpc_port,
+        transport_name=transport,
+    )
+    app = TaklerTuiApp(service, scope_path="/flow")
+    try:
+        async with app.run_test(size=(120, 40)) as pilot:
+            await wait_until(lambda: "/flow" in app._tree._path_nodes, pilot)
+            view = app._snapshot
+            row = app._tree._path_nodes["/flow"]
+            assert view.query.revision is not None
+            task.set_node_status(NodeStatus.queued)
+            app.action_refresh()
+            await wait_until(
+                lambda: app._snapshot.query.get("/flow/task").status == "queued",
+                pilot,
+            )
+            assert app._snapshot is view
+            assert app._tree._path_nodes["/flow"] is row
+            flow.add_task("new")
+            app.action_refresh()
+            await wait_until(
+                lambda: app._snapshot.query.get("/flow/new") is not None, pilot
+            )
+            assert app._snapshot is not view
+            assert app._snapshot.service.status in {"running", "halted"}
+    finally:
+        service.close()

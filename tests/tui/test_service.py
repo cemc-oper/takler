@@ -46,6 +46,7 @@ class FakeInnerClient:
         self.control_calls: List[tuple] = []
         self.snapshot_errors: List[Exception] = []
         self.snapshot_calls = 0
+        self.since_calls = []
 
     def run_query_snapshot(self, **selection):
         self.snapshot_calls += 1
@@ -55,6 +56,10 @@ class FakeInnerClient:
 
     def run_query_detail(self, snapshot, path, groups):
         return snapshot, path, groups
+
+    def run_query_since(self, snapshot, *, cancelled=None):
+        self.since_calls.append(snapshot)
+        return snapshot
 
     def start(self) -> None:
         self.started += 1
@@ -105,6 +110,18 @@ def test_query_snapshot_opens_and_reuses_connection(
     service.read_snapshot(scope_path="/other", depth=1)
     assert inner.started == 1
     assert inner.snapshot_calls == 2
+
+
+def test_query_since_uses_shared_connection_and_honors_cancellation(
+    service: TaklerTuiService,
+) -> None:
+    snapshot = object()
+    assert service.read_since(snapshot) is snapshot
+    assert service._inner.since_calls == [snapshot]
+    assert service._inner.started == 1
+    with pytest.raises(QueryResponseError, match="superseded"):
+        service.read_since(snapshot, cancelled=lambda: True)
+    assert service._inner.since_calls == [snapshot]
 
 
 def test_query_snapshot_retries_only_transient_capture_changes(

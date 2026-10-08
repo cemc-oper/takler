@@ -207,8 +207,10 @@ class NodeTree(Tree[str]):
         parent = self._path_nodes[path]
         children = view.children.get(path, [])
         start = self._query_loaded.get(path, 0)
-        if start and parent.children and parent.children[-1].data is None:
-            parent.children[-1].remove()
+        if start:
+            for child in tuple(parent.children):
+                if child.data is None:
+                    child.remove()
         end = min(start + self.QUERY_CHILD_BATCH, len(children))
         for child in children[start:end]:
             self._add_query_node(parent, child)
@@ -253,6 +255,61 @@ class NodeTree(Tree[str]):
         node.allow_expand = bool(added or self._query_view.children.get(path))
         if added:
             node.expand()
+
+    def apply_query_delta(
+        self, view: QueryTuiView, changed: tuple[str, ...], removed: tuple[str, ...]
+    ) -> None:
+        """Refresh visible rows without clearing the tree or its cursor."""
+        assert self._query_view is view
+        removed_set = set(removed)
+        for path in removed:
+            parent_path = path.rsplit("/", 1)[0] or "/"
+            if parent_path in removed_set:
+                continue
+            node = self._path_nodes.get(path)
+            if node is None:
+                continue
+            parent = node.parent
+            node.remove()
+            if parent is self.root:
+                self._query_root_loaded -= 1
+                self._refresh_query_more(
+                    self.root, self._query_root_loaded, len(view.roots)
+                )
+            elif parent_path in self._query_loaded:
+                self._query_loaded[parent_path] -= 1
+                self._refresh_query_more(
+                    parent,
+                    self._query_loaded[parent_path],
+                    len(view.children.get(parent_path, ())),
+                )
+                parent.allow_expand = bool(
+                    view.children.get(parent_path)
+                    or self._query_attr_nodes.get(parent_path)
+                )
+        for path in removed:
+            self._path_nodes.pop(path, None)
+            self._query_loaded.pop(path, None)
+            self._query_attr_nodes.pop(path, None)
+        for path in changed:
+            node = self._path_nodes.get(path)
+            if node is None:
+                continue
+            info = view.get(path)
+            if info is None:
+                continue
+            node.set_label(_label_for(info))
+            for previous in self._query_attr_nodes.pop(path, []):
+                previous.remove()
+            node.allow_expand = bool(view.children.get(path))
+
+    @staticmethod
+    def _refresh_query_more(parent: TreeNode[str], loaded: int, total: int) -> None:
+        for child in tuple(parent.children):
+            if child.data is None:
+                child.remove()
+        if loaded < total:
+            parent.add_leaf(f"… more ({total - loaded})", data=None)
 
     def reveal_query_path(self, path: str) -> None:
         """Expand only the ancestors needed to restore the selected row."""

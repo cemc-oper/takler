@@ -146,8 +146,8 @@ takler-tui --scope /test
 The summary has one `as_of` time. Requested details are sampled later and
 marked as live; they are not a second copy of that snapshot. The TUI loads
 details when a node is selected and retains the last complete view if a refresh
-fails. This version does not support revision-based incremental updates or
-cross-restart query cache recovery. See the [initial query guide](doc/source/guide/query.rst)
+fails. Later refreshes merge revision deltas into visible rows, and a reset
+rebuilds the selected scope. Query caches do not survive server restarts. See the [query guide](doc/source/guide/query.rst)
 for pagination, limits, errors and the distinction from checkpoints.
 
 ## Recovery and control
