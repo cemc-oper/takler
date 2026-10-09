@@ -196,7 +196,6 @@ CONTRACT_RPC_SURFACE = {
     "RunCommandLoad": ("LoadCommand", "ServiceResponse"),
     "RunCommandReplace": ("ReplaceCommand", "ServiceResponse"),
     "RunCommandBegin": ("BeginCommand", "BatchResponse"),
-    "RunRequestShow": ("ShowRequest", "ShowResponse"),
     "RunRequestPing": ("PingRequest", "PingResponse"),
     "QueryCoroutine": ("CoroutineRequest", "CoroutineResponse"),
     "RunRequestServerStatus": ("ServerStatusRequest", "ServerStatusResponse"),

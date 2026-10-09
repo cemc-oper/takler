@@ -38,8 +38,6 @@ from takler.protocol.commands import (
     BatchResponse,
     BatchItemResult,
     BATCH_COMMANDS,
-    ShowRequest,
-    ShowResponse,
     SuspendCommand,
 )
 from takler.protocol.envelope import PROTOCOL_VERSION, AuthInfo, Envelope
@@ -66,14 +64,12 @@ __all__ = [
     "LoadCommand",
     "ReplaceCommand",
     "BeginCommand",
-    "ShowRequest",
     "PingRequest",
     "CoroutineRequest",
     "ServiceResponse",
     "BatchResponse",
     "BatchItemResult",
     "BATCH_COMMANDS",
-    "ShowResponse",
     "PingResponse",
     "Coroutine",
     "CoroutineResponse",

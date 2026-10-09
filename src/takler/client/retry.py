@@ -115,7 +115,6 @@ COMMAND_KIND_BY_COMMAND: Dict[Command, CommandKind] = {
     Command.LOAD: CommandKind.CONTROL,
     Command.REPLACE: CommandKind.CONTROL,
     Command.BEGIN: CommandKind.CONTROL,
-    Command.SHOW: CommandKind.QUERY,
     Command.PING: CommandKind.QUERY,
     Command.COROUTINE: CommandKind.QUERY,
     Command.SERVER_STATUS: CommandKind.QUERY,

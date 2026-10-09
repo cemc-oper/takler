@@ -104,12 +104,6 @@ def test_server_serves_grpc_and_http_in_one_process(
         assert load.status_code == 200
         assert load.json()["payload"]["flag"] == 0
 
-    show = client.run_request_show(
-        show_trigger=False,
-        show_parameter=False,
-        show_limit=False,
-        show_event=False,
-        show_meter=False,
-    )
+    snapshot = client.run_query_snapshot()
     client.close_channel()
-    assert "flow_http" in show.output
+    assert snapshot.get("/flow_http") is not None

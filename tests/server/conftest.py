@@ -288,18 +288,6 @@ HANDLER_CASES: List[HandlerCase] = [
         message_part="failed=1",
     ),
     # -- query commands --------------------------------------------------
-    HandlerCase(
-        "show",
-        Command.SHOW,
-        {
-            "show_trigger": False,
-            "show_parameter": False,
-            "show_limit": True,
-            "show_event": True,
-            "show_meter": True,
-        },
-        output_part=FLOW1,
-    ),
     HandlerCase("ping", Command.PING, {}),
     HandlerCase("coroutine", Command.COROUTINE, {}),
     HandlerCase(
@@ -453,11 +441,9 @@ def assert_case(case: HandlerCase, response, bunch: Bunch) -> None:
     """Assert a case's expectations against either response encoding.
 
     Works on the response DTO and on the pb2 message alike: both carry the
-    attributes read here (``flag``/``message``, ``output``, ``coroutines``).
+    attributes read here (``flag``/``message`` and ``coroutines``).
     """
-    if case.command is Command.SHOW:
-        assert case.output_part in response.output
-    elif case.command is Command.PING:
+    if case.command is Command.PING:
         pass  # arriving at all is the answer
     elif case.command is Command.COROUTINE:
         # The dispatch itself is a task of the running loop.
@@ -540,14 +526,6 @@ def to_pb2(command: Command, kwargs: Dict[str, Any]):
     if command is Command.BEGIN:
         return takler_pb2.BeginCommand(
             flow_name=kwargs.get("flow_name", ""), force=kwargs.get("force", False)
-        )
-    if command is Command.SHOW:
-        return takler_pb2.ShowRequest(
-            show_trigger=kwargs["show_trigger"],
-            show_parameter=kwargs["show_parameter"],
-            show_limit=kwargs["show_limit"],
-            show_event=kwargs["show_event"],
-            show_meter=kwargs["show_meter"],
         )
     if command is Command.PING:
         return takler_pb2.PingRequest()

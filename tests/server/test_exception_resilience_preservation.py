@@ -18,9 +18,8 @@ were first observed on the **UNFIXED** code:
 * A command handler (``RunCommandComplete`` / ``RunCommandInit`` / ...) invoked
   with a valid ``node_path`` pointing to a :class:`Task` performs the operation
   and returns ``ServiceResponse(flag=0, message="")`` (Req 3.2, 3.3).
-* The query handlers ``RunRequestShow`` / ``RunRequestPing`` / ``QueryCoroutine``
-  return their corresponding success response types ``ShowResponse`` /
-  ``PingResponse`` / ``CoroutineResponse`` (Req 3.2).
+* The query handlers ``RunRequestPing`` and ``QueryCoroutine`` return their
+  corresponding success response types (Req 3.2).
 * :meth:`TaklerServer.stop` cleanly shuts the scheduler and network service down
   without raising (Req 3.4).
 
@@ -48,7 +47,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import socket
 from unittest import mock
 
@@ -395,30 +393,16 @@ def test_valid_meter_value_executes_and_returns_success(data):
 )
 @given(
     task_names=_unique_names(min_size=0, max_size=4),
-    flags=st.tuples(*[st.booleans()] * 5),
 )
-def test_query_handlers_return_success_response_types(task_names, flags):
-    """``RunRequestShow`` / ``RunRequestPing`` / ``QueryCoroutine`` succeed.
+def test_query_handlers_return_success_response_types(task_names):
+    """``RunRequestPing`` and ``QueryCoroutine`` succeed.
 
     Preservation -- Requirement 3.2: the query handlers return their existing
-    success response types (``ShowResponse`` / ``PingResponse`` /
-    ``CoroutineResponse``) for any valid request.
+    success response types (``PingResponse`` / ``CoroutineResponse``) for any
+    valid request.
     """
     service = _make_service_with_tasks(task_names)
     context = mock.MagicMock()
-
-    show_parameter, show_trigger, show_limit, show_event, show_meter = flags
-    show_req = mock.MagicMock()
-    show_req.show_parameter = show_parameter
-    show_req.show_trigger = show_trigger
-    show_req.show_limit = show_limit
-    show_req.show_event = show_event
-    show_req.show_meter = show_meter
-
-    show_resp = asyncio.run(service.RunRequestShow(show_req, context))
-    assert isinstance(show_resp, takler_pb2.ShowResponse)
-    # The output is the JSON serialization of the bunch -- it must parse.
-    json.loads(show_resp.output)
 
     ping_resp = asyncio.run(service.RunRequestPing(mock.MagicMock(), context))
     assert isinstance(ping_resp, takler_pb2.PingResponse)

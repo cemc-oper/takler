@@ -56,7 +56,6 @@ from takler.protocol.commands import (
     ServiceResponse,
     BatchResponse,
     BATCH_COMMANDS,
-    ShowResponse,
     Command,
 )
 from takler.protocol.envelope import Envelope
@@ -88,13 +87,6 @@ PAYLOAD_BY_COMMAND: Dict[Command, Dict[str, Any]] = {
     Command.LOAD: {"flow_type": "json", "flow_bytes": b"{}"},
     Command.REPLACE: {"target_path": "/flow1", "flow_bytes": b"{}"},
     Command.BEGIN: {"flow_name": "flow1", "force": False},
-    Command.SHOW: {
-        "show_trigger": True,
-        "show_parameter": True,
-        "show_limit": True,
-        "show_event": True,
-        "show_meter": True,
-    },
     Command.PING: {},
     Command.COROUTINE: {},
 }
@@ -102,8 +94,6 @@ PAYLOAD_BY_COMMAND: Dict[Command, Dict[str, Any]] = {
 
 def _response_dto(command: Command):
     """A valid response DTO instance of ``command``."""
-    if command is Command.SHOW:
-        return ShowResponse(output="{}")
     if command is Command.PING:
         return PingResponse()
     if command is Command.COROUTINE:

@@ -63,7 +63,7 @@ def build_rich_bunch() -> Bunch:
 
 
 def show_payload(bunch: Bunch) -> str:
-    """Serialise ``bunch`` the way ``Scheduler.handle_request_show`` does."""
+    """Serialize a legacy view fixture from the safe projection helper."""
     from takler.serialization.query import project_show
 
     return json.dumps(project_show(bunch))

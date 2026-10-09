@@ -1,7 +1,6 @@
 import asyncio
 import time
 import datetime
-import json
 from queue import Queue
 from typing import Callable, Optional
 from uuid import UUID
@@ -37,7 +36,6 @@ from takler.protocol.commands import (
     RequeueCommand,
     ResumeCommand,
     RunCommand,
-    ShowRequest,
     ServerStatusResponse,
     SuspendCommand,
 )
@@ -990,16 +988,3 @@ class Scheduler:
         return self.server_status_response(message="service running in memory")
 
     # Query -------------------------------------------------
-
-    def handle_request_show(self, request: ShowRequest) -> str:
-        """Project safe display data; clients use the flags to select details."""
-        from takler.serialization.query import project_show
-
-        bunch_dict = project_show(
-            self.bunch,
-            self.query_redacted_parameters,
-            server_status=self.server_status_response().model_dump(mode="json"),
-        )
-        bunch_json_str = json.dumps(bunch_dict)
-
-        return bunch_json_str

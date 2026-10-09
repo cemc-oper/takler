@@ -29,7 +29,6 @@ from takler.protocol.commands import (
     CoroutineResponse,
     PingResponse,
     ServiceResponse,
-    ShowResponse,
 )
 from takler.server.handlers import METHOD_NAME_BY_COMMAND
 from takler.server.protocol import adapter, takler_pb2
@@ -63,13 +62,6 @@ PAYLOAD_BY_COMMAND = {
     Command.LOAD: {"flow_type": "json", "flow_bytes": b'{"flow1": {}}'},
     Command.REPLACE: {"target_path": "/flow1", "flow_bytes": b"{}"},
     Command.BEGIN: {"flow_name": "flow1", "force": True},
-    Command.SHOW: {
-        "show_trigger": True,
-        "show_parameter": False,
-        "show_limit": True,
-        "show_event": False,
-        "show_meter": True,
-    },
     Command.PING: {},
     Command.COROUTINE: {},
     Command.SERVER_STATUS: {},
@@ -183,22 +175,6 @@ def test_request_to_pb2_maps_the_remaining_fields():
     assert message.flow_name == "flow1"
     assert message.force is True
 
-    message = adapter.request_to_pb2(
-        Command.SHOW,
-        {
-            "show_trigger": True,
-            "show_parameter": False,
-            "show_limit": True,
-            "show_event": False,
-            "show_meter": True,
-        },
-    )
-    assert message.show_trigger is True
-    assert message.show_parameter is False
-    assert message.show_limit is True
-    assert message.show_event is False
-    assert message.show_meter is True
-
 
 @pytest.mark.parametrize("command", sorted(PAYLOAD_BY_COMMAND, key=str))
 def test_request_round_trips_through_the_server_direction(command: Command):
@@ -239,12 +215,6 @@ def test_response_from_pb2_builds_a_service_response():
 
 
 def test_response_from_pb2_builds_the_query_responses():
-    response = adapter.response_from_pb2(
-        Command.SHOW, takler_pb2.ShowResponse(output="{}")
-    )
-    assert isinstance(response, ShowResponse)
-    assert response.output == "{}"
-
     response = adapter.response_from_pb2(Command.PING, takler_pb2.PingResponse())
     assert isinstance(response, PingResponse)
 

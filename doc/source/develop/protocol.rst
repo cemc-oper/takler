@@ -91,10 +91,6 @@ gRPC 编码的唯一权威来源仍是
       - ``RunCommandBegin``
       - ``BeginCommand`` → ``BatchResponse``
       - 启动日历
-    * - ``show``
-      - ``RunRequestShow``
-      - ``ShowRequest`` → ``ShowResponse``
-      - 查询节点树
     * - ``ping``
       - ``RunRequestPing``
       - ``PingRequest`` → ``PingResponse``
@@ -139,12 +135,11 @@ gRPC 上全部是 unary-unary 调用（一次请求一次应答，没有流式�
   替换已有同名 Flow 并自动 begin，具体状态及错误约定见 :doc:`definition`。
 * ``BeginCommand.flow_name`` 为空串表示对 Bunch 里全部 flow 执行
   begin —— 空串就是线上形式，不是省略字段。
-* ``ShowResponse.output`` 是纯数据 JSON 投影；Python CLI/TUI 解码为
-  只读视图，Go CLI 打印 JSON。客户端不根据类型标识导入或重建执行对象。
+* 查询节点树使用单独的 QueryDocument v1 路由；分页、详情与增量语义见
+  :doc:`/guide/query`。客户端不根据类型标识导入或重建执行对象。
 * DTO 的字段默认值对齐 CLI 的表面而不是 proto3 零值：
   ``ForceCommand.recursive`` 默认 ``True`` （两个 CLI 的
-  ``--recursive`` 默认开）， ``show`` 的三个展示开关默认 ``True``
-  。省略字段的请求得到的是运维在 CLI 上不加该选项时的取值。
+  ``--recursive`` 默认开）。
 
 DTO 基类 ``ProtocolModel`` 一律 ``extra="forbid"`` ：拼错或多出的字
 段是校验错误，不是静默丢弃。两端同批发布时这是正确的默认；哪天要支
@@ -262,10 +257,8 @@ child、load 与 replace 命令返回 ``ServiceResponse{flag, message}``；七�
   ``41`` / ``42`` 只由客户端本地抛出，永远不会出现在服务端返回的
   ``flag`` 里； ``1`` 与 ``99`` 分别是 ``takler_error`` 与
   ``internal_error`` 两个兜底。
-* 三个查询命令没有 ``flag`` 字段。HTTP 查询执行异常返回 500；
-  gRPC 保持现有错误应答： ``show``
-  把错误写进 ``output`` （ ``error: {类型}: {消息}`` ）， ``ping``
-  与 ``coroutine`` 返回空应答。鉴权拒绝不走应答体，见下节。
+* ``ping`` 与 ``coroutine`` 没有 ``flag`` 字段。HTTP 查询执行异常返回 500；
+  gRPC 返回空应答。鉴权拒绝不走应答体，见下节。
 
 凭据与权限分级
 --------------
@@ -302,8 +295,7 @@ HTTP 的请求头名（ HTTP 头不区分大小写），都是全小写、不带
 （ ``/takler_protocol.TaklerServer/<方法名>`` ）为键：
 
 * ``CHILD`` —— 五个 child 命令；
-* ``OPERATOR`` —— 九个控制命令，外加 ``show`` 与 ``coroutine`` 两
-  个只读命令（它们返回整份流程定义，侦察价值与写操作相当）；
+* ``OPERATOR`` —— 九个控制命令，外加 ``coroutine`` 只读命令；
 * ``PUBLIC`` —— 仅 ``ping`` 。
 
 **表里没有的方法一律按 ``OPERATOR`` 处理** —— 故意 fail-closed ，
@@ -346,7 +338,7 @@ HTTP 的请求头名（ HTTP 头不区分大小写），都是全小写、不带
 * 单次尝试超时 ``10`` 秒；
 * 所有变更命令（包括 child、load、replace）固定只发送一次，HTTP 与 gRPC
   均禁用自动重发，不受重试窗口配置覆盖。失败时结果可能未知，应先查询状态。
-* 只有 ``ping`` / ``show`` / ``coroutine`` 可重试，默认窗口 ``60`` 秒；
+* 只有 ``ping`` / ``coroutine`` 可按旧命令策略重试，默认窗口 ``60`` 秒；
   环境变量 ``TAKLER_TIMEOUT`` 覆盖窗口（见 :doc:`/operation/reference`）。
   TLS 校验失败与配置错误不重试。
 * 退避公式 ``min(2**(n-1), 60)`` 秒， ``n`` 为第几次尝试；

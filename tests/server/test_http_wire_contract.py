@@ -87,7 +87,7 @@ def test_every_required_payload_field_is_checked_before_dispatch(case):
             assert response.status_code == 422 and count == 0
 
 
-@pytest.mark.parametrize("command", [Command.PING, Command.SHOW, Command.COROUTINE])
+@pytest.mark.parametrize("command", [Command.PING, Command.COROUTINE])
 def test_query_execution_error_is_http_500(command, monkeypatch):
     from tests.server.conftest import build_scheduler
     from takler.server.handlers import CommandHandlers

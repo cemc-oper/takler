@@ -3,7 +3,7 @@ The job password must not reach a ``show`` response.
 
 Covers requirements 4.11 and 16.8 of the ``m2-security`` spec.
 
-``Scheduler.handle_request_show`` builds a dedicated safe projection. This
+``project_show`` builds a dedicated safe projection. This
 module pins the response received by an operator and its data-only client view;
 checkpoint's separate password map is never part of this query document.
 
@@ -20,16 +20,8 @@ import pytest
 
 from takler.core import Bunch, Flow, NodeStatus
 from takler.core.parameter import TAKLER_PASS
-from takler.protocol.commands import ShowRequest
+from takler.serialization.query import project_show
 from takler.server.scheduler import Scheduler
-
-SHOW_KWARGS = dict(
-    show_parameter=True,
-    show_trigger=True,
-    show_limit=True,
-    show_event=True,
-    show_meter=True,
-)
 
 
 @pytest.fixture
@@ -68,7 +60,7 @@ def test_show_response_does_not_contain_job_password(scheduler):
     """Requirements 4.11, 16.8: the password is absent from the show response."""
     task1 = scheduler.bunch.find_node("/flow1/task1")
 
-    output = scheduler.handle_request_show(ShowRequest(**SHOW_KWARGS))
+    output = json.dumps(project_show(scheduler.bunch))
 
     # The response does describe the active task and its user parameter, so
     # the absence of the password below is meaningful.
@@ -87,7 +79,7 @@ def test_client_query_view_has_no_password_or_execution_methods(scheduler):
     from takler.query import parse_show
 
     task = scheduler.bunch.find_node("/flow1/task1")
-    snapshot = parse_show(scheduler.handle_request_show(ShowRequest(**SHOW_KWARGS)))
+    snapshot = parse_show(json.dumps(project_show(scheduler.bunch)))
     view = snapshot.find_node("/flow1/task1")
     assert view.state == "active"
     assert view.try_no == task.try_no

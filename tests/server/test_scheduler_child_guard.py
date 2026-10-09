@@ -43,7 +43,6 @@ from takler.protocol.commands import (
     RequeueCommand,
     ResumeCommand,
     RunCommand,
-    ShowRequest,
     SuspendCommand,
 )
 from takler.server.scheduler import Scheduler
@@ -310,15 +309,6 @@ def test_control_and_query_commands_do_not_consult_the_guard():
     )
     scheduler.run_command_free_dep(FreeDepCommand(paths=[TASK1]))
     scheduler.run_command_requeue(RequeueCommand(node_paths=[TASK1]))
-    scheduler.handle_request_show(
-        ShowRequest(
-            show_parameter=False,
-            show_trigger=False,
-            show_limit=False,
-            show_event=False,
-            show_meter=False,
-        )
-    )
 
     assert detector.calls == []
 

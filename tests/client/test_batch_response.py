@@ -74,8 +74,7 @@ class Unavailable(grpc.RpcError):
     [
         c
         for c in Command
-        if c
-        not in (Command.PING, Command.SHOW, Command.COROUTINE, Command.SERVER_STATUS)
+        if c not in (Command.PING, Command.COROUTINE, Command.SERVER_STATUS)
     ],
 )
 @pytest.mark.parametrize("wire", ["grpc", "http"])

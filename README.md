@@ -140,6 +140,7 @@ before requesting per-node details:
 ```bash
 takler-client-py show --scope /test
 takler-client-py show --scope /test/t1 --show-parameter --show-trigger
+takler-client-py sync --scope /test --polls 5 --interval 1
 takler-tui --scope /test
 ```
 
@@ -147,7 +148,9 @@ The summary has one `as_of` time. Requested details are sampled later and
 marked as live; they are not a second copy of that snapshot. The TUI loads
 details when a node is selected and retains the last complete view if a refresh
 fails. Later refreshes merge revision deltas into visible rows, and a reset
-rebuilds the selected scope. Query caches do not survive server restarts. See the [query guide](doc/source/guide/query.rst)
+rebuilds the selected scope. Query caches do not survive server restarts.
+The old full-tree `RunRequestShow` RPC and HTTP `show` endpoint have been
+removed; upgrade the server and clients together. See the [query guide](doc/source/guide/query.rst)
 for pagination, limits, errors and the distinction from checkpoints.
 
 ## Recovery and control

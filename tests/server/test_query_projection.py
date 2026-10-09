@@ -16,7 +16,6 @@ from takler.serialization.registry import (
     using_registry,
 )
 from takler.tasks.shell import ShellScriptTask
-from takler.protocol.commands import ShowRequest
 
 
 def test_projection_filters_all_parameter_sources_without_mutation(
@@ -192,7 +191,15 @@ def test_show_projects_current_attempt_files_and_service_report(tmp_path):
     }
     server.checkpoint_manager.last_checkpoint_at = "2026-10-05T00:00:00+00:00"
 
-    payload = server.scheduler.handle_request_show(ShowRequest())
+    payload = json.dumps(
+        project_show(
+            server.bunch,
+            server.scheduler.query_redacted_parameters,
+            server_status=server.scheduler.server_status_response().model_dump(
+                mode="json"
+            ),
+        )
+    )
     snapshot = parse_show(payload)
     current = snapshot.get("/f/t")
     assert snapshot.service.status == "halted"

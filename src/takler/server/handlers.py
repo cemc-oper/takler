@@ -50,7 +50,6 @@ from takler.protocol.commands import (
     PingResponse,
     ProtocolModel,
     ServiceResponse,
-    ShowResponse,
 )
 from pydantic import ValidationError
 from takler.protocol.error_code import SUCCESS, error_code_for_exception
@@ -81,13 +80,10 @@ logger = get_logger("server.handlers")
 #: not Control_Commands.
 #:
 #: Requirement 11.2 audits Control_Commands, i.e. the commands that write to the
-#: Bunch. ``show`` and ``coroutine`` are Operator level because they expose the
-#: whole flow definition, not because they modify anything, and ``ping`` is
-#: public. Auditing them would bury the eight records that matter under one
-#: record per TUI refresh -- the TUI polls ``show`` continuously.
+#: Bunch. ``coroutine`` is Operator level because it exposes service internals,
+#: not because it modifies anything; ``ping`` is public.
 _READ_ONLY_OPERATOR_METHODS: "frozenset[str]" = frozenset(
     {
-        "RunRequestShow",
         "QueryCoroutine",
         "RunRequestServerStatus",
     }
@@ -141,7 +137,6 @@ METHOD_NAME_BY_COMMAND: Dict[Command, str] = {
     Command.LOAD: "RunCommandLoad",
     Command.REPLACE: "RunCommandReplace",
     Command.BEGIN: "RunCommandBegin",
-    Command.SHOW: "RunRequestShow",
     Command.PING: "RunRequestPing",
     Command.COROUTINE: "QueryCoroutine",
     Command.SERVER_STATUS: "RunRequestServerStatus",
@@ -172,13 +167,10 @@ def command_error_response(exc: Exception) -> ServiceResponse:
 
 
 #: Command -> the error representation of its response type. The query
-#: commands reuse their own response types for errors (``show`` writes the
-#: error into ``output``; ``ping`` and ``coroutine`` answer empty); every
+#: commands reuse their own response types for errors (``ping`` and
+#: ``coroutine`` answer empty); every
 #: child and control command defaults to :func:`command_error_response`.
 _ERROR_RESPONSE_BY_COMMAND: Dict[Command, Callable[[Exception], ProtocolModel]] = {
-    Command.SHOW: lambda exc: ShowResponse(
-        output=f"error: {type(exc).__name__}: {exc}"
-    ),
     Command.PING: lambda exc: PingResponse(),
     Command.COROUTINE: lambda exc: CoroutineResponse(),
 }
@@ -206,7 +198,6 @@ _REQUEST_INFO_BY_COMMAND: Dict[Command, Callable[[ProtocolModel], str]] = {
     Command.BEGIN: lambda r: f"flow_name={r.flow_name}, force={r.force}",
     Command.LOAD: lambda r: f"flow_type={r.flow_type}",
     Command.REPLACE: lambda r: f"target_path={r.target_path}",
-    Command.SHOW: lambda r: "show",
     Command.PING: lambda r: "ping",
     Command.COROUTINE: lambda r: "coroutine",
     Command.SERVER_STATUS: lambda r: "server-status",
@@ -324,7 +315,6 @@ class CommandHandlers:
 
         async with self.scheduler.query_state_lock:
             mutates = command not in (
-                Command.SHOW,
                 Command.PING,
                 Command.COROUTINE,
                 Command.SERVER_STATUS,
@@ -350,8 +340,7 @@ class CommandHandlers:
                     )
                     if command in BATCH_COMMANDS
                     else (lambda exc: _raise_query_error())
-                    if query_errors
-                    and command in (Command.SHOW, Command.PING, Command.COROUTINE)
+                    if query_errors and command in (Command.PING, Command.COROUTINE)
                     else (
                         lambda exc: self.scheduler.server_status_response(
                             flag=15
@@ -429,8 +418,6 @@ class CommandHandlers:
             return self._service(self.scheduler.run_command_load, request)
         if command is Command.BEGIN:
             return self._service(self.scheduler.run_command_begin, request)
-        if command is Command.SHOW:
-            return ShowResponse(output=self.scheduler.handle_request_show(request))
         if command is Command.PING:
             return PingResponse()
         if command is Command.COROUTINE:

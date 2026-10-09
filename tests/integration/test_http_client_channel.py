@@ -276,18 +276,11 @@ def test_python_client_runs_all_sixteen_commands_over_http(
         assert flow.is_suspended() is False
 
         # -- Query: show ------------------------------------------------
-        show_response = log.query(
+        snapshot = log.query(
             "show",
-            client.run_request_show(
-                show_trigger=True,
-                show_parameter=False,
-                show_limit=True,
-                show_event=True,
-                show_meter=True,
-            ),
+            client.run_query_snapshot(),
         )
-        shown = json.loads(show_response.output)
-        assert FLOW_NAME in {flow_dict["name"] for flow_dict in shown["flows"]}
+        assert snapshot.get(f"/{FLOW_NAME}") is not None
 
         # -- Query: coroutine -------------------------------------------
         coroutine_response = log.query("coroutine", client.run_query_coroutine())

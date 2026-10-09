@@ -1,5 +1,5 @@
-初始查询与分页
-==============
+查询、分页与持续同步
+====================
 
 ``show`` 和 TUI 使用 QueryDocument v1 读取工作流状态。Python
 ``takler-client-py``、Go ``takler_client`` 在 HTTP 和 gRPC 上使用同一
@@ -60,10 +60,11 @@ Task attempt，身份失效时拒绝旧详情。不要把摘要和详情解释�
 版本，不能把版本错误当成空结果。操作查询需要相应 operator 凭据。
 
 升级时应将服务端与 Python/Go 客户端换成同一 QueryDocument v1 配对；
-旧服务端没有初始查询路由，现行 ``show`` 不会自动退回旧全量 ``show``。
-旧 ``ShowResponse`` JSON 也不是 QueryDocument v1 页，不能直接当作
-新客户端缓存或恢复输入。升级查询接口不改变既有 checkpoint 文件的
-恢复职责。
+旧服务端没有 QueryDocument 路由；旧全量 ``RunRequestShow`` RPC 和
+HTTP ``show`` 命令端点已移除。现行 CLI ``show`` 与 ``sync`` 只使用
+QueryDocument v1；需要将服务端与客户端配套升级。旧 ``ShowResponse``
+JSON 不能作为新客户端缓存或恢复输入。升级查询接口不改变既有 checkpoint
+文件的恢复职责。
 
 QueryDocument v1 的 capabilities 声明 ``snapshot=true``、
 ``detail=true``、``since=true``。服务端提供摘要的 revision 增量、
@@ -94,4 +95,10 @@ Python 编程接口
 ``run_query_snapshot`` / ``run_query_since`` / ``run_query_detail``。
 
 .. literalinclude:: /../examples/query/initial_query.py
+   :language: python
+
+下面的示例在同一连接上提交完整增量批次，遇到 reset 或局部失效时重建范围。
+客户端缓存只存在于当前进程；详情仍需另行实时读取。
+
+.. literalinclude:: /../examples/query/sync_query.py
    :language: python

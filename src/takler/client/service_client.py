@@ -51,12 +51,10 @@ from takler.client.transport import (
 )
 from takler.client.query_client import QueryClient, QuerySnapshot, print_query_show
 from takler.constant import DEFAULT_HOST, DEFAULT_PORT
-from takler.query import parse_show
-from takler.exceptions import QueryResponseError, ServerResponseError
+from takler.exceptions import QueryResponseError
 from takler.protocol.commands import Command
 from takler.protocol.error_code import error_name_for_code
 from takler.server.connect_config import ConnectConfig
-from takler.visitor import print_show
 
 __all__ = [
     "SSL_TARGET_NAME_OVERRIDE_OPTION",
@@ -66,10 +64,6 @@ __all__ = [
 
 
 T = TypeVar("T")
-
-#: ``ShowResponse.output`` starting with this prefix carries an error text
-#: instead of a serialized Bunch (requirement 11.1).
-SHOW_ERROR_PREFIX: str = "error:"
 
 
 class TaklerServiceClient:
@@ -771,76 +765,6 @@ class TaklerServiceClient:
     def run_command_server_resume(self):
         response = self.transport.call(Command.SERVER_RESUME, {})
         print(response.model_dump_json())
-        return response
-
-    def show(
-        self,
-        show_parameter: bool = False,
-        show_trigger: bool = True,
-        show_limit: bool = True,
-        show_event: bool = True,
-        show_meter: bool = True,
-    ):
-        return self._guarded(
-            lambda: self.run_request_show(
-                show_trigger=show_trigger,
-                show_parameter=show_parameter,
-                show_limit=show_limit,
-                show_event=show_event,
-                show_meter=show_meter,
-            )
-        )
-
-    def run_request_show(
-        self,
-        show_trigger: bool,
-        show_parameter: bool,
-        show_limit: bool,
-        show_event: bool,
-        show_meter: bool,
-    ):
-        """
-        Print the server's bunch tree.
-
-        Raises
-        ------
-        ServerResponseError
-            When ``output`` carries an error text (requirement 11.1) or is not
-            valid JSON (requirement 11.2). Both used to surface as a
-            ``json.JSONDecodeError`` traceback, which told the operator nothing
-            about the server having refused the request.
-        """
-        response = self.transport.call(
-            Command.SHOW,
-            {
-                "show_trigger": show_trigger,
-                "show_parameter": show_parameter,
-                "show_limit": show_limit,
-                "show_event": show_event,
-                "show_meter": show_meter,
-            },
-        )
-
-        output = response.output
-        if output.startswith(SHOW_ERROR_PREFIX):
-            raise ServerResponseError("server returned an error for show")
-
-        try:
-            snapshot = parse_show(output)
-        except (ValueError, TypeError, RecursionError) as exc:
-            raise ServerResponseError(
-                "show response is not valid json query data"
-            ) from exc
-
-        print_show(
-            snapshot,
-            sys.stdout,
-            show_parameter=show_parameter,
-            show_trigger=show_trigger,
-            show_limit=show_limit,
-            show_event=show_event,
-            show_meter=show_meter,
-        )
         return response
 
     def ping(self):

@@ -434,10 +434,7 @@ def test_control_command_failure_writes_exactly_one_record(
 
 
 def test_read_only_requests_write_no_record(logging_backend, tmp_path: Path) -> None:
-    """``show`` and ``ping`` are not Control_Commands and are not recorded.
-
-    The TUI polls ``show`` continuously; recording it would bury the records
-    that matter.
+    """``coroutine`` and ``ping`` are read-only and are not recorded.
 
     Validates: Requirement 11.2
     """
@@ -445,7 +442,7 @@ def test_read_only_requests_write_no_record(logging_backend, tmp_path: Path) -> 
     service = make_service(audit_file)
 
     def action() -> None:
-        call(service, "RunRequestShow", takler_pb2.ShowRequest())
+        call(service, "QueryCoroutine", takler_pb2.CoroutineRequest())
         call(service, "RunRequestPing", takler_pb2.PingRequest())
 
     captured = capture(action, audit_file=audit_file)

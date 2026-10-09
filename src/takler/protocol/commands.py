@@ -76,14 +76,12 @@ __all__ = [
     "ServerStatusRequest",
     "ServerHaltCommand",
     "ServerResumeCommand",
-    "ShowRequest",
     "PingRequest",
     "CoroutineRequest",
     "ServiceResponse",
     "BatchResponse",
     "BatchItemResult",
     "BATCH_COMMANDS",
-    "ShowResponse",
     "PingResponse",
     "Coroutine",
     "CoroutineResponse",
@@ -130,7 +128,6 @@ class Command(str, Enum):
     LOAD = "load"
     REPLACE = "replace"
     BEGIN = "begin"
-    SHOW = "show"
     PING = "ping"
     COROUTINE = "coroutine"
     SERVER_STATUS = "server-status"
@@ -333,21 +330,6 @@ class ServerResumeCommand(ProtocolModel):
 # ---------------------------------------------------------------------------
 
 
-class ShowRequest(ProtocolModel):
-    """``show``: serialize the bunch. The flags select the detail sections.
-
-    The defaults are the Python CLI's defaults, per the module docstring's
-    rule: an empty ``show`` request asks for what ``takler-client-py show``
-    prints without flags.
-    """
-
-    show_trigger: bool = False
-    show_parameter: bool = False
-    show_limit: bool = True
-    show_event: bool = True
-    show_meter: bool = True
-
-
 class PingRequest(ProtocolModel):
     """``ping``: check the server is alive. Carries nothing."""
 
@@ -409,12 +391,6 @@ BATCH_COMMANDS = frozenset(
 )
 
 
-class ShowResponse(ProtocolModel):
-    """``show`` response: the serialized bunch in ``output``."""
-
-    output: str = ""
-
-
 class PingResponse(ProtocolModel):
     """``ping`` response. Carries nothing: arriving at all is the answer."""
 
@@ -460,7 +436,6 @@ REQUEST_TYPE_BY_COMMAND: Dict[Command, Type[ProtocolModel]] = {
     Command.LOAD: LoadCommand,
     Command.REPLACE: ReplaceCommand,
     Command.BEGIN: BeginCommand,
-    Command.SHOW: ShowRequest,
     Command.PING: PingRequest,
     Command.COROUTINE: CoroutineRequest,
     Command.SERVER_STATUS: ServerStatusRequest,
@@ -486,7 +461,6 @@ RESPONSE_TYPE_BY_COMMAND: Dict[Command, Type[ProtocolModel]] = {
     Command.LOAD: ServiceResponse,
     Command.REPLACE: ServiceResponse,
     Command.BEGIN: BatchResponse,
-    Command.SHOW: ShowResponse,
     Command.PING: PingResponse,
     Command.COROUTINE: CoroutineResponse,
     Command.SERVER_STATUS: ServerStatusResponse,

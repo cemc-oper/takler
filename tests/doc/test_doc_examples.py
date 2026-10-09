@@ -2709,7 +2709,7 @@ def test_operation_audit_command_name_derivation():
         audit_command_name("/takler_protocol.TaklerServer/RunCommandRequeue")
         == "requeue"
     )
-    assert audit_command_name("RunRequestShow") == "show"
+    assert audit_command_name("QueryCoroutine") == "coroutine"
 
 
 def test_operation_audit_audited_command_set():
@@ -3465,7 +3465,7 @@ def test_develop_protocol_documents_all_rpc_methods():
     service = takler_pb2.DESCRIPTOR.services_by_name["TaklerServer"]
 
     methods = [m.name for m in service.methods]
-    assert len(methods) == 20
+    assert len(methods) == 19
     for name in methods:
         assert f"``{name}``" in text, name
 
@@ -3478,8 +3478,6 @@ def test_develop_protocol_documents_all_rpc_methods():
         "FreeDepCommand",
         "LoadCommand",
         "BeginCommand",
-        "ShowRequest",
-        "ShowResponse",
     ):
         assert f"``{message}``" in text, message
 
@@ -3559,7 +3557,7 @@ def test_develop_protocol_retry_contract_constants():
     assert DEFAULT_SINGLE_TIMEOUT == 10.0
     assert "10" in text
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CHILD] == 86400.0
-    assert "只有 ``ping`` / ``show`` / ``coroutine`` 可重试" in text
+    assert "只有 ``ping`` / ``coroutine`` 可按旧命令策略重试" in text
     assert DEFAULT_RETRY_WINDOW_BY_KIND[CommandKind.CONTROL] == 60.0
     assert ENV_RETRY_WINDOW == "TAKLER_TIMEOUT"
     assert "TAKLER_TIMEOUT" in text

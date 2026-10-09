@@ -68,7 +68,6 @@ def test_command_kind_table_covers_the_seventeen_commands():
         Command.LOAD: CommandKind.CONTROL,
         Command.REPLACE: CommandKind.CONTROL,
         Command.BEGIN: CommandKind.CONTROL,
-        Command.SHOW: CommandKind.QUERY,
         Command.PING: CommandKind.QUERY,
         Command.COROUTINE: CommandKind.QUERY,
         Command.SERVER_STATUS: CommandKind.QUERY,

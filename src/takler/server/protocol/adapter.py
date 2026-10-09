@@ -86,7 +86,6 @@ GRPC_METHOD_BY_COMMAND: Dict[Command, str] = {
     Command.LOAD: "RunCommandLoad",
     Command.REPLACE: "RunCommandReplace",
     Command.BEGIN: "RunCommandBegin",
-    Command.SHOW: "RunRequestShow",
     Command.PING: "RunRequestPing",
     Command.COROUTINE: "QueryCoroutine",
     Command.SERVER_STATUS: "RunRequestServerStatus",
@@ -188,16 +187,6 @@ def _begin(message) -> commands.BeginCommand:
     )
 
 
-def _show(message) -> commands.ShowRequest:
-    return commands.ShowRequest(
-        show_trigger=message.show_trigger,
-        show_parameter=message.show_parameter,
-        show_limit=message.show_limit,
-        show_event=message.show_event,
-        show_meter=message.show_meter,
-    )
-
-
 def _ping(message) -> commands.PingRequest:
     return commands.PingRequest()
 
@@ -224,7 +213,6 @@ _REQUEST_FROM_PB2: Dict[Command, Callable[[object], ProtocolModel]] = {
         target_path=m.target_path, flow_bytes=m.flow
     ),
     Command.BEGIN: _begin,
-    Command.SHOW: _show,
     Command.PING: _ping,
     Command.COROUTINE: _coroutine,
     Command.SERVER_STATUS: lambda m: commands.ServerStatusRequest(),
@@ -267,8 +255,6 @@ def response_to_pb2(response: ProtocolModel):
         if response.restore_summary is not None:
             json_format.ParseDict(response.restore_summary, encoded.restore_summary)
         return encoded
-    if isinstance(response, commands.ShowResponse):
-        return takler_pb2.ShowResponse(output=response.output)
     if isinstance(response, commands.PingResponse):
         return takler_pb2.PingResponse()
     if isinstance(response, commands.CoroutineResponse):
@@ -383,16 +369,6 @@ def _begin_to_pb2(payload):
     )
 
 
-def _show_to_pb2(payload):
-    return takler_pb2.ShowRequest(
-        show_trigger=payload["show_trigger"],
-        show_parameter=payload["show_parameter"],
-        show_limit=payload["show_limit"],
-        show_event=payload["show_event"],
-        show_meter=payload["show_meter"],
-    )
-
-
 def _ping_to_pb2(payload):
     return takler_pb2.PingRequest()
 
@@ -419,7 +395,6 @@ _REQUEST_TO_PB2: Dict[Command, Callable[[Mapping[str, Any]], Any]] = {
         target_path=p["target_path"], flow=p["flow_bytes"]
     ),
     Command.BEGIN: _begin_to_pb2,
-    Command.SHOW: _show_to_pb2,
     Command.PING: _ping_to_pb2,
     Command.COROUTINE: _coroutine_to_pb2,
     Command.SERVER_STATUS: lambda p: takler_pb2.ServerStatusRequest(),
@@ -489,8 +464,6 @@ def response_from_pb2(command: Command, message) -> ProtocolModel:
             if message.HasField("restore_summary")
             else None,
         )
-    if response_type is commands.ShowResponse:
-        return commands.ShowResponse(output=message.output)
     if response_type is commands.PingResponse:
         return commands.PingResponse()
     return commands.CoroutineResponse(

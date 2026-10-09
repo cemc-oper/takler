@@ -21,7 +21,7 @@ from takler.protocol import (
     MeterCommand,
     ServiceResponse,
     BatchResponse,
-    ShowResponse,
+    CoroutineResponse,
 )
 
 
@@ -111,7 +111,7 @@ def test_for_response_echoes_the_trace_id():
 
 def test_for_response_rejects_a_mismatched_dto():
     with pytest.raises(TypeError):
-        Envelope.for_response(Command.SHOW, ServiceResponse(), trace_id="ab")
+        Envelope.for_response(Command.COROUTINE, ServiceResponse(), trace_id="ab")
 
 
 def test_parse_request_round_trip_with_validation():
@@ -140,11 +140,11 @@ def test_parse_request_rejects_a_bad_payload():
 
 def test_parse_response_round_trip():
     envelope = Envelope.for_response(
-        Command.SHOW, ShowResponse(output="{}"), trace_id="ab" * 16
+        Command.COROUTINE, CoroutineResponse(), trace_id="ab" * 16
     )
     response = envelope.parse_response()
-    assert isinstance(response, ShowResponse)
-    assert response.output == "{}"
+    assert isinstance(response, CoroutineResponse)
+    assert response.coroutines == []
 
 
 def test_json_round_trip_with_load_command_bytes():

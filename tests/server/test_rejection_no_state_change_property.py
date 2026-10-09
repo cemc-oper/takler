@@ -125,8 +125,7 @@ CHILD_METHODS: Tuple[str, ...] = tuple(
     for name in ("RunCommandInit", "RunCommandComplete", "RunCommandAbort")
 )
 OPERATOR_METHODS: Tuple[str, ...] = tuple(
-    SERVICE_METHOD_PREFIX + name
-    for name in ("RunCommandRequeue", "RunCommandForce", "RunRequestShow")
+    SERVICE_METHOD_PREFIX + name for name in ("RunCommandRequeue", "RunCommandForce")
 )
 
 

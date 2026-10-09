@@ -44,8 +44,6 @@ from takler.protocol import (
     ServiceResponse,
     BatchResponse,
     BATCH_COMMANDS,
-    ShowRequest,
-    ShowResponse,
     SuspendCommand,
 )
 from takler.server.protocol import takler_pb2
@@ -67,7 +65,6 @@ CONTRACT_COMMAND_NAMES = {
     "load",
     "replace",
     "begin",
-    "show",
     "ping",
     "coroutine",
     "server-status",
@@ -96,7 +93,7 @@ CONTRACT_DEP_TYPE_NAMES = {"all", "trigger", "time"}
 
 def test_command_names_match_the_contract():
     assert {command.value for command in Command} == CONTRACT_COMMAND_NAMES
-    assert len(Command) == 20
+    assert len(Command) == 19
 
 
 def test_command_count_matches_the_rpc_count():
@@ -124,7 +121,6 @@ def test_response_type_map_covers_exactly_the_commands():
 
 def test_thirteen_commands_answer_service_response():
     queries = {
-        Command.SHOW,
         Command.PING,
         Command.COROUTINE,
         Command.SERVER_STATUS,
@@ -268,15 +264,6 @@ def test_begin_command():
     assert request.force is True
 
 
-def test_show_request_defaults_match_the_python_cli():
-    request = ShowRequest()
-    assert request.show_trigger is False
-    assert request.show_parameter is False
-    assert request.show_limit is True
-    assert request.show_event is True
-    assert request.show_meter is True
-
-
 def test_ping_and_coroutine_requests_carry_nothing():
     assert PingRequest().model_dump() == {}
     assert CoroutineRequest().model_dump() == {}
@@ -293,11 +280,6 @@ def test_service_response_defaults_to_success():
     assert response.message == ""
     response = ServiceResponse(flag=10, message="node is not found: /flow1")
     assert response.flag == 10
-
-
-def test_show_response():
-    assert ShowResponse(output="{}").output == "{}"
-    assert ShowResponse().output == ""
 
 
 def test_ping_response_carries_nothing():

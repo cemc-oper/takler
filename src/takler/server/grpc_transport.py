@@ -289,9 +289,6 @@ class GrpcTransport(
     async def RunCommandBegin(self, request, context):
         return await self._dispatch(Command.BEGIN, request, context)
 
-    async def RunRequestShow(self, request, context):
-        return await self._dispatch(Command.SHOW, request, context)
-
     async def RunRequestPing(self, request, context):
         return await self._dispatch(Command.PING, request, context)
 

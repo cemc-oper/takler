@@ -92,15 +92,6 @@ OPERATOR_SECRET = "operator-secret-0123456789abcdef"
 #: not the one the server stored.
 STALE_PASSWORD = "stale-job-password-0123456789abcdef"
 
-SHOW_KWARGS = dict(
-    show_parameter=True,
-    show_trigger=True,
-    show_limit=True,
-    show_event=True,
-    show_meter=True,
-)
-
-
 # ---------------------------------------------------------------------------
 # the surfaces a leak could appear on
 # ---------------------------------------------------------------------------
@@ -378,9 +369,9 @@ def test_a_full_child_command_sequence_leaks_no_password(monkeypatch, harness) -
     # ``show``, which is the response an operator reads.
     suspend = harness.record(harness.client.run_command_suspend(node_path=[TASK_PATH]))
     assert suspend.flag == 0
-    show = harness.client.run_request_show(**SHOW_KWARGS)
-
-    surfaces = harness.collect(show_output=show.output)
+    snapshot = harness.client.run_query_snapshot()
+    detail = harness.client.run_query_detail(snapshot, TASK_PATH, ["parameters"])
+    surfaces = harness.collect(show_output=detail.model_dump_json())
 
     # Non-vacuity: every surface really carries this run.
     assert TASK_PATH in surfaces.log_file

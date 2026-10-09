@@ -188,15 +188,7 @@ def build_requests(flow_bytes: bytes) -> Dict[str, Any]:
         "RunCommandBegin": takler_pb2.BeginCommand(flow_name=FLOW_NAME, force=True),
         "RunCommandServerHalt": takler_pb2.ServerHaltCommand(),
         "RunCommandServerResume": takler_pb2.ServerResumeCommand(),
-        # Query_Commands at Operator level: both return the whole flow
-        # definition.
-        "RunRequestShow": takler_pb2.ShowRequest(
-            show_trigger=True,
-            show_parameter=True,
-            show_limit=True,
-            show_event=True,
-            show_meter=True,
-        ),
+        # Read-only commands at Operator level.
         "QueryCoroutine": takler_pb2.CoroutineRequest(),
         "RunRequestServerStatus": takler_pb2.ServerStatusRequest(),
         # The one PUBLIC rpc.
@@ -228,7 +220,7 @@ def test_the_rpc_table_of_this_file_covers_the_whole_service() -> None:
     """
     assert set(build_requests(b"{}")) == set(ALL_METHODS)
     assert len(CHILD_METHODS) == 5
-    assert len(OPERATOR_METHODS) == 14
+    assert len(OPERATOR_METHODS) == 13
     assert PUBLIC_METHODS == ["RunRequestPing"]
 
 

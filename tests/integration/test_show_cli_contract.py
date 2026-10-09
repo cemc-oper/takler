@@ -10,7 +10,7 @@ import pytest
 
 from takler.core import Task
 from takler.query import parse_show
-from takler.protocol import ShowRequest
+from takler.serialization.query import project_show
 from takler.server.connect_config import (
     Address,
     ConnectConfig,
@@ -119,14 +119,8 @@ print(json.dumps({
     else:
         assert "|- custom [suspend (unknown)]" in result.stdout
     view = parse_show(
-        runner.server.scheduler.handle_request_show(
-            ShowRequest(
-                show_trigger=True,
-                show_parameter=True,
-                show_limit=True,
-                show_event=True,
-                show_meter=True,
-            )
+        json.dumps(
+            project_show(bunch, runner.server.scheduler.query_redacted_parameters)
         )
     )
     assert view.lookup_parameter("/flow/custom", "ROOT_SETTING") == "root-value"

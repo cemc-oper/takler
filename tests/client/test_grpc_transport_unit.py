@@ -24,7 +24,7 @@ from takler.protocol.commands import (
     Command,
     PingResponse,
     ServiceResponse,
-    ShowResponse,
+    CoroutineResponse,
 )
 from takler.server.protocol import adapter, takler_pb2
 from takler.server.protocol.adapter import GRPC_METHOD_BY_COMMAND
@@ -77,16 +77,6 @@ PAYLOAD_AND_TYPE_BY_COMMAND: Dict[Command, Tuple[Dict[str, Any], Any]] = {
         takler_pb2.ReplaceCommand,
     ),
     Command.BEGIN: ({"flow_name": "flow1", "force": False}, takler_pb2.BeginCommand),
-    Command.SHOW: (
-        {
-            "show_trigger": True,
-            "show_parameter": True,
-            "show_limit": True,
-            "show_event": True,
-            "show_meter": True,
-        },
-        takler_pb2.ShowRequest,
-    ),
     Command.PING: ({}, takler_pb2.PingRequest),
     Command.COROUTINE: ({}, takler_pb2.CoroutineRequest),
     Command.SERVER_STATUS: ({}, takler_pb2.ServerStatusRequest),
@@ -198,19 +188,18 @@ def test_call_derives_the_command_kind_from_the_command(
 def test_call_decodes_the_query_response_types() -> None:
     transport = make_transport()
     transport.stub = SimpleNamespace(
-        RunRequestShow=lambda request, timeout=None, metadata=None: (
-            takler_pb2.ShowResponse(output="{}")
+        QueryCoroutine=lambda request, timeout=None, metadata=None: (
+            takler_pb2.CoroutineResponse()
         ),
         RunRequestPing=lambda request, timeout=None, metadata=None: (
             takler_pb2.PingResponse()
         ),
     )
 
-    show = transport.call(Command.SHOW, PAYLOAD_AND_TYPE_BY_COMMAND[Command.SHOW][0])
+    coroutine = transport.call(Command.COROUTINE, {})
     ping = transport.call(Command.PING, {})
 
-    assert isinstance(show, ShowResponse)
-    assert show.output == "{}"
+    assert isinstance(coroutine, CoroutineResponse)
     assert isinstance(ping, PingResponse)
 
 

@@ -969,7 +969,6 @@ PRIVILEGE_BY_METHOD: Dict[str, PrivilegeLevel] = {
     # exactly the reconnaissance an attacker needs before sending a command.
     # The TUI is the main consumer, so enabling authentication means the TUI
     # user has to be able to read the Operator_Secret_File too.
-    SERVICE_METHOD_PREFIX + "RunRequestShow": PrivilegeLevel.OPERATOR,
     SERVICE_METHOD_PREFIX + "RunRequestServerStatus": PrivilegeLevel.OPERATOR,
     SERVICE_METHOD_PREFIX + "QueryCoroutine": PrivilegeLevel.OPERATOR,
     # Liveness only: the response carries no flow information, and health

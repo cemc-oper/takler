@@ -8,7 +8,7 @@ from importlib.resources import files
 from .error_code import ERROR_NAME_BY_CODE
 
 SCHEMA = json.loads(files("takler.protocol").joinpath("wire_schema.json").read_text())
-READ_ONLY = frozenset({"ping", "show", "coroutine", "server-status"})
+READ_ONLY = frozenset({"ping", "coroutine", "server-status"})
 
 
 class WireError(ValueError):

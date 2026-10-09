@@ -360,19 +360,12 @@ def test_client_with_the_ca_runs_a_control_and_a_query_command(
     client.suspend([TASK_PATH])
     assert task.is_suspended()
 
-    # Query_Commands: ``ping``, which carries no payload, and ``show``, which
-    # brings the whole bunch back over the encrypted channel and parses it.
+    # Query_Commands: ping and a paged summary over the encrypted channel.
     ping_response = client.ping()
     assert ping_response is not None
 
-    show_response = client.show(
-        show_trigger=False,
-        show_parameter=False,
-        show_limit=False,
-        show_event=False,
-        show_meter=False,
-    )
-    assert FLOW_NAME in show_response.output
+    snapshot = client.query_snapshot()
+    assert snapshot.get(f"/{FLOW_NAME}") is not None
 
     # Requirement 2.8: TLS changes the transport, not the Call_Wrapper. A
     # successful call still leaves no channel behind.

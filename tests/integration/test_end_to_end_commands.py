@@ -294,25 +294,13 @@ def test_all_commands_over_the_wire(takler_server, tmp_path: Path):
         log.command("resume", client.run_command_resume(node_path=[f"/{FLOW_NAME}"]))
         assert flow.is_suspended() is False
 
-        # -- Query: show ------------------------------------------------
-        # ``run_request_show`` raises ServerResponseError when the server
-        # answered with an error text or with something that is not a bunch,
-        # and it deserializes the payload into a real ``Bunch`` -- so a
-        # successful return is already an assertion about the whole query path.
-        show_response = log.query(
+        # -- Query: paged summary --------------------------------------
+        snapshot = log.query(
             "show",
-            client.run_request_show(
-                show_trigger=True,
-                show_parameter=False,
-                show_limit=True,
-                show_event=True,
-                show_meter=True,
-            ),
+            client.run_query_snapshot(),
         )
-        shown = json.loads(show_response.output)
-        shown_flows = {flow_dict["name"]: flow_dict for flow_dict in shown["flows"]}
-        assert FLOW_NAME in shown_flows
-        assert shown_flows[FLOW_NAME]["begun"] is True
+        assert snapshot.get(f"/{FLOW_NAME}") is not None
+        assert snapshot.get(TASK1) is not None
 
         # -- Query: coroutine -------------------------------------------
         coroutine_response = log.query("coroutine", client.run_query_coroutine())

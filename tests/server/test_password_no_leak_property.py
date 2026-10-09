@@ -69,6 +69,7 @@ from takler.server.connect_config import AuthMode, ZombiePolicy
 from takler.server.grpc_transport import GrpcTransport
 from takler.server.protocol import takler_pb2
 from takler.server.scheduler import Scheduler
+from takler.serialization.query import project_show
 from takler.server.zombie import ZombieDetector
 
 FLOW_NAME = "flow1"
@@ -93,15 +94,6 @@ STALE_PASSWORD = "stale-job-password-0123456789abcdef"
 
 #: The ``flag`` of a refused Child_Command under the ``fail`` policy.
 ZOMBIE_FLAG = 31
-
-SHOW_KWARGS = dict(
-    show_parameter=True,
-    show_trigger=True,
-    show_limit=True,
-    show_event=True,
-    show_meter=True,
-)
-
 
 # ---------------------------------------------------------------------------
 # the strategy: adversarial password shapes
@@ -351,13 +343,11 @@ async def drive(service: GrpcTransport, password: str) -> Tuple[List[str], str]:
         suspend = await service.RunCommandSuspend(
             takler_pb2.SuspendCommand(node_path=[TASK_PATH]), context
         )
-        show = await service.RunRequestShow(
-            takler_pb2.ShowRequest(**SHOW_KWARGS), context
-        )
+        show_output = json.dumps(project_show(service.scheduler.bunch))
     messages.append(suspend.message)
     assert suspend.flag == 0
 
-    return messages, show.output
+    return messages, show_output
 
 
 def run_scenario(password: str) -> Surfaces:

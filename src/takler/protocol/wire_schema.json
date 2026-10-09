@@ -61,13 +61,6 @@
       "flow_name": "s",
       "force": "b"
     },
-    "show": {
-      "show_trigger": "b",
-      "show_parameter": "b",
-      "show_limit": "b",
-      "show_event": "b",
-      "show_meter": "b"
-    },
     "ping": {},
     "coroutine": {},
     "server-status": {},
@@ -137,9 +130,6 @@
       "flag": "flag",
       "message": "s",
       "results": "items"
-    },
-    "show": {
-      "output": "s"
     },
     "ping": {},
     "coroutine": {

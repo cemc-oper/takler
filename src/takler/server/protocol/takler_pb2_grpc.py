@@ -116,11 +116,6 @@ class TaklerServerStub:
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServerResumeCommand.SerializeToString,
                 response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServerStatusResponse.FromString,
                 _registered_method=True)
-        self.RunRequestShow = channel.unary_unary(
-                '/takler_protocol.TaklerServer/RunRequestShow',
-                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ShowRequest.SerializeToString,
-                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ShowResponse.FromString,
-                _registered_method=True)
         self.RunRequestPing = channel.unary_unary(
                 '/takler_protocol.TaklerServer/RunRequestPing',
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.PingRequest.SerializeToString,
@@ -242,16 +237,10 @@ class TaklerServerServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def RunRequestShow(self, request, context):
+    def RunRequestPing(self, request, context):
         """query command
 
         """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def RunRequestPing(self, request, context):
-        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -350,11 +339,6 @@ def add_TaklerServerServicer_to_server(servicer, server):
                     servicer.RunCommandServerResume,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServerResumeCommand.FromString,
                     response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ServerStatusResponse.SerializeToString,
-            ),
-            'RunRequestShow': grpc.unary_unary_rpc_method_handler(
-                    servicer.RunRequestShow,
-                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.ShowRequest.FromString,
-                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.ShowResponse.SerializeToString,
             ),
             'RunRequestPing': grpc.unary_unary_rpc_method_handler(
                     servicer.RunRequestPing,
@@ -806,33 +790,6 @@ class TaklerServer:
             '/takler_protocol.TaklerServer/RunCommandServerResume',
             takler_dot_server_dot_protocol_dot_takler__pb2.ServerResumeCommand.SerializeToString,
             takler_dot_server_dot_protocol_dot_takler__pb2.ServerStatusResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def RunRequestShow(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/takler_protocol.TaklerServer/RunRequestShow',
-            takler_dot_server_dot_protocol_dot_takler__pb2.ShowRequest.SerializeToString,
-            takler_dot_server_dot_protocol_dot_takler__pb2.ShowResponse.FromString,
             options,
             channel_credentials,
             insecure,

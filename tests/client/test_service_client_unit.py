@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 
 import grpc
 import pytest
@@ -21,13 +20,11 @@ import pytest
 import takler.logging
 from takler.client.retry import DEFAULT_SINGLE_TIMEOUT, CommandKind
 from takler.client.service_client import TaklerServiceClient
-from takler.core import Bunch, Flow
 from takler.exceptions import (
     ClientConnectionError,
     InvalidRequestError,
     NodeNotFoundError,
     PermissionDeniedError,
-    ServerResponseError,
     TransportError,
 )
 
@@ -300,70 +297,6 @@ def test_guarded_closes_channel_when_body_raises(monkeypatch):
     assert channel.closed == 1
     assert client.channel is None
     assert client.stub is None
-
-
-# -- run_request_show ------------------------------------------------
-
-
-class ShowClient(TaklerServiceClient):
-    """A client whose ``show`` RPC returns a canned output."""
-
-    def __init__(self, output: str):
-        super().__init__(host="localhost", port=33083, retry_window=0.0)
-        self.stub = type(
-            "S", (), {"RunRequestShow": FakeRpc(FakeResponse(flag=0, output=output))}
-        )()
-
-    def run_show(self, **kwargs):
-        options = dict(
-            show_trigger=False,
-            show_parameter=False,
-            show_limit=False,
-            show_event=False,
-            show_meter=False,
-        )
-        options.update(kwargs)
-        return self.run_request_show(**options)
-
-
-def test_show_error_prefix_raises_server_response_error():
-    output = "error: no such flow"
-    client = ShowClient(output)
-
-    with pytest.raises(ServerResponseError) as excinfo:
-        client.run_show()
-
-    assert "server returned an error for show" in str(excinfo.value)
-    assert output not in str(excinfo.value)
-
-
-def test_show_invalid_json_raises_without_echoing_untrusted_content():
-    output = "x" * 500
-    client = ShowClient(output)
-
-    with pytest.raises(ServerResponseError) as excinfo:
-        client.run_show()
-
-    text = str(excinfo.value)
-    assert "not valid json" in text
-    assert output[:200] not in text
-    assert output not in text
-
-
-def test_show_valid_json_prints_node_tree(capsys):
-    flow = Flow("flow1")
-    container = flow.add_container("container1")
-    container.add_task("task1")
-    bunch = Bunch()
-    bunch.add_flow(flow)
-    client = ShowClient(json.dumps(bunch.to_dict()))
-
-    client.run_show()
-
-    printed = capsys.readouterr().out
-    assert "flow1" in printed
-    assert "container1" in printed
-    assert "task1" in printed
 
 
 def test_command_prints_error_classification_name(fake_clock, capsys):

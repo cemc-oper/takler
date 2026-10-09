@@ -15,11 +15,11 @@ import pytest
 
 from takler.protocol.commands import (
     Command,
+    CoroutineRequest,
     PingRequest,
     PingResponse,
     RequeueCommand,
     BatchResponse,
-    ShowRequest,
 )
 from takler.server import handlers
 from takler.server.audit import AuditLogger
@@ -102,7 +102,7 @@ def test_an_unknown_command_name_fails_fast(build_scenario_scheduler):
     command_handlers = CommandHandlers(build_scenario_scheduler())
 
     with pytest.raises(ValueError):
-        asyncio.run(command_handlers.dispatch("no_such_command", lambda: ShowRequest()))
+        asyncio.run(command_handlers.dispatch("no_such_command", lambda: PingRequest()))
 
 
 def _run_with_audit(action, audit_file):
@@ -142,8 +142,8 @@ def test_control_command_writes_exactly_one_audit_record(
             )
         )
         assert response.flag == 0
-        # ``show`` is operator-level but read-only: no record.
-        asyncio.run(command_handlers.handle(Command.SHOW, ShowRequest()))
+        # ``coroutine`` is operator-level but read-only: no record.
+        asyncio.run(command_handlers.handle(Command.COROUTINE, CoroutineRequest()))
 
     _run_with_audit(action, audit_file)
 
