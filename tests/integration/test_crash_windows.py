@@ -16,7 +16,6 @@ from uuid import uuid4
 import pytest
 
 from takler.client.service_client import TaklerServiceClient
-from takler.query import parse_show
 
 
 pytestmark = [
@@ -118,10 +117,9 @@ class CrashServer:
             single_timeout=5,
         )
 
-    def show(self, transport="grpc"):
+    def snapshot(self, transport="grpc"):
         with redirect_stdout(io.StringIO()):
-            response = self.client(transport).show()
-        return parse_show(response.output)
+            return self.client(transport).query_snapshot()
 
     def status(self, transport="grpc"):
         with redirect_stdout(io.StringIO()):
@@ -188,10 +186,11 @@ def go_binary(tmp_path_factory):
 
 
 def _assert_recovered(server, expected_state, count):
-    snapshot = server.show()
-    assert snapshot.service.status == "halted"
-    assert "recovery" in snapshot.service.causes
-    assert snapshot.get("/flow/a").state == expected_state
+    snapshot = server.snapshot()
+    status = server.status()
+    assert status.status == "halted"
+    assert "recovery" in status.halt_causes
+    assert snapshot.get("/flow/a").status == expected_state
     assert server.submissions() == count
     time.sleep(0.15)
     assert server.submissions() == count
@@ -211,7 +210,7 @@ def test_queued_snapshot_then_external_submit_and_lost_log(crashed_server, go_bi
     log.write_text("success: /flow/a complete\n", encoding="utf-8")
     server.start(fresh=False)
     _assert_recovered(server, "queued", 1)
-    assert server.show().get("/flow/a").attempt_id is None
+    assert server.snapshot().get("/flow/a").attempt_id is None
     for language in ("python", "go"):
         for transport in ("grpc", "http"):
             status = server.cli(
@@ -230,7 +229,7 @@ def test_active_snapshot_then_child_completion_is_lost(crashed_server):
     server = crashed_server
     assert server.cli("python", "grpc", "run", "/flow/a").returncode == 0
     server.wait_for_submissions(1)
-    attempt = server.show().get("/flow/a").attempt_id
+    attempt = server.snapshot().get("/flow/a").attempt_id
     assert attempt
     init = server.cli(
         "python",
@@ -255,11 +254,11 @@ def test_active_snapshot_then_child_completion_is_lost(crashed_server):
         attempt,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert server.show().get("/flow/a").state == "complete"
+    assert server.snapshot().get("/flow/a").status == "complete"
     server.kill()
     server.start(fresh=False)
     _assert_recovered(server, "active", 1)
-    assert server.show().get("/flow/a").attempt_id == attempt
+    assert server.snapshot().get("/flow/a").attempt_id == attempt
 
 
 def test_lost_http_response_does_not_prove_run_failed(crashed_server):
@@ -296,7 +295,7 @@ def test_checkpoint_capture_before_concurrent_external_submit(crashed_server):
     assert result.returncode == 0, result.stdout + result.stderr
     server.wait_for_submissions(1)
     assert server.barrier("checkpoint_release")
-    assert server.show().get("/flow/a").state == "submitted"
+    assert server.snapshot().get("/flow/a").status == "submitted"
     server.kill()
     server.start(fresh=False)
     _assert_recovered(server, "queued", 1)
@@ -314,8 +313,8 @@ def test_partial_batch_has_external_effects_absent_from_snapshot(crashed_server)
     server.kill()
     server.start(fresh=False)
     _assert_recovered(server, "queued", 2)
-    snapshot = server.show()
-    assert snapshot.get("/flow/b").state == "queued"
+    snapshot = server.snapshot()
+    assert snapshot.get("/flow/b").status == "queued"
     assert snapshot.get("/flow/b").attempt_id is None
     assert snapshot.get("/missing") is None
 
@@ -352,4 +351,4 @@ def test_failed_save_restores_whichever_complete_snapshot_was_published(
     server.kill()
     server.start(fresh=False)
     _assert_recovered(server, expected_state, 1)
-    assert server.show().get("/flow/b").state == "queued"
+    assert server.snapshot().get("/flow/b").status == "queued"

@@ -221,7 +221,7 @@ jobs:
       working-directory: takler-client
       env:
         TAKLER_REPO: ../takler
-      run: make load-contract replace-contract show-contract
+      run: make load-contract replace-contract show-contract query-a-contract query-b-contract
     - name: Run child identity and service state matrix
       working-directory: takler
       env:

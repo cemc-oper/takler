@@ -319,7 +319,10 @@ def test_pair_defaults_to_main_and_contract_runs_in_ci(workflow):
     assert "bash scripts/check_proto.sh" in commands
     assert "make proto-check wire-check" in commands
     assert "make http-contract" in commands
-    assert "make load-contract replace-contract show-contract" in commands
+    assert (
+        "make load-contract replace-contract show-contract "
+        "query-a-contract query-b-contract"
+    ) in commands
     assert "bash scripts/check_drift_negative.sh" in commands
     assert "test_child_identity_matrix.py" in commands
     assert "test_server_state_cli_matrix.py" in commands
