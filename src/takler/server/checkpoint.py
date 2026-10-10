@@ -562,11 +562,12 @@ class CheckpointManager:
         return success
 
     async def write_checkpoint_async(self) -> bool:
-        """Write one snapshot without blocking the event loop.
+        """Write the captured payload's file bytes in a worker thread.
 
-        The payload is built on the loop thread (consistent view) and only the
-        file IO goes to a worker thread, so a large bunch cannot stall the main
-        loop or the RPC handlers while it is being written to disk.
+        Capture, validation, and JSON encoding run on the event loop before
+        the file IO is handed to a worker thread. On a large tree those steps
+        can stall the loop and RPC handlers; asynchronous file writing alone
+        does not make the entire checkpoint operation nonblocking.
 
         Returns:
             ``True`` when the Checkpoint_File now holds the new snapshot.
