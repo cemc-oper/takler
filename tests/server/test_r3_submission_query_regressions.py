@@ -64,7 +64,6 @@ def test_requeued_attempt_never_enters_process_start(tmp_path):
     asyncio.run(exercise())
 
 
-@pytest.mark.xfail(strict=True, reason="R3-03: unknown submit releases limit")
 def test_unknown_external_submit_keeps_capacity_after_restore(tmp_path):
     bunch, flow, task = _shell_tree(tmp_path)
     flow.add_parameter("TAKLER_SHELL_JOB_CMD", 'orvix submit "{{ TAKLER_JOB }}"')

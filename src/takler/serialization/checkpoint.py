@@ -179,6 +179,7 @@ class NodeRuntime(DefinitionModel):
     task_id: str | None = None
     try_no: Annotated[int, Field(ge=0)] | None = None
     aborted_reason: str | None = None
+    submission_unknown_reason: str | None = None
     attempt_id: str | None = None
     submitted_at: str | None = None
     started_at: str | None = None
@@ -211,7 +212,9 @@ class NodeRuntime(DefinitionModel):
 
     @model_validator(mode="after")
     def conditional_fields(self):
-        conditional = _TASK_FIELDS | _FLOW_FIELDS | _ROOT_FIELDS
+        conditional = (
+            _TASK_FIELDS | _FLOW_FIELDS | _ROOT_FIELDS | {"submission_unknown_reason"}
+        )
         required = {
             "bunch": _ROOT_FIELDS,
             "flow": _FLOW_FIELDS,
@@ -220,9 +223,12 @@ class NodeRuntime(DefinitionModel):
         }[self.kind]
         if self.kind == "task":
             required = _TASK_FIELDS
+        allowed = required | (
+            {"submission_unknown_reason"} if self.kind == "task" else set()
+        )
         if (
             not required <= self.model_fields_set
-            or (conditional - required) & self.model_fields_set
+            or (conditional - allowed) & self.model_fields_set
         ):
             raise ValueError("incomplete or invalid checkpoint runtime")
         if self.kind == "bunch" and self.root_attributes is None:
@@ -244,6 +250,12 @@ class NodeRuntime(DefinitionModel):
                 and self.attempt_id is None
             ):
                 raise ValueError("in-flight task lacks attempt")
+            if self.submission_unknown_reason is not None and (
+                not self.submission_unknown_reason
+                or self.state.status != NodeStatus.submitted.value
+                or self.attempt_id is None
+            ):
+                raise ValueError("invalid unknown submission")
         return self
 
 
@@ -379,6 +391,7 @@ def _capture_node(node, registry) -> NodeRuntime:
         )
     elif entry.kind == "task":
         item.update({key: getattr(node, key) for key in _TASK_FIELDS})
+        item["submission_unknown_reason"] = node.submission_unknown_reason
     return NodeRuntime.model_validate(item)
 
 
@@ -698,6 +711,7 @@ def _apply_node(node, runtime: NodeRuntime, registry):
     if isinstance(node, Task):
         for key in _TASK_FIELDS:
             setattr(node, key, getattr(runtime, key))
+        node.submission_unknown_reason = runtime.submission_unknown_reason
     if not entry.type_id.startswith("takler."):
         require_codec(entry, "runtime_schema", "restore_runtime")
         if entry.secret_fields & runtime.runtime_data.keys():

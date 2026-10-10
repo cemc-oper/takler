@@ -5,6 +5,7 @@ from typing import Union
 from .node import Node, compute_most_significant_status
 from .state import NodeStatus
 from .task_node import Task
+from takler.exceptions import FlowStateError
 from .calendar import Calendar
 
 
@@ -135,6 +136,14 @@ class NodeContainer(Node):
         -------
 
         """
+        pending = list(self.children)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, Task) and node.submission_unknown_reason is not None:
+                raise FlowStateError(
+                    "unknown external submission requires operator verification"
+                )
+            pending.extend(node.children)
         super(NodeContainer, self).requeue(reset_repeat=reset_repeat)
 
         for child in self.children:

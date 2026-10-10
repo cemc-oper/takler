@@ -178,6 +178,17 @@ class Flow(NodeContainer):
                 f"flow is already begun: {self.name}", flow_name=self.name
             )
 
+        from takler.serialization.builder import walk
+
+        if any(
+            isinstance(node, Task) and node.submission_unknown_reason is not None
+            for node in walk(self)
+        ):
+            raise FlowStateError(
+                "unknown external submission requires operator verification",
+                flow_name=self.name,
+            )
+
         self.requeue_calendar()
         super(Flow, self).requeue()
         self.begun = True

@@ -77,6 +77,8 @@ class NodeInfo:
     ended_at: str | None = None
     try_no: int | None = None
     aborted_reason: str | None = None
+    submission_unknown: bool = False
+    submission_unknown_reason: str | None = None
     script_path: str | None = None
     job_path: str | None = None
     jobout_path: str | None = None
@@ -93,7 +95,8 @@ class NodeInfo:
 
     @property
     def display_state(self):
-        return f"suspend ({self.state})" if self.suspended else self.state
+        state = f"suspend ({self.state})" if self.suspended else self.state
+        return f"{state}; submission unknown" if self.submission_unknown else state
 
     @property
     def is_root(self):

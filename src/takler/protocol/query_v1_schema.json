@@ -193,6 +193,18 @@
               ],
               "default": null,
               "title": "Attempt Id"
+            },
+            "submission_unknown": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Submission Unknown"
             }
           },
           "required": [
@@ -851,6 +863,18 @@
               ],
               "default": null,
               "title": "Aborted Reason"
+            },
+            "submission_unknown_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Submission Unknown Reason"
             },
             "events": {
               "items": {
@@ -1538,6 +1562,18 @@
               ],
               "default": null,
               "title": "Attempt Id"
+            },
+            "submission_unknown": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Submission Unknown"
             }
           },
           "required": [

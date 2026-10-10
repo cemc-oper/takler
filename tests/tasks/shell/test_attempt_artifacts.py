@@ -106,8 +106,9 @@ def test_orvix_sidecar_and_uncertain_submit_no_resubmission(shell_flow):
     assert task.orvix_info_path == task.job_path + ".info.yaml"
     assert len(calls) == 1
     calls[0]["on_failure"](RuntimeError("submit returned nonzero"))
-    assert task.state.node_status is NodeStatus.aborted
-    assert "result unknown" in task.aborted_reason
+    assert task.state.node_status is NodeStatus.submitted
+    assert task.aborted_reason is None
+    assert "submit returned nonzero" in task.submission_unknown_reason
     assert len(calls) == 1
 
 

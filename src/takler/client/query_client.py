@@ -45,6 +45,7 @@ class QueryNode:
     status: str
     suspended: bool
     attempt_id: str | None
+    submission_unknown: bool | None = None
 
     @classmethod
     def from_wire(cls, node: SummaryNode) -> "QueryNode":
@@ -55,6 +56,7 @@ class QueryNode:
             node.status,
             node.suspended,
             node.attempt_id,
+            node.submission_unknown,
         )
 
 
@@ -678,6 +680,8 @@ def print_query_show(
         )
         prefix = "  " * max(0, relative - base)
         state = f"suspend ({node.status})" if node.suspended else node.status
+        if node.submission_unknown:
+            state += "; submission unknown"
         stream.write(f"{prefix}|- {path.rsplit('/', 1)[-1]} [{state}]\n")
         if not requested:
             continue
@@ -689,6 +693,8 @@ def print_query_show(
 
         definition = detail.groups.definition
         runtime = detail.groups.runtime
+        if runtime is not None and runtime.submission_unknown_reason:
+            line(f"submission unknown: {runtime.submission_unknown_reason}")
         if definition is not None:
             if definition.repeat is not None:
                 repeat = definition.repeat

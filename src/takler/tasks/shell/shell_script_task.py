@@ -284,11 +284,12 @@ class ShellScriptTask(Task):
 
     def on_job_failure(self, exc: BaseException, result_unknown: bool = False) -> None:
         """
-        Set the task to aborted after ``ShellRunner`` has logged the job failure.
+        Handle a failed wrapper after ``ShellRunner`` logs the failure.
 
-        The task is only aborted when it is still ``submitted`` or ``active``:
-        a task which has already reported ``complete`` / ``aborted`` with a
-        child command must not be overwritten by the job wrapper's exit code.
+        A recognized external submit that failed after process start keeps a
+        submitted attempt and its reservation. An already active child proves
+        submission and is never aborted by the wrapper. A local failure is
+        aborted. Terminal child reports are not overwritten.
 
         Parameters
         ----------
@@ -304,9 +305,16 @@ class ShellScriptTask(Task):
 
         reason = redact_job_password(f"{type(exc).__name__}: {exc}", self.job_password)
         if result_unknown:
-            reason = (
-                f"external submission result unknown; verify before rerun: {reason}"
+            if self.state.node_status is NodeStatus.active:
+                logger.info(
+                    f"external submit already confirmed by child: {self.node_path}"
+                )
+                return
+            self.mark_submission_unknown(reason)
+            logger.error(
+                f"external submission result unknown: {self.node_path}: {reason}"
             )
+            return
         self.abort(reason)
 
     def create_job_script(self) -> str:

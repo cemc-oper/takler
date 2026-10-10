@@ -58,6 +58,7 @@ class QueryTuiView:
             children=self.children.get(path, []),
             attempt_id=row.attempt_id,
         )
+        node.submission_unknown = bool(row.submission_unknown)
         self._nodes[path] = node
         return node
 
@@ -129,6 +130,7 @@ class QueryTuiView:
                 "started_at",
                 "ended_at",
                 "aborted_reason",
+                "submission_unknown_reason",
                 "attempt_id",
             ):
                 setattr(node, key, getattr(runtime, key))

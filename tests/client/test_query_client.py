@@ -272,6 +272,23 @@ def test_summary_show_requires_no_detail_rpc():
     assert len(transport.requests) == 1
 
 
+def test_unknown_submission_is_visible_in_summary_show():
+    task = SummaryNode(
+        path="/flow/task",
+        node_kind="task",
+        type_id="takler.shell_script_task",
+        status="submitted",
+        suspended=False,
+        attempt_id="attempt-1",
+        submission_unknown=True,
+    )
+    transport = ReplayTransport(page([node("/", "root"), node("/flow", "flow"), task]))
+    snapshot = QueryClient(transport).read_snapshot()
+    output = io.StringIO()
+    print_query_show(snapshot, lambda *_: pytest.fail("unexpected detail"), output)
+    assert "task [submitted; submission unknown]" in output.getvalue()
+
+
 def test_detailed_show_does_not_print_partial_output(capsys):
     transport = ReplayTransport(
         page([node("/", "root"), node("/flow", "flow"), node("/flow/task")]),

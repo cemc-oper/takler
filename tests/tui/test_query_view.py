@@ -9,6 +9,7 @@ from types import MappingProxyType, SimpleNamespace
 import pytest
 
 from takler.client.query_client import QueryNode, QuerySnapshot
+from takler.core import Bunch, Flow
 from takler.exceptions import QueryResponseError
 from takler.serialization.query_projection import (
     iter_query_summaries,
@@ -16,7 +17,7 @@ from takler.serialization.query_projection import (
 )
 from takler.tui.app import TaklerTuiApp
 from takler.tui.query_view import QueryTuiView
-from takler.tui.widgets.node_tree import NodeTree
+from takler.tui.widgets.node_tree import NodeTree, _label_for
 from textual.widgets import Static
 
 from .conftest import FakeTuiService, text_of, wait_until
@@ -47,6 +48,25 @@ def compact_snapshot(bunch, scope_path="/", depth=None) -> QuerySnapshot:
         ),
         estimated_bytes=1024 + 512 * len(rows),
     )
+
+
+def test_unknown_submission_visible_in_lazy_tui_view():
+    bunch = Bunch()
+    flow = bunch.add_flow(Flow("f"))
+    task = flow.add_task("t")
+    flow.begin()
+    task.run()
+    task.mark_submission_unknown("submit reply lost")
+    view = QueryTuiView(compact_snapshot(bunch))
+    node = view.get("/f/t")
+    assert node.submission_unknown
+    assert node.display_state == "submitted; submission unknown"
+    assert "submission unknown" in _label_for(node).plain
+    view.apply_detail(
+        "/f/t",
+        SimpleNamespace(groups=project_query_detail(bunch, "/f/t", ["runtime"])),
+    )
+    assert node.submission_unknown_reason == "submit reply lost"
 
 
 class QueryFakeService(FakeTuiService):

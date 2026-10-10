@@ -773,6 +773,21 @@ class Scheduler:
             from takler.serialization.builder import walk
 
             targets = tuple(walk(variable)) if recursive else (variable,)
+            unknown = tuple(
+                target
+                for target in targets
+                if isinstance(target, Task)
+                and target.submission_unknown_reason is not None
+            )
+            if unknown and (
+                recursive
+                or len(targets) != 1
+                or not isinstance(variable, Task)
+                or node_status not in (NodeStatus.complete, NodeStatus.aborted)
+            ):
+                raise FlowStateError(
+                    "unknown external submission requires direct, verified terminal force"
+                )
             if node_status in (NodeStatus.submitted, NodeStatus.active):
                 # A status override does not start a job. Preflight the whole
                 # recursive target before changing any status or reservation.
@@ -938,6 +953,19 @@ class Scheduler:
                     raise FlowStateError(
                         f"flow is already begun: {flow.name}", flow_name=flow.name
                     )
+
+        # A multi-flow begin must not reset some flows before discovering an
+        # unresolved external submission in a later one.
+        from takler.serialization.builder import walk
+
+        if any(
+            isinstance(node, Task) and node.submission_unknown_reason is not None
+            for flow in flows
+            for node in walk(flow)
+        ):
+            raise FlowStateError(
+                "unknown external submission requires operator verification"
+            )
 
         for flow in flows:
             logger.info(f"begin flow [flow name: {flow.name}, force: {command.force}]")

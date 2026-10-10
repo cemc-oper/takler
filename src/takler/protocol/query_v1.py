@@ -131,6 +131,7 @@ class SummaryNode(QueryModel):
     status: StrictStr
     suspended: StrictBool
     attempt_id: StrictStr | None = None
+    submission_unknown: StrictBool | None = None
 
     @model_validator(mode="after")
     def validate_node(self):
@@ -142,6 +143,15 @@ class SummaryNode(QueryModel):
             or (
                 self.attempt_id is not None
                 and (self.node_kind != "task" or not self.attempt_id)
+            )
+            or (
+                self.submission_unknown is not None
+                and (
+                    self.submission_unknown is not True
+                    or self.node_kind != "task"
+                    or self.status != "submitted"
+                    or self.attempt_id is None
+                )
             )
         ):
             raise ValueError("invalid summary node")
@@ -284,6 +294,7 @@ class RuntimeGroup(QueryModel):
     started_at: StrictStr | None = None
     ended_at: StrictStr | None = None
     aborted_reason: StrictStr | None = None
+    submission_unknown_reason: StrictStr | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
     meters: list[dict[str, Any]] = Field(default_factory=list)
     repeat: dict[str, Any] | None = None
