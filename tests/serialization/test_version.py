@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 
 import pytest
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from takler.core import Bunch, Flow, NodeStatus, RepeatDate, Task
 from takler.protocol.commands import (
@@ -344,8 +344,28 @@ def test_nested_plugin_runtime_is_frozen_and_private():
         assert new.checkpoint_document(registry=registry).runtime.nodes[
             "/f/p"
         ].runtime_data == {"payload": {"nested": [1, 2, 3]}}
-        with pytest.raises(VersionUnavailable, match="unsupported_plugin_detail"):
-            new.public_node("/f/p")
+        public = new.public_node("/f/p")
+        assert public["type_id"] == "example.version"
+        assert "payload" not in public
+
+
+def test_unregistered_task_has_fixed_public_view_but_no_checkpoint():
+    class LocalTask(Task):
+        def to_dict(self):
+            raise AssertionError("execution exporter must not run for queries")
+
+    bunch = Bunch()
+    task = bunch.add_flow(Flow("f")).add_task(LocalTask("p"))
+    scheduler = Scheduler(bunch)
+    before = scheduler.version_store.pin()
+    task.add_parameter("VISIBLE", "later")
+    after = scheduler.version_store.pin()
+    assert before.public_node("/f/p")["user_parameters"] == []
+    assert after.public_node("/f/p")["user_parameters"] == [
+        {"name": "VISIBLE", "value": "later"}
+    ]
+    with pytest.raises(ValidationError):
+        after.checkpoint_document()
 
 
 def test_failed_update_never_exposes_half_version():

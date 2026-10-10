@@ -119,6 +119,15 @@ class QueryClient:
     def __init__(self, transport):
         self.transport = transport
         self.current: QuerySnapshot | None = None
+        from takler.client.full_snapshot import FullSnapshotClient
+
+        self.full_snapshots = FullSnapshotClient(transport)
+
+    def read_full_snapshot(self, **selection):
+        return self.full_snapshots.read_full_snapshot(**selection)
+
+    def iter_full_snapshot(self, **selection):
+        return self.full_snapshots.iter_full_snapshot(**selection)
 
     def capabilities(self) -> CapabilitiesReply:
         reply = self.transport.query(

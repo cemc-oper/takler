@@ -274,7 +274,7 @@ def test_delta_pages_keep_target_and_replay_after_later_change():
     asyncio.run(exercise())
 
 
-def test_delta_capture_rejects_concurrent_write():
+def test_delta_capture_keeps_fixed_version_during_concurrent_write():
     async def exercise():
         import threading
 
@@ -298,8 +298,8 @@ def test_delta_capture_rejects_concurrent_write():
         task.set_node_status_only(NodeStatus.complete)
         release.set()
         result = await pending
-        assert result.kind == "error" and result.code == "resource_exhausted"
-        assert not service._delta_batches
+        assert result.kind == "since"
+        assert result.operations[0].node.status == "queued"
 
     asyncio.run(exercise())
 

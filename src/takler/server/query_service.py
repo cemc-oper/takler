@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from takler.core import Task
+from takler.core.state import NodeStatus
 from takler.protocol.query_v1 import (
     MAX_PAGE_BYTES,
     MAX_PAGE_NODES,
@@ -35,6 +36,7 @@ from takler.protocol.query_v1 import (
     ResetReply,
     SinceReply,
     SinceRequest,
+    SummaryNode,
     UpsertSummary,
     encode_query_document,
     decode_query_document,
@@ -46,6 +48,7 @@ from takler.serialization.query_projection import (
     project_query_detail,
 )
 from takler.server.auth import get_call_credentials
+from takler.serialization.version import VersionUnavailable
 
 
 SNAPSHOT_SECONDS = 120
@@ -66,6 +69,8 @@ PAGE_TARGET_BYTES = 230_000
 MAX_DELTA_BATCHES = 8
 MAX_DELTA_BATCH_BYTES = 8 * 1024 * 1024
 MAX_DELTA_RETAINED_BYTES = 32 * 1024 * 1024
+MAX_CAPTURE_WORKERS = 2
+MAX_CAPTURE_WAITING = 2
 
 
 def _utc(value: datetime) -> str:
@@ -74,6 +79,44 @@ def _utc(value: datetime) -> str:
 
 def _error(code: str, message: str) -> FailureReply:
     return FailureReply(kind="error", schema_version=1, code=code, message=message)
+
+
+def _fixed_summary(version, path: str) -> tuple[SummaryNode, str | None]:
+    row = version.node(path)
+    if row.public is None:
+        raise VersionUnavailable("unsupported_plugin_detail")
+    source = json.loads(row.public)
+    generation = None
+    if path != "/":
+        flow_path = "/" + path.split("/", 2)[1]
+        flow = version.node(flow_path)
+        if flow.public is None:
+            raise VersionUnavailable("unsupported_plugin_detail")
+        generation = json.loads(flow.public).get("definition_generation")
+    fields = dict(
+        path=path,
+        node_kind=source["node_kind"],
+        type_id=source["type_id"],
+        status=NodeStatus(source["state"]["status"]).name,
+        suspended=source["state"]["suspended"],
+    )
+    if source["node_kind"] == "task" and source.get("attempt_id") is not None:
+        fields["attempt_id"] = source["attempt_id"]
+        if source.get("submission_unknown_reason") is not None:
+            fields["submission_unknown"] = True
+    return SummaryNode(**fields), generation
+
+
+def _iter_fixed_summaries(version, scope: str, depth: int | None):
+    version.node(scope)
+    pending = [(scope, 0)]
+    while pending:
+        path, level = pending.pop()
+        yield _fixed_summary(version, path)
+        if depth is None or level < depth:
+            pending.extend(
+                (child, level + 1) for child in reversed(version.node(path).children)
+            )
 
 
 @dataclass(frozen=True)
@@ -134,6 +177,12 @@ class QueryService:
         self._delta_batches: dict[str, _DeltaBatch] = {}
         self._lock = asyncio.Lock()
         self._reserved = 0
+        self._owner_reserved: dict[str, int] = {}
+        self._capture_slots = asyncio.Semaphore(MAX_CAPTURE_WORKERS)
+        self._delta_waiting = 0
+        from takler.server.full_snapshot import FullSnapshotService
+
+        self.full_snapshots = FullSnapshotService(self)
 
     def _owner(self) -> str:
         credentials = get_call_credentials()
@@ -241,6 +290,7 @@ class QueryService:
             max_page_nodes=MAX_PAGE_NODES,
             max_decoded_page_bytes=MAX_PAGE_BYTES,
             max_chunk_bytes=65536,
+            full_snapshot_v1=True,
         )
 
     def _capture(
@@ -251,20 +301,29 @@ class QueryService:
         snapshot_id: str,
         base_revision: int,
         budget: int,
+        version=None,
     ):
         scope = request.scope_path or (
             "/" + request.flow_name if request.flow_name else "/"
         )
         observed = datetime.now(timezone.utc)
         expires_at = _utc(observed + timedelta(seconds=SNAPSHOT_SECONDS))
-        as_of = _utc(observed)
+        as_of = (
+            _utc(datetime.fromisoformat(version.as_of).astimezone(timezone.utc))
+            if version is not None
+            else _utc(observed)
+        )
         pages = []
         nodes = []
         generations = {}
         estimated = 1200
         total_size = 0
         page_index = 0
-        root_name = self.scheduler.bunch.name
+        root_name = (
+            json.loads(version.node("/").public)["name"]
+            if version is not None
+            else self.scheduler.bunch.name
+        )
 
         def flush(complete: bool):
             nonlocal nodes, generations, estimated, total_size, page_index
@@ -295,9 +354,14 @@ class QueryService:
             nodes, generations, estimated = [], {}, 1200
             page_index += 1
 
-        for node, generation in iter_query_summaries(
-            self.scheduler.bunch, scope_path=scope, depth=request.depth
-        ):
+        source = (
+            _iter_fixed_summaries(version, scope, request.depth)
+            if version is not None
+            else iter_query_summaries(
+                self.scheduler.bunch, scope_path=scope, depth=request.depth
+            )
+        )
+        for node, generation in source:
             node_size = (
                 len(
                     json.dumps(
@@ -353,41 +417,46 @@ class QueryService:
                     return _error("invalid_request", "cursor index out of range")
                 return decode_query_document(snapshot.pages[index], expected="page")
             replacement = self._replaceable_snapshot(owner)
-            if self._reserved or (
+            if (
+                self._owner_reserved.get(owner, 0) >= MAX_OWNER_SNAPSHOTS
+                or self._reserved >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
+            ) or (
                 len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
                 and replacement is None
             ):
                 return _error("resource_exhausted", "snapshot count limit")
             budget = MAX_RETAINED_BYTES - self._retained_size()
             self._reserved += 1
+            self._owner_reserved[owner] = self._owner_reserved.get(owner, 0) + 1
         snapshot_id = secrets.token_urlsafe(24)
         try:
             captured_at = _monotonic()
-            capture_guard = self.scheduler.query_revision
-            base_revision = self.scheduler.query_changes.revision
-            if capture_guard % 2:
-                return _error("resource_exhausted", "query state is changing")
             try:
-                scope, pages, size = await asyncio.to_thread(
-                    self._capture,
-                    request,
-                    owner,
-                    query_id,
-                    snapshot_id,
-                    base_revision,
-                    budget,
-                )
+                version = self.scheduler.version_store.pin()
+            except VersionUnavailable as exc:
+                return _error("resource_exhausted", str(exc))
+            base_revision = self.scheduler.query_changes.revision
+            try:
+                async with self._capture_slots:
+                    work = asyncio.create_task(
+                        asyncio.to_thread(
+                            self._capture,
+                            request,
+                            owner,
+                            query_id,
+                            snapshot_id,
+                            base_revision,
+                            budget,
+                            version,
+                        )
+                    )
+                    try:
+                        scope, pages, size = await asyncio.shield(work)
+                    except asyncio.CancelledError:
+                        await work
+                        raise
             except (RuntimeError, KeyError, IndexError):
-                return _error(
-                    "resource_exhausted", "query state changed during capture"
-                )
-            if (
-                self.scheduler.query_revision != capture_guard
-                or self.scheduler.query_changes.revision != base_revision
-            ):
-                return _error(
-                    "resource_exhausted", "query state changed during capture"
-                )
+                return _error("resource_exhausted", "fixed query version unavailable")
         except WireError:
             return _error("field_too_large", "summary exceeds page limit")
         except ValueError:
@@ -399,6 +468,9 @@ class QueryService:
         finally:
             async with self._lock:
                 self._reserved -= 1
+                self._owner_reserved[owner] -= 1
+                if not self._owner_reserved[owner]:
+                    del self._owner_reserved[owner]
         async with self._lock:
             self._purge()
             if self.scheduler.query_changes.since(base_revision) is None:
@@ -483,7 +555,7 @@ class QueryService:
         return visible_paths, set(reduced)
 
     def _project_delta(
-        self, paths: set[str], invalidations: set[str]
+        self, paths: set[str], invalidations: set[str], version=None
     ) -> list[UpsertSummary | InvalidateScope]:
         operations: list[UpsertSummary | InvalidateScope] = [
             InvalidateScope(
@@ -492,8 +564,12 @@ class QueryService:
             for path in sorted(invalidations)
         ]
         for path in sorted(paths):
-            node, generation = next(
-                iter_query_summaries(self.scheduler.bunch, scope_path=path, depth=0)
+            node, generation = (
+                _fixed_summary(version, path)
+                if version is not None
+                else next(
+                    iter_query_summaries(self.scheduler.bunch, scope_path=path, depth=0)
+                )
             )
             operations.append(
                 UpsertSummary(
@@ -581,13 +657,14 @@ class QueryService:
         target: int,
         paths: set[str],
         invalidations: set[str],
+        version=None,
     ) -> tuple[tuple[bytes, ...], float]:
         return self._delta_pages(
             request,
             owner,
             batch_id,
             target,
-            self._project_delta(paths, invalidations),
+            self._project_delta(paths, invalidations, version),
         )
 
     async def since(self, request: SinceRequest) -> QueryModel:
@@ -632,9 +709,10 @@ class QueryService:
                 self._renew_lease(request.query_id, owner, scope, request.depth)
                 return decode_query_document(batch.pages[index], expected="since")
 
-        guard = self.scheduler.query_revision
-        if guard % 2:
-            return _error("resource_exhausted", "query state is changing")
+        try:
+            version = self.scheduler.version_store.pin()
+        except VersionUnavailable as exc:
+            return _error("resource_exhausted", str(exc))
         tracker = self.scheduler.query_changes
         target = tracker.revision
         if request.since_revision > target:
@@ -648,25 +726,39 @@ class QueryService:
         paths, invalidations = selection
         batch_id = secrets.token_urlsafe(24)
         try:
-            pages, expires = (
-                await asyncio.to_thread(
-                    self._build_delta_pages,
-                    request,
-                    owner,
-                    batch_id,
-                    target,
-                    paths,
-                    invalidations,
-                )
-                if paths or invalidations
-                else self._delta_pages(request, owner, batch_id, target, [])
-            )
+            if paths or invalidations:
+                async with self._lock:
+                    if self._delta_waiting >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING:
+                        return _error("resource_exhausted", "delta worker queue full")
+                    self._delta_waiting += 1
+                try:
+                    async with self._capture_slots:
+                        work = asyncio.create_task(
+                            asyncio.to_thread(
+                                self._build_delta_pages,
+                                request,
+                                owner,
+                                batch_id,
+                                target,
+                                paths,
+                                invalidations,
+                                version,
+                            )
+                        )
+                        try:
+                            pages, expires = await asyncio.shield(work)
+                        except asyncio.CancelledError:
+                            await work
+                            raise
+                finally:
+                    async with self._lock:
+                        self._delta_waiting -= 1
+            else:
+                pages, expires = self._delta_pages(request, owner, batch_id, target, [])
         except (ValueError, KeyError, RuntimeError, StopIteration):
             return self._reset(request, "structure_changed")
         except (WireError, OverflowError, MemoryError):
             return self._reset(request, "budget_exceeded")
-        if self.scheduler.query_revision != guard or tracker.revision != target:
-            return _error("resource_exhausted", "query state changed during delta")
         if len(pages) == 1:
             async with self._lock:
                 self._purge()

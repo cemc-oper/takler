@@ -597,32 +597,42 @@ class VersionStore:
         self._pending_revision = batch.revision
 
     def _capture(self, node, path: str) -> tuple[FrozenNode, bytes | None]:
-        entry = self.registry.by_type(type(node))
-        definition = _encode(
-            _project(node, "$.root", checkpoint_root=True, recurse=False)
-        )
-        runtime = _encode(
-            _capture_node(node, self.registry).model_dump(
-                mode="json", exclude_unset=True
+        try:
+            entry = self.registry.by_type(type(node))
+        except DefinitionError as exc:
+            if exc.code != "unregistered_type":
+                raise
+            entry = None
+        if entry is None:
+            # Public queries have always supported safe base fields on an
+            # unregistered subclass. Keep that view fixed while making the
+            # private checkpoint view explicitly unusable.
+            definition = b"{}"
+            runtime = b"{}"
+        else:
+            definition = _encode(
+                _project(node, "$.root", checkpoint_root=True, recurse=False)
             )
-        )
-        public = None
-        if entry.type_id.startswith("takler."):
-            status = self.status_provider() if path == "/" else None
-            value = project_show(
-                node,
-                self.redacted_parameters,
-                server_status=status,
-                shallow=True,
+            runtime = _encode(
+                _capture_node(node, self.registry).model_dump(
+                    mode="json", exclude_unset=True
+                )
             )
-            # Shell job paths are rederived from fixed ancestors at read time.
-            if entry.type_id == "takler.shell":
-                value["generated_parameters"] = [
-                    item
-                    for item in value["generated_parameters"]
-                    if item["name"] not in {"TAKLER_JOB", "TAKLER_JOBOUT"}
-                ]
-            public = _encode(value)
+        status = self.status_provider() if path == "/" else None
+        value = project_show(
+            node,
+            self.redacted_parameters,
+            server_status=status,
+            shallow=True,
+        )
+        # Shell job paths are rederived from fixed ancestors at read time.
+        if entry is not None and entry.type_id == "takler.shell":
+            value["generated_parameters"] = [
+                item
+                for item in value["generated_parameters"]
+                if item["name"] not in {"TAKLER_JOB", "TAKLER_JOBOUT"}
+            ]
+        public = _encode(value)
         secret = None
         if isinstance(node, Task) and node.state.node_status in _IN_FLIGHT:
             if not node.attempt_id or not node.job_password:

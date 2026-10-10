@@ -194,7 +194,7 @@ async def _detail_scope_identity_redaction_and_chunks():
         reset_call_credentials(token)
 
 
-def test_capture_rejects_concurrent_mutation_without_blocking_writes():
+def test_capture_keeps_fixed_version_during_concurrent_mutation():
     asyncio.run(_capture_rejects_concurrent_mutation())
 
 
@@ -223,11 +223,12 @@ async def _capture_rejects_concurrent_mutation():
         scheduler.query_revision += 1
     release.set()
     result = await pending
-    assert result.kind == "error" and result.code == "resource_exhausted"
-    assert not service._snapshots
+    assert result.kind == "page"
+    assert {node.path for node in result.nodes} == {"/", "/f", "/f/t"}
+    assert service._snapshots
 
 
-def test_capture_rejects_direct_core_write_without_command_guard():
+def test_capture_keeps_fixed_version_during_direct_core_write():
     asyncio.run(_capture_rejects_direct_core_write())
 
 
@@ -254,8 +255,9 @@ async def _capture_rejects_direct_core_write():
     assert scheduler.query_revision == 0
     release.set()
     result = await pending
-    assert result.kind == "error" and result.code == "resource_exhausted"
-    assert not service._snapshots
+    assert result.kind == "page"
+    assert {node.path for node in result.nodes} == {"/", "/f"}
+    assert service._snapshots
 
 
 def test_snapshot_publication_rejects_expired_change_window():

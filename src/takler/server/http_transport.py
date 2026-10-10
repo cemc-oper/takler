@@ -317,6 +317,20 @@ def create_app(
                     reply = await handlers.scheduler.query_service.detail(document)
                 elif method == "ReadSince":
                     reply = await handlers.scheduler.query_service.since(document)
+                elif method == "ReadFullSnapshot":
+                    reply = await handlers.scheduler.query_service.full_snapshots.page(
+                        document
+                    )
+                elif method == "ReadFullSnapshotChunk":
+                    reply = await handlers.scheduler.query_service.full_snapshots.chunk(
+                        document
+                    )
+                elif method == "CancelFullSnapshot":
+                    reply = (
+                        await handlers.scheduler.query_service.full_snapshots.cancel(
+                            document
+                        )
+                    )
                 else:
                     reply = await handlers.scheduler.query_service.chunk(document)
             finally:
@@ -343,6 +357,22 @@ def create_app(
     @app.post(API_PREFIX + "/query/since")
     async def query_since(request: Request):
         return await run_query(request, "ReadSince", "since_request")
+
+    @app.post(API_PREFIX + "/query/full-snapshots")
+    async def query_full_snapshots(request: Request):
+        return await run_query(request, "ReadFullSnapshot", "full_snapshot_request")
+
+    @app.post(API_PREFIX + "/query/full-snapshot-chunks")
+    async def query_full_snapshot_chunks(request: Request):
+        return await run_query(
+            request, "ReadFullSnapshotChunk", "full_snapshot_chunk_request"
+        )
+
+    @app.post(API_PREFIX + "/query/full-snapshot-cancel")
+    async def query_full_snapshot_cancel(request: Request):
+        return await run_query(
+            request, "CancelFullSnapshot", "cancel_full_snapshot_request"
+        )
 
     return app
 

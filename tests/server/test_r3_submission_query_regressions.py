@@ -1,6 +1,5 @@
 """R3 baseline: desired behavior for defects assigned to later R3 tasks.
 
-Strict xfails keep each regression executable until its owning fix lands.
 The process entry point is fake; these tests never submit an external job.
 """
 
@@ -9,8 +8,6 @@ import threading
 import time
 from dataclasses import replace
 from unittest.mock import patch
-
-import pytest
 
 from takler.core import Bunch, Flow, Task
 from takler.protocol.query_v1 import DetailRequest, PageRequest, SinceRequest
@@ -128,9 +125,6 @@ def test_unchanged_session_can_read_detail_after_page_ttl():
     asyncio.run(exercise())
 
 
-@pytest.mark.xfail(
-    strict=True, reason="R3-08: unrelated write invalidates scoped capture"
-)
 def test_unrelated_write_does_not_exhaust_scoped_capture():
     async def exercise():
         bunch = Bunch()

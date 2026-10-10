@@ -21,6 +21,7 @@ stderr (see :func:`_log_unexpected_error`).
 Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6.
 """
 
+import json
 import os
 import sys
 import traceback
@@ -37,6 +38,7 @@ from takler.client.exit_code import (
 )
 from takler.client.service_client import TaklerServiceClient
 from takler.client.query_client import print_query_show
+from takler.client.full_snapshot import FullSnapshotComplete
 from takler.client.transport import TRANSPORT_HTTP, resolve_transport
 from takler.exceptions import TaklerError
 from takler.logging import get_logger
@@ -641,6 +643,47 @@ def sync(
         print(f"# revision={view.revision} session={view.session_id}")
         print_query_show(view, lambda *_: None, sys.stdout)
         return view
+
+    _run_client_command(host, port, run)
+
+
+@app.command()
+def snapshot(
+    host: str = typer.Option(None, help=HOST_HELP_STRING),
+    port: str = typer.Option(None, help=PORT_HELP_STRING),
+    scope_path: str = typer.Option("/", "--scope", help="subtree path"),
+    depth: Optional[int] = typer.Option(None, "--depth", help="relative tree depth"),
+    fields: str = typer.Option(
+        "summary,definition,parameters,runtime,artifacts,service",
+        "--fields",
+        help="comma-separated public field groups",
+    ),
+    stream: bool = typer.Option(False, "--stream", help="write JSON lines"),
+):
+    """[query] Read a fixed full-detail snapshot with completion proof."""
+    selection = dict(scope_path=scope_path, depth=depth, field_groups=fields.split(","))
+
+    def run(client):
+        if stream:
+            for item in client.iter_full_snapshot(**selection):
+                value = (
+                    {"complete": item.__dict__}
+                    if isinstance(item, FullSnapshotComplete)
+                    else {"node": item}
+                )
+                typer.echo(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+        else:
+            result = client.read_full_snapshot(**selection)
+            typer.echo(
+                json.dumps(
+                    {
+                        "completion": result.completion.__dict__,
+                        "nodes_by_path": result.nodes_by_path,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
 
     _run_client_command(host, port, run)
 
