@@ -32,8 +32,8 @@
 查询 DTO
 --------
 
-``QueryDocument v1`` 的 Python 基类由 HTTP 与 gRPC 共用；初始页与详情
-的版本、字段和预算见 :doc:`/guide/query`。服务端只提供初始快照与
-按需详情；``since`` 与 reset 响应尚未启用。
+``QueryDocument v1`` 的 Python 基类由 HTTP 与 gRPC 共用；初始页、
+实时详情、增量 ``since`` 与 reset 的版本、字段、租约和预算见
+:doc:`/guide/query`。
 
 .. autoclass:: takler.protocol.query_v1.QueryModel

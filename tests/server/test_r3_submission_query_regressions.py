@@ -89,7 +89,6 @@ def test_unknown_external_submit_keeps_capacity_after_restore(tmp_path):
     assert restored_flow.find_limit("slots").value == 1
 
 
-@pytest.mark.xfail(strict=True, reason="R3-04: detail lease expires while since works")
 def test_unchanged_session_can_read_detail_after_page_ttl():
     async def exercise():
         bunch = Bunch()

@@ -138,6 +138,20 @@ def test_query_failure_does_not_publish_partial_view():
     assert client.current is None
 
 
+def test_expired_detail_marks_current_view_stale_for_rebuild():
+    summary = page([node("/", "root"), node("/flow", "flow"), node("/flow/task")])
+    expired = FailureReply(
+        kind="error", schema_version=1, code="snapshot_expired", message="lease ended"
+    )
+    client = QueryClient(ReplayTransport(summary, expired, summary))
+    old = client.read_snapshot()
+    with pytest.raises(QueryResponseError, match="snapshot_expired"):
+        client.read_detail(old, "/flow/task", ["runtime"])
+    assert client.current.is_stale("/flow/task")
+    assert client.read_snapshot().get("/flow/task") is not None
+    assert not client.current.is_stale("/flow/task")
+
+
 def test_client_budget_rejects_replacement_without_losing_old_view(monkeypatch):
     row = page([node("/", "root"), node("/flow", "flow")], total=2)
     client = QueryClient(ReplayTransport(row, row))

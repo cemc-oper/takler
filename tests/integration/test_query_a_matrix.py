@@ -314,6 +314,12 @@ def test_wire_snapshot_replay_live_detail_and_expiry(transport, query_a_server):
             request.model_copy(update={"cursor": first.next_cursor})
         )
         assert expired.code == "snapshot_expired"
+        assert client.transport.query(detail_request).code == "stale_identity"
+        selected.attempt_id = "first-attempt"
+        assert client.transport.query(detail_request).kind == "detail"
+        service._query_leases[first.query_id] = replace(
+            service._query_leases[first.query_id], expires=time.monotonic() - 1
+        )
         assert client.transport.query(detail_request).code == "snapshot_expired"
     finally:
         client.close_channel()

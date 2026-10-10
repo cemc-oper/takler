@@ -613,7 +613,12 @@ async def _snapshot_and_blob_budgets_and_expiry():
         service._snapshots[snapshot_id] = replace(
             snapshot, expires=time.monotonic() - 1
         )
-    assert (await service.detail(request)).code == "snapshot_expired"
+    runtime_request = request.model_copy(update={"field_groups": ["runtime"]})
+    assert (await service.detail(runtime_request)).kind == "detail"
+    service._query_leases[request.query_id] = replace(
+        service._query_leases[request.query_id], expires=time.monotonic() - 1
+    )
+    assert (await service.detail(runtime_request)).code == "snapshot_expired"
 
 
 def test_root_service_detail_uses_scheduler_status():

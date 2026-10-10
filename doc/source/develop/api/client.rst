@@ -17,6 +17,8 @@ revision。长期连接使用对应 ``run_query_*`` 方法。局部失效写入�
 ``stale_scopes``；reset 抛出带范围的 ``QueryResponseError``。高层
 ``query_sync`` 与 CLI ``sync`` 会重建陈旧范围的完整视图。缓存只在
 当前客户端进程内有效，不提供跨重启视图缓存。
+``since`` 的成功读取会续期实时详情范围授权；详情收到
+``snapshot_expired`` 时当前视图标为陈旧，调用方应重读选定范围。
 具体预算和错误处理见
 :doc:`/guide/query`。
 

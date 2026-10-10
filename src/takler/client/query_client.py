@@ -530,6 +530,8 @@ class QueryClient:
             field_groups=field_groups,
         )
         reply = self.transport.query(request)
+        if isinstance(reply, FailureReply) and reply.code == "snapshot_expired":
+            self._mark_stale(snapshot, snapshot.scope_path)
         self._failure(reply)
         if not isinstance(reply, DetailReply):
             raise ServerResponseError("invalid query detail response")

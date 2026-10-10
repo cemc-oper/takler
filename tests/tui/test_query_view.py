@@ -460,6 +460,55 @@ async def test_query_tui_reset_and_disconnect_rebuild(rich_bunch) -> None:
 
 
 @pytest.mark.anyio
+async def test_query_tui_expired_detail_rebuilds_selected_scope(rich_bunch) -> None:
+    class ExpiringService(DeltaQueryFakeService):
+        expire_once = True
+
+        def read_detail(self, snapshot, path, groups, current=None):
+            if path == "/flow1/task3" and self.expire_once:
+                self.expire_once = False
+                raise QueryResponseError("snapshot_expired", "query unavailable")
+            return super().read_detail(snapshot, path, groups, current)
+
+    service = ExpiringService(rich_bunch)
+    app = TaklerTuiApp(service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await wait_until(lambda: isinstance(app._snapshot, QueryTuiView), pilot)
+        first = app._snapshot
+        app._selected_path = "/flow1/task3"
+        app._request_detail("/flow1/task3")
+        await wait_until(lambda: app._snapshot is not first, pilot)
+        assert service.snapshot_calls == 2
+        assert service.since_calls == 0
+        assert app._selected_path == "/flow1/task3"
+        await wait_until(
+            lambda: any(path == "/flow1/task3" for path, _ in service.detail_calls),
+            pilot,
+        )
+
+
+@pytest.mark.anyio
+async def test_query_tui_unchanged_polls_preserve_detail_access(rich_bunch) -> None:
+    service = DeltaQueryFakeService(rich_bunch)
+    app = TaklerTuiApp(service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await wait_until(lambda: isinstance(app._snapshot, QueryTuiView), pilot)
+        first = app._snapshot
+        # The fixture's page expiry is already more than two TTLs in the past.
+        for count in range(1, 4):
+            app.action_refresh()
+            await wait_until(lambda: service.since_calls == count, pilot)
+        assert app._snapshot is first
+        assert service.snapshot_calls == 1
+        app._selected_path = "/flow1/task3"
+        app._request_detail("/flow1/task3")
+        await wait_until(
+            lambda: any(path == "/flow1/task3" for path, _ in service.detail_calls),
+            pilot,
+        )
+
+
+@pytest.mark.anyio
 async def test_query_tui_disconnect_resumes_same_revision(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)

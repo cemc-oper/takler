@@ -49,8 +49,12 @@ from takler.server.auth import get_call_credentials
 
 
 SNAPSHOT_SECONDS = 120
+QUERY_LEASE_SECONDS = 120
+_monotonic = time.monotonic
 MAX_SNAPSHOTS = 8
 MAX_OWNER_SNAPSHOTS = 2
+MAX_QUERY_LEASES = 32
+MAX_OWNER_QUERY_LEASES = 8
 MAX_QUERY_BYTES = 128 * 1024 * 1024
 # Reserve 32 MiB of the total for page models, encoding buffers, and indexes.
 MAX_RETAINED_BYTES = 96 * 1024 * 1024
@@ -85,6 +89,14 @@ class _Snapshot:
 
 
 @dataclass(frozen=True)
+class _QueryLease:
+    owner: str
+    scope: str
+    depth: int | None
+    expires: float
+
+
+@dataclass(frozen=True)
 class _Blob:
     owner: str
     query_id: str
@@ -115,6 +127,9 @@ class QueryService:
         self.session_id = secrets.token_urlsafe(24)
         self._key = secrets.token_bytes(32)
         self._snapshots: dict[str, _Snapshot] = {}
+        # Small authorization records outlive page bytes while since keeps a
+        # scope active. Neither pages nor live node values are retained here.
+        self._query_leases: dict[str, _QueryLease] = {}
         self._blobs: dict[str, _Blob] = {}
         self._delta_batches: dict[str, _DeltaBatch] = {}
         self._lock = asyncio.Lock()
@@ -173,7 +188,10 @@ class QueryService:
             return None
 
     def _purge(self) -> None:
-        now = time.monotonic()
+        now = _monotonic()
+        for key, lease in list(self._query_leases.items()):
+            if lease.expires <= now:
+                del self._query_leases[key]
         for key, snapshot in list(self._snapshots.items()):
             if snapshot.expires <= now:
                 del self._snapshots[key]
@@ -196,6 +214,22 @@ class QueryService:
         """The oldest owner view can give way to a complete newer capture."""
         owned = [key for key, value in self._snapshots.items() if value.owner == owner]
         return owned[0] if len(owned) >= MAX_OWNER_SNAPSHOTS else None
+
+    def _renew_lease(
+        self, query_id: str, owner: str, scope: str, depth: int | None
+    ) -> None:
+        """Keep an active scope without extending retained page or blob bytes."""
+        self._query_leases.pop(query_id, None)
+        owned = [
+            key for key, value in self._query_leases.items() if value.owner == owner
+        ]
+        if len(owned) >= MAX_OWNER_QUERY_LEASES:
+            del self._query_leases[owned[0]]
+        if len(self._query_leases) >= MAX_QUERY_LEASES:
+            del self._query_leases[next(iter(self._query_leases))]
+        self._query_leases[query_id] = _QueryLease(
+            owner, scope, depth, _monotonic() + QUERY_LEASE_SECONDS
+        )
 
     def capabilities(self) -> CapabilitiesReply:
         return CapabilitiesReply(
@@ -328,7 +362,7 @@ class QueryService:
             self._reserved += 1
         snapshot_id = secrets.token_urlsafe(24)
         try:
-            captured_at = time.monotonic()
+            captured_at = _monotonic()
             capture_guard = self.scheduler.query_revision
             base_revision = self.scheduler.query_changes.revision
             if capture_guard % 2:
@@ -388,6 +422,7 @@ class QueryService:
                 captured_at + SNAPSHOT_SECONDS,
                 size,
             )
+            self._renew_lease(query_id, owner, scope, request.depth)
         return decode_query_document(pages[0], expected="page")
 
     @staticmethod
@@ -478,7 +513,7 @@ class QueryService:
         target_revision: int,
         operations: list[UpsertSummary | InvalidateScope],
     ) -> tuple[tuple[bytes, ...], float]:
-        captured_at = time.monotonic()
+        captured_at = _monotonic()
         observed = datetime.now(timezone.utc)
         as_of = _utc(observed)
         expires_at = _utc(observed + timedelta(seconds=SNAPSHOT_SECONDS))
@@ -566,6 +601,16 @@ class QueryService:
         if request.query_id != self._query_id(request, owner):
             return self._reset(request, "scope_changed")
         scope = self._scope(request)
+        async with self._lock:
+            self._purge()
+            lease = self._query_leases.get(request.query_id)
+            if (
+                lease is None
+                or lease.owner != owner
+                or lease.scope != scope
+                or lease.depth != request.depth
+            ):
+                return self._reset(request, "history_expired")
         if request.cursor is not None:
             parsed = self._parse_cursor(request.cursor, owner)
             if parsed is None:
@@ -584,6 +629,7 @@ class QueryService:
                     return self._reset(request, "identity_changed")
                 if index < 1 or index >= len(batch.pages):
                     return _error("invalid_request", "cursor index out of range")
+                self._renew_lease(request.query_id, owner, scope, request.depth)
                 return decode_query_document(batch.pages[index], expected="since")
 
         guard = self.scheduler.query_revision
@@ -622,9 +668,16 @@ class QueryService:
         if self.scheduler.query_revision != guard or tracker.revision != target:
             return _error("resource_exhausted", "query state changed during delta")
         if len(pages) == 1:
+            async with self._lock:
+                self._purge()
+                if request.query_id not in self._query_leases:
+                    return self._reset(request, "history_expired")
+                self._renew_lease(request.query_id, owner, scope, request.depth)
             return decode_query_document(pages[0], expected="since")
         async with self._lock:
             self._purge()
+            if request.query_id not in self._query_leases:
+                return self._reset(request, "history_expired")
             size = sum(map(len, pages))
             if (
                 len(self._delta_batches) >= MAX_DELTA_BATCHES
@@ -641,6 +694,7 @@ class QueryService:
                 expires,
                 size,
             )
+            self._renew_lease(request.query_id, owner, scope, request.depth)
         return decode_query_document(pages[0], expected="since")
 
     async def detail(self, request: DetailRequest) -> QueryModel:
@@ -649,26 +703,21 @@ class QueryService:
             self._purge()
             if request.session_id != self.session_id:
                 return _error("snapshot_expired", "session changed")
-            matching = [
-                s
-                for s in self._snapshots.values()
-                if s.query_id == request.query_id and s.owner == owner
-            ]
-            if not matching:
+            lease = self._query_leases.get(request.query_id)
+            if lease is None or lease.owner != owner:
                 return _error("snapshot_expired", "query unavailable")
-            snapshot = matching[0]
         path = request.path
         if (
-            snapshot.scope != "/"
-            and path != snapshot.scope
-            and not path.startswith(snapshot.scope + "/")
+            lease.scope != "/"
+            and path != lease.scope
+            and not path.startswith(lease.scope + "/")
         ):
             return _error("permission_denied", "path outside query scope")
         if (
-            snapshot.depth is not None
+            lease.depth is not None
             and (path.count("/") if path != "/" else 0)
-            - (snapshot.scope.count("/") if snapshot.scope != "/" else 0)
-            > snapshot.depth
+            - (lease.scope.count("/") if lease.scope != "/" else 0)
+            > lease.depth
         ):
             return _error("permission_denied", "path outside query depth")
         async with self.scheduler.query_state_lock:
@@ -710,9 +759,23 @@ class QueryService:
                     groups=groups,
                 )
                 encode_query_document(reply)
+                async with self._lock:
+                    self._purge()
+                    if request.query_id not in self._query_leases:
+                        return _error("snapshot_expired", "query unavailable")
+                    self._renew_lease(request.query_id, owner, lease.scope, lease.depth)
                 return reply
             except WireError:
-                return await self._chunked_detail(reply, owner)
+                result = await self._chunked_detail(reply, owner)
+                if isinstance(result, DetailReply):
+                    async with self._lock:
+                        self._purge()
+                        if request.query_id not in self._query_leases:
+                            return _error("snapshot_expired", "query unavailable")
+                        self._renew_lease(
+                            request.query_id, owner, lease.scope, lease.depth
+                        )
+                return result
             except ValueError:
                 return _error("invalid_request", "detail group unavailable")
 
@@ -818,7 +881,7 @@ class QueryService:
                         or self._retained_size() + incoming > MAX_RETAINED_BYTES
                     ):
                         return _error("resource_exhausted", "blob budget exceeded")
-                    expires = time.monotonic() + 60
+                    expires = _monotonic() + 60
                     for bid, item_pointer, data, digest in pending:
                         self._blobs[bid] = _Blob(
                             owner,
