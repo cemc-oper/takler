@@ -421,6 +421,7 @@ class Task(Node):
                 "job_path",
                 "jobout_path",
                 "orvix_info_path",
+                "job_password",
             )
         ):
             self.notify_query_change("summary", "runtime", "artifacts")

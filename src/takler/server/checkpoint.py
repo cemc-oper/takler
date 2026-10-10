@@ -429,6 +429,7 @@ class CheckpointManager:
                     self.bunch.server_state,
                 ):
                     scheduler.notify_query_change("/", "service")
+                    scheduler.version_store.flush()
                 scheduler.query_revision += 1
 
     def _apply_outcome(

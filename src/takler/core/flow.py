@@ -83,6 +83,7 @@ class Flow(NodeContainer):
         """Give a newly attached definition one identity, shared by its tasks."""
         if self.definition_generation is None:
             self.definition_generation = str(uuid4())
+            self.notify_query_change("runtime")
         pending = [subtree] if subtree is not None else list(self.children)
         while pending:
             node = pending.pop()
@@ -90,6 +91,8 @@ class Flow(NodeContainer):
                 subtree is not None or node.definition_generation is None
             ):
                 node.definition_generation = self.definition_generation
+                if subtree is None:
+                    node.notify_query_change("runtime")
             pending.extend(node.children)
 
     # Node access --------------------------------------
@@ -115,8 +118,11 @@ class Flow(NodeContainer):
         """
         Requeue calendar with current time.
         """
+        before = self.calendar.to_dict()
         suite_time = datetime.datetime.now()
         self.calendar.begin(suite_time)
+        if self.calendar.to_dict() != before:
+            self.notify_query_change("runtime")
 
     def update_calendar(self, time: datetime.datetime):
         """
@@ -128,9 +134,9 @@ class Flow(NodeContainer):
         ----------
         time
         """
-        previous = self.calendar.flow_time
+        previous = self.calendar.to_dict()
         self.calendar.update(time)
-        if self.calendar.flow_time != previous:
+        if self.calendar.to_dict() != previous:
             self.notify_query_change("runtime")
         self.update_generated_parameters()
         self.calendar_changed(self.calendar)

@@ -88,6 +88,17 @@ class Scheduler:
         self.last_checkpoint_at: Optional[str] = None
         self.restore_summary: Optional[dict] = None
         self.checkpoint_manager = None
+        from takler.serialization.version import VersionStore
+
+        self.version_store = VersionStore(
+            bunch,
+            status_provider=lambda: self.server_status_response().model_dump(),
+            redacted_parameters=query_redacted_parameters,
+            state_version=self.query_changes.revision,
+            transaction_open=lambda: self.query_changes._depth > 0,
+        )
+        self.query_changes.on_mark = self.version_store.note
+        self.query_changes.on_commit = self.version_store.enqueue
         self.interval_main_loop: float = interval_main_loop
         self.command_queue: Queue = Queue()
         self.should_stop: bool = False
@@ -150,6 +161,7 @@ class Scheduler:
                             self._process_flow(name, flow, time_now)
                         finally:
                             self.query_changes.end()
+                            self.version_store.flush()
                             self.query_revision += 1
                 except Exception as exc:  # noqa: BLE001 - boundary is intentional
                     # Unified diagnostic log (task 3.5): always record the

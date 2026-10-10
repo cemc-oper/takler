@@ -32,7 +32,7 @@ def query_hidden_parameters(redacted_parameters=()):
     return SENSITIVE_PARAMETERS | {name.lower() for name in redacted_parameters}
 
 
-def project_show(bunch, redacted_parameters=(), server_status=None):
+def project_show(bunch, redacted_parameters=(), server_status=None, *, shallow=False):
     hidden = query_hidden_parameters(redacted_parameters)
 
     def project(node):
@@ -115,6 +115,11 @@ def project_show(bunch, redacted_parameters=(), server_status=None):
                 aborted_reason=node.aborted_reason.replace(node.job_password, REDACTED)
                 if node.aborted_reason and node.job_password
                 else node.aborted_reason,
+                submission_unknown_reason=(
+                    node.submission_unknown_reason.replace(node.job_password, REDACTED)
+                    if node.submission_unknown_reason and node.job_password
+                    else node.submission_unknown_reason
+                ),
             )
             hide_home = "takler_home" in hidden
             has_attempt = node.attempt_id is not None
@@ -192,6 +197,8 @@ def project_show(bunch, redacted_parameters=(), server_status=None):
             ]
         }
         result["times"] = [{"time": t.time.strftime("%H:%M")} for t in node.times]
+        if shallow:
+            return result
         if isinstance(node, Bunch):
             result["flows"] = [project(flow) for flow in node.flows.values()]
         else:

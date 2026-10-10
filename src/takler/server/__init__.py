@@ -580,6 +580,9 @@ class TaklerServer:
         ensure_synchronous_tasks(self.bunch)
         self.scheduler.last_checkpoint_at = self.checkpoint_manager.last_checkpoint_at
         self.scheduler.restore_summary = self.checkpoint_manager.restore_summary
+        self.scheduler.version_store.rebuild(
+            state_version=self.scheduler.query_changes.revision
+        )
         await self.scheduler.start()
         await self.grpc_transport.start()
         if self.http_transport is not None:
