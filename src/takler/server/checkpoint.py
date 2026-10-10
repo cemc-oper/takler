@@ -1356,6 +1356,12 @@ class CheckpointManager:
         candidate = restore_checkpoint(snapshot)
         if not isinstance(candidate, Bunch):
             raise DefinitionError("invalid_structure")
+        # Rebuild before publishing the candidate. A bad retained path must
+        # reject this snapshot without partly replacing the live bunch, and
+        # the first post-recovery submission must not scan the full tree.
+        from takler.serialization.artifact_path_index import ArtifactPathIndex
+
+        candidate._artifact_path_index = ArtifactPathIndex(candidate)
         mapping = snapshot["secrets"][JOB_PASSWORDS_KEY]
         deployment = self.bunch.server_config
         self.bunch.__dict__.update(vars(candidate))

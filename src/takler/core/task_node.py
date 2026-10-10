@@ -65,6 +65,20 @@ def ensure_synchronous_tasks(root) -> None:
 
 
 class Task(Node):
+    def __setattr__(self, name, value):
+        if name not in ("job_path", "jobout_path", "orvix_info_path"):
+            super().__setattr__(name, value)
+            return
+        previous = self.__dict__.get(name)
+        if previous != value and self.parent is not None:
+            flow = self.get_flow()
+            bunch = None if flow is None else flow.bunch
+            if bunch is not None and bunch.find_flow(flow.name) is flow:
+                index = getattr(bunch, "_artifact_path_index", None)
+                if index is not None:
+                    index.update(self, name, value, previous)
+        super().__setattr__(name, value)
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         ensure_synchronous_task(cls)

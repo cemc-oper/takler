@@ -30,6 +30,8 @@ class Bunch(NodeContainer):
         # Process-local gate. Shutdown must stop deferred starts before its
         # first await; this flag is deliberately absent from checkpoints.
         self._service_stopping = False
+        # Derived from retained task paths on demand; never checkpointed.
+        self._artifact_path_index = None
 
     # Serialization ---------------------------------------
 
@@ -103,6 +105,7 @@ class Bunch(NodeContainer):
         flow.ensure_definition_generation()
         self.flows[flow.name] = flow
         flow.bunch = self
+        self._artifact_path_index = None
         tracker = getattr(self, "_query_tracker", None)
         if tracker is not None:
             tracker.mark("/" + flow.name, invalidate=True)
@@ -130,6 +133,8 @@ class Bunch(NodeContainer):
             )
 
         flow = self.flows.pop(flow_name)
+        flow.bunch = None
+        self._artifact_path_index = None
         tracker = getattr(self, "_query_tracker", None)
         if tracker is not None:
             tracker.mark("/" + flow_name, invalidate=True)

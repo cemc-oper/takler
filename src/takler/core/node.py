@@ -342,6 +342,9 @@ class Node(ABC):
 
         child_node.parent = self
         self.children.append(child_node)
+        bunch = self.get_root().get_bunch()
+        if bunch is not None:
+            bunch._artifact_path_index = None
         flow = self.get_flow()
         if flow is not None and flow.bunch is not None:
             flow.ensure_definition_generation(child_node)
@@ -375,6 +378,10 @@ class Node(ABC):
         old_child = self.children[child_index]
         new_child_node.parent = self
         self.children[child_index] = new_child_node
+        old_child.parent = None
+        bunch = self.get_root().get_bunch()
+        if bunch is not None:
+            bunch._artifact_path_index = None
         self.notify_query_change(invalidate=True)
         return old_child
 
@@ -386,16 +393,24 @@ class Node(ABC):
                 node_path=f"{self.node_path}/{child if isinstance(child, str) else child.name}",
             )
         child_node = self.children.pop(child_node_index)
+        bunch = self.get_root().get_bunch()
+        if bunch is not None:
+            bunch._artifact_path_index = None
         child_node.delete_children()
+        child_node.parent = None
         self.notify_query_change(invalidate=True)
         return child_node
 
     def delete_children(self):
         if self.children:
+            bunch = self.get_root().get_bunch()
+            if bunch is not None:
+                bunch._artifact_path_index = None
             self.notify_query_change(invalidate=True)
         while len(self.children) > 0:
             node = self.children.pop(0)
             node.delete_children()
+            node.parent = None
             del node
         self.children = list()
 

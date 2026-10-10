@@ -252,14 +252,13 @@ class ShellScriptTask(Task):
             raise ValueError("job artifact paths conflict")
         bunch = self.get_bunch()
         if bunch is not None:
-            from takler.serialization.builder import walk
+            from takler.serialization.artifact_path_index import ArtifactPathIndex
 
-            for other in walk(bunch):
-                if other is self or not isinstance(other, Task):
-                    continue
-                for value in (other.job_path, other.jobout_path, other.orvix_info_path):
-                    if value is not None and Path(value).resolve() in paths:
-                        raise ValueError("job artifact path conflicts with current run")
+            index = bunch._artifact_path_index
+            if index is None:
+                index = bunch._artifact_path_index = ArtifactPathIndex(bunch)
+            if index.conflicts(self, paths):
+                raise ValueError("job artifact path conflicts with current run")
         return job, jobout, info
 
     def _artifact_override(self, name: str) -> Optional[Parameter]:

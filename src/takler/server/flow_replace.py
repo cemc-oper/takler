@@ -179,6 +179,7 @@ def replace_flow(bunch, command):
         (candidate.__dict__, "bunch", bunch),
         (bunch.flows, name, candidate),
         (old.__dict__, "bunch", None),
+        (bunch.__dict__, "_artifact_path_index", None),
         *((obj.__dict__, attribute, value) for obj, attribute, value in updates),
     ]
     candidate_state = candidate.state.__dict__
