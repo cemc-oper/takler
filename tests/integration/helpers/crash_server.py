@@ -73,13 +73,15 @@ async def main() -> None:
                 entered.unlink(missing_ok=True)
                 release.unlink(missing_ok=True)
 
-                def block(index, name):
-                    if name == "write_temp_file":
-                        entered.write_text("entered", encoding="utf-8")
-                        while not release.exists():
-                            time.sleep(0.01)
+                original_publish = server.checkpoint_manager._publish_prepared
 
-                server.checkpoint_manager._after_write_step = block
+                def block(sequence, prepared):
+                    entered.write_text("entered", encoding="utf-8")
+                    while not release.exists():
+                        time.sleep(0.01)
+                    return original_publish(sequence, prepared)
+
+                server.checkpoint_manager._publish_prepared = block
                 pending_checkpoint = asyncio.create_task(
                     server.checkpoint_manager.write_checkpoint_async()
                 )
@@ -87,24 +89,30 @@ async def main() -> None:
             elif operation == "checkpoint_release":
                 (work / "checkpoint_release").write_text("release", encoding="utf-8")
                 success = await asyncio.wait_for(pending_checkpoint, 10)
-                del server.checkpoint_manager._after_write_step
+                del server.checkpoint_manager._publish_prepared
                 pending_checkpoint = None
             elif operation in ("fail_checkpoint", "fail_checkpoint_late"):
-                failing_step = (
-                    "write_temp_file"
-                    if operation == "fail_checkpoint"
-                    else "replace_checkpoint"
-                )
+                manager = server.checkpoint_manager
+                if operation == "fail_checkpoint":
 
-                def fail(index, name):
-                    if name == failing_step:
+                    def fail_early(backup_temp):
                         raise OSError(errno.ENOSPC, "test storage full")
 
-                server.checkpoint_manager._after_write_step = fail
+                    manager._copy_to_backup_temp = fail_early
+                    attribute = "_copy_to_backup_temp"
+                else:
+                    original_replace = manager._replace_checkpoint
+
+                    def fail_late(prepared):
+                        original_replace(prepared)
+                        raise OSError(errno.ENOSPC, "test storage full")
+
+                    manager._replace_checkpoint = fail_late
+                    attribute = "_replace_checkpoint"
                 try:
-                    success = server.checkpoint_manager.write_checkpoint()
+                    success = manager.write_checkpoint()
                 finally:
-                    del server.checkpoint_manager._after_write_step
+                    delattr(manager, attribute)
             else:
                 raise ValueError(operation)
             ack = work / "acks" / f"{sequence:04d}.json"

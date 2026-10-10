@@ -168,7 +168,7 @@ def test_failed_newer_capture_does_not_publish_late_stale_view(tmp_path):
 def test_final_write_failure_is_reported_to_server_cli(tmp_path, monkeypatch):
     server = TaklerServer(checkpoint_file=tmp_path / "checkpoint")
     manager = server.checkpoint_manager
-    manager._write_temp_file = lambda path, payload: (_ for _ in ()).throw(
+    manager._replace_checkpoint = lambda prepared: (_ for _ in ()).throw(
         OSError(errno.ENOSPC, "full")
     )
     assert asyncio.run(manager.stop()) is False

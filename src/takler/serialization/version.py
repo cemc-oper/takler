@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+import pickle
+import zlib
+from types import SimpleNamespace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Callable, Mapping
@@ -19,12 +22,23 @@ from takler.core.state import NodeStatus
 from takler.schema.definition import DefinitionError
 from takler.serialization.checkpoint import (
     CheckpointDocument,
+    JobSecret,
+    NodeRuntime,
+    RuntimeDocument,
+    SecretsDocument,
+    SourceAddress,
     _capture_node,
     _validate_checkpoint_view,
 )
 from takler.serialization.definition import _project
 from takler.serialization.query import project_show, query_hidden_parameters
-from takler.serialization.registry import TypeRegistry, get_registry, using_registry
+from takler.serialization.registry import (
+    TypeRegistry,
+    get_registry,
+    require_codec,
+    using_registry,
+)
+from takler.serialization.runtime import RuntimeServerState
 
 if TYPE_CHECKING:
     from takler.server.query_changes import ChangeBatch
@@ -214,40 +228,321 @@ class StateVersion:
         passwords = {}
         for row in self.iter_nodes():
             definitions[row.path] = json.loads(row.definition)
-            runtime[row.path] = json.loads(row.runtime)
+            runtime[row.path] = NodeRuntime.model_validate_json(row.runtime)
             shard, offset = self.index[row.path]
             secret = self.secrets[shard][offset]
             if secret is not None:
-                passwords[row.path] = json.loads(secret)
+                passwords[row.path] = JobSecret.model_validate_json(secret)
         for row in self.iter_nodes():
             key = "flows" if row.path == "/" else "children"
             definitions[row.path][key] = [definitions[child] for child in row.children]
         from takler.schema.definition import parse_definition
 
         registry = registry or get_registry()
+        root = definitions["/"]
+        del definitions
         definition = parse_definition(
             {
                 "kind": "takler.definition",
                 "schema_version": 1,
-                "root": definitions["/"],
+                "root": root,
             },
             model=registry.document_model(),
         )
-        document = CheckpointDocument.model_validate(
-            {
-                "format_version": 3,
-                "saved_at": saved_at or self.as_of,
-                "definition": definition.model_dump(mode="json"),
-                "runtime": {
-                    "server_state": json.loads(self.server_state),
-                    "nodes": runtime,
-                },
-                "secrets": {"job_passwords": passwords},
-                "source_address": json.loads(self.source_address),
-            }
+        del root
+        document = CheckpointDocument(
+            format_version=3,
+            saved_at=saved_at or self.as_of,
+            definition=definition.model_dump(mode="json"),
+            runtime=RuntimeDocument(
+                server_state=RuntimeServerState.model_validate_json(self.server_state),
+                nodes=runtime,
+            ),
+            secrets=SecretsDocument(job_passwords=passwords),
+            source_address=SourceAddress.model_validate_json(self.source_address),
         )
         _validate_checkpoint_view(document, definition, registry)
         return document
+
+    def checkpoint_stream(
+        self,
+        write: Callable[[str], object],
+        *,
+        saved_at: str | None = None,
+        registry: TypeRegistry | None = None,
+    ) -> None:
+        """Validate and emit v3 incrementally without a full document copy."""
+        from takler.schema.definition import parse_definition
+
+        if not self.index:
+            indexed = replace(
+                self,
+                index=MappingProxyType(
+                    {
+                        row.path: (shard_no, offset)
+                        for shard_no, shard in enumerate(self.nodes)
+                        for offset, row in enumerate(shard)
+                    }
+                ),
+            )
+            return indexed.checkpoint_stream(
+                write, saved_at=saved_at, registry=registry
+            )
+        registry = registry or get_registry()
+        saved_at = saved_at or self.as_of
+        if datetime.fromisoformat(saved_at).tzinfo is None:
+            raise VersionUnavailable("invalid_saved_at")
+        RuntimeServerState.model_validate_json(self.server_state)
+        SourceAddress.model_validate_json(self.source_address)
+
+        def subtree_data(path: str) -> dict:
+            built = {}
+            stack = [(path, False)]
+            while stack:
+                current, complete = stack.pop()
+                row = self.node(current)
+                if not complete:
+                    stack.append((current, True))
+                    stack.extend((child, False) for child in reversed(row.children))
+                    continue
+                item = json.loads(row.definition)
+                key = "flows" if current == "/" else "children"
+                item[key] = [built.pop(child) for child in row.children]
+                built[current] = item
+            return built[path]
+
+        def summarize(model, path: str, definitions: dict):
+            root = None
+            pending = [(model, path, None)]
+            while pending:
+                item, current, parent = pending.pop()
+                summary = SimpleNamespace(
+                    name=item.name,
+                    type_id=item.type_id,
+                    children=[],
+                    flows=[],
+                    events=getattr(item, "events", ()),
+                    meters=getattr(item, "meters", ()),
+                    limits=getattr(item, "limits", ()),
+                    in_limits=getattr(item, "in_limits", ()),
+                    times=getattr(item, "times", ()),
+                    repeat=getattr(item, "repeat", None),
+                    trigger=getattr(item, "trigger", None),
+                    complete_trigger=getattr(item, "complete_trigger", None),
+                )
+                definitions[current] = summary
+                if parent is None:
+                    root = summary
+                else:
+                    getattr(
+                        parent, "flows" if current.count("/") == 1 else "children"
+                    ).append(summary)
+                children = getattr(item, "flows", None)
+                if children is None:
+                    children = getattr(item, "children", ())
+                for child in reversed(children):
+                    child_path = (
+                        "/" + child.name
+                        if current == "/"
+                        else current + "/" + child.name
+                    )
+                    pending.append((child, child_path, summary))
+            return root
+
+        definitions = {}
+        root_data = json.loads(self.node("/").definition)
+        root_data["flows"] = []
+        root_model = parse_definition(
+            {"kind": "takler.definition", "schema_version": 1, "root": root_data},
+            model=registry.document_model(),
+        ).root
+        root_summary = summarize(root_model, "/", definitions)
+        for flow_path in self.node("/").children:
+            flow_model = parse_definition(
+                {
+                    "kind": "takler.definition",
+                    "schema_version": 1,
+                    "root": subtree_data(flow_path),
+                },
+                model=registry.document_model(),
+            ).root
+            flow_summary = summarize(flow_model, flow_path, definitions)
+            root_summary.flows.append(flow_summary)
+
+        runtime = {}
+        passwords = {}
+        for row in self.iter_nodes():
+            item = NodeRuntime.model_validate_json(row.runtime)
+            entry = registry.by_id(definitions[row.path].type_id)
+            if entry.type_id.startswith("takler."):
+                if item.runtime_data:
+                    raise DefinitionError("invalid_runtime")
+            else:
+                require_codec(entry, "runtime_schema", "restore_runtime")
+                if entry.secret_fields & item.runtime_data.keys():
+                    raise DefinitionError("invalid_secret")
+                entry.runtime_schema.model_validate(item.runtime_data)
+            runtime[row.path] = SimpleNamespace(
+                kind=item.kind,
+                state=item.state,
+                root_attributes=item.root_attributes,
+                event_values=item.event_values,
+                meter_values=item.meter_values,
+                limit_usage=item.limit_usage,
+                time_free=item.time_free,
+                repeat_value=item.repeat_value,
+                trigger_free=item.trigger_free,
+                complete_trigger_free=item.complete_trigger_free,
+                definition_generation=item.definition_generation,
+                attempt_id=item.attempt_id,
+                try_no=item.try_no,
+            )
+            shard, offset = self.index[row.path]
+            secret = self.secrets[shard][offset]
+            if secret is not None:
+                passwords[row.path] = JobSecret.model_validate_json(secret)
+        view = SimpleNamespace(
+            runtime=SimpleNamespace(nodes=runtime),
+            secrets=SimpleNamespace(job_passwords=passwords),
+        )
+        _validate_checkpoint_view(view, SimpleNamespace(root=root_summary), registry)
+        del view, runtime, passwords, definitions, root_summary
+
+        def compact(value):
+            return json.dumps(
+                value, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+            )
+
+        write('{"format_version":3,"saved_at":')
+        write(compact(saved_at))
+        write(',"definition":{"kind":"takler.definition","schema_version":1,"root":')
+        stack = [("node", "/")]
+        while stack:
+            kind, value = stack.pop()
+            if kind == "text":
+                write(value)
+                continue
+            row = self.node(value)
+            data = json.loads(row.definition)
+            child_key = "flows" if value == "/" else "children"
+            write("{")
+            fields = list(data.items())
+            for position, (name, item) in enumerate(fields):
+                if position:
+                    write(",")
+                write(compact(name))
+                write(":")
+                if name != child_key:
+                    write(compact(item))
+                    continue
+                write("[")
+                trailing = "".join(
+                    "," + compact(key) + ":" + compact(content)
+                    for key, content in fields[position + 1 :]
+                )
+                stack.append(("text", "]" + trailing + "}"))
+                for index in range(len(row.children) - 1, -1, -1):
+                    stack.append(("node", row.children[index]))
+                    if index:
+                        stack.append(("text", ","))
+                break
+            else:
+                raise VersionUnavailable("invalid_structure")
+        write('},"runtime":{"server_state":')
+        write(self.server_state.decode("utf-8"))
+        write(',"nodes":{')
+        for position, row in enumerate(self.iter_nodes()):
+            if position:
+                write(",")
+            write(compact(row.path))
+            write(":")
+            write(row.runtime.decode("utf-8"))
+        write('}},"secrets":{"job_passwords":{')
+        first = True
+        for row in self.iter_nodes():
+            shard, offset = self.index[row.path]
+            secret = self.secrets[shard][offset]
+            if secret is None:
+                continue
+            if not first:
+                write(",")
+            first = False
+            write(compact(row.path))
+            write(":")
+            write(secret.decode("utf-8"))
+        write('}},"source_address":')
+        write(self.source_address.decode("utf-8"))
+        write("}")
+
+
+def _unpickle_checkpoint_shards(
+    state_version, as_of, compressed, server_state, source_address, cwd, retained_bytes
+) -> StateVersion:
+    nodes = []
+    secrets = []
+    for shard in compressed:
+        records = pickle.loads(zlib.decompress(shard))
+        nodes.append(
+            tuple(
+                FrozenNode(path, parent, children, identity, definition, runtime, None)
+                for path, parent, children, identity, definition, runtime, _ in records
+            )
+        )
+        secrets.append(tuple(record[-1] for record in records))
+    return StateVersion(
+        state_version,
+        as_of,
+        tuple(nodes),
+        tuple(secrets),
+        MappingProxyType({}),
+        server_state,
+        source_address,
+        cwd,
+        retained_bytes,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointTransfer:
+    """Pickle only private checkpoint records for an isolated worker."""
+
+    version: StateVersion
+
+    def __reduce__(self):
+        version = self.version
+        compressed = tuple(
+            zlib.compress(
+                pickle.dumps(
+                    tuple(
+                        (
+                            row.path,
+                            row.parent,
+                            row.children,
+                            row.identity,
+                            row.definition,
+                            row.runtime,
+                            secret,
+                        )
+                        for row, secret in zip(shard, private, strict=True)
+                    ),
+                    protocol=5,
+                ),
+                level=1,
+            )
+            for shard, private in zip(version.nodes, version.secrets, strict=True)
+        )
+        return (
+            _unpickle_checkpoint_shards,
+            (
+                version.state_version,
+                version.as_of,
+                compressed,
+                version.server_state,
+                version.source_address,
+                version.cwd,
+                version.retained_bytes,
+            ),
+        )
 
 
 class VersionStore:
