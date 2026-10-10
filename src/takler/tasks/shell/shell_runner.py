@@ -24,6 +24,7 @@ logger = get_logger("tasks.shell")
 
 
 OnFailure = Callable[[BaseException], None]
+OnSkipped = Callable[[], None]
 
 
 def redact_job_password(message: str, password: Optional[str]) -> str:
@@ -49,7 +50,8 @@ class ShellRunner:
         command: str,
         node_path: str = "",
         on_failure: Optional[OnFailure] = None,
-        before_start: Optional[Callable[[], None]] = None,
+        before_start: Optional[Callable[[], bool | None]] = None,
+        on_skipped: Optional[OnSkipped] = None,
     ) -> asyncio.Task:
         """
         Run command in a subprocess using ``anyio.run_process``.
@@ -71,7 +73,12 @@ class ShellRunner:
             Called with the exception when the job task ends with an exception,
             after the ERROR log has been recorded.
         before_start
-            Final service status check immediately before starting the process.
+            Final submission check immediately before starting the process.
+            Returning ``False`` skips a stale, not-yet-started command without
+            treating it as an external submission failure.
+        on_skipped
+            Called only when ``before_start`` returns ``False``. The caller
+            must recheck identity before changing task state.
 
         Returns
         -------
@@ -86,8 +93,10 @@ class ShellRunner:
         """
 
         async def run_shell_command():
-            if before_start is not None:
-                before_start()
+            if before_start is not None and before_start() is False:
+                if on_skipped is not None:
+                    on_skipped()
+                return
             await run_process(["/bin/sh", "-c", command])
 
         try:

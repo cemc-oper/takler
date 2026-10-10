@@ -195,6 +195,10 @@ class Scheduler:
 
             await asyncio.sleep(duration)
 
+    def begin_shutdown(self) -> None:
+        """Close deferred process starts before shutdown first yields."""
+        self.bunch._service_stopping = True
+
     async def stop(self):
         """
         Stop scheduler by set ``should_stop`` flag and wait until main loop unset ``should_stop`` flag
@@ -202,6 +206,7 @@ class Scheduler:
         This method should only be called once.
         """
         logger.info("scheduler shutting down...")
+        self.begin_shutdown()
         self.should_stop = True
 
         while self.should_stop:
@@ -238,7 +243,11 @@ class Scheduler:
         time_now
             current time used to update the flow's calendar.
         """
-        if self.bunch.server_state.status is ServerStatus.halted or not flow.begun:
+        if (
+            self.bunch._service_stopping
+            or self.bunch.server_state.status is ServerStatus.halted
+            or not flow.begun
+        ):
             # Requirement 8.9: an unbegun flow is skipped entirely, both its
             # calendar update and its dependency resolution.
             #
@@ -251,7 +260,10 @@ class Scheduler:
             # than an edge case.
             return
         flow.update_calendar(time_now)
-        if self.bunch.server_state.status is ServerStatus.halted:
+        if (
+            self.bunch._service_stopping
+            or self.bunch.server_state.status is ServerStatus.halted
+        ):
             return
         flow.resolve_dependencies()
 
@@ -309,7 +321,10 @@ class Scheduler:
         是否使用异步函数遍历工作流？
         """
         for name, flow in self.bunch.flows.items():
-            if self.bunch.server_state.status is ServerStatus.halted:
+            if (
+                self.bunch._service_stopping
+                or self.bunch.server_state.status is ServerStatus.halted
+            ):
                 return
             flow.resolve_dependencies()
 

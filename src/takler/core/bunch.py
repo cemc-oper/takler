@@ -27,6 +27,9 @@ class Bunch(NodeContainer):
         self.flows: Dict[str, Flow] = dict()
         self.server_config: ServerConfig = ServerConfig(host=host, port=port)
         self.server_state: ServerState = ServerState()
+        # Process-local gate. Shutdown must stop deferred starts before its
+        # first await; this flag is deliberately absent from checkpoints.
+        self._service_stopping = False
 
     # Serialization ---------------------------------------
 
@@ -89,6 +92,8 @@ class Bunch(NodeContainer):
         """Guard an execution boundary without changing service or node state."""
         if self.server_state.status is not ServerStatus.running:
             raise FlowStateError("service is halted")
+        if self._service_stopping:
+            raise FlowStateError("service is stopping")
 
     # Flow ------------------------------------------------
 

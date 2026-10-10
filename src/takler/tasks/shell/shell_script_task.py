@@ -10,6 +10,7 @@ from takler.core import (
     Parameter,
     Flow,
     NodeStatus,
+    ServerStatus,
     SerializationType,
 )
 from takler.core.node import Node
@@ -164,21 +165,48 @@ class ShellScriptTask(Task):
         attempt_id, generation = self.attempt_id, self.definition_generation
         external_submit = self._uses_orvix()
 
-        def on_failure(exc: BaseException) -> None:
-            # All checks and abort run synchronously on the same event loop.
-            # A detached flow can still retain its old bunch back-reference.
+        def is_current_submission() -> bool:
             current = self._submission_token is token
             current = current and self.attempt_id == attempt_id
             current = current and self.definition_generation == generation
             current = current and self.get_flow() is flow and self.get_bunch() is bunch
+            if current and flow is not None:
+                current = flow.definition_generation == generation
             if current and bunch is not None:
                 current = bunch.find_node(node_path) is self
             elif current and flow is not None:
                 current = flow.find_node(node_path) is self
+            return current
+
+        def before_start() -> bool:
+            current = is_current_submission()
+            current = current and self.state.node_status is NodeStatus.submitted
+            current = current and (flow is None or flow.begun)
+            if current and bunch is not None:
+                current = (
+                    bunch.server_state.status is ServerStatus.running
+                    and not bunch._service_stopping
+                )
             if not current:
+                logger.info(f"skip stale job start: {node_path}")
+            return current
+
+        def on_failure(exc: BaseException) -> None:
+            # All checks and abort run synchronously on the same event loop.
+            # A detached flow can still retain its old bunch back-reference.
+            if not is_current_submission():
                 logger.info(f"skip stale job failure: {node_path}")
                 return
             self.on_job_failure(exc, result_unknown=external_submit)
+
+        def on_skipped() -> None:
+            # A valid current submission skipped before run_process has a
+            # definite non-start result. Old work must not abort a new attempt.
+            if (
+                is_current_submission()
+                and self.state.node_status is NodeStatus.submitted
+            ):
+                self.abort("submission skipped before process start")
 
         run_command = self.create_job_script()
         self._require_running()
@@ -187,7 +215,8 @@ class ShellScriptTask(Task):
             command=run_command,
             node_path=node_path,
             on_failure=on_failure,
-            before_start=self._require_running,
+            before_start=before_start,
+            on_skipped=on_skipped,
         )
         return True
 

@@ -649,6 +649,7 @@ class TaklerServer:
         if self._stopped:
             return
         self._stopped = True
+        self.bunch._service_stopping = True
         logger.info("stop server...")
         await self.grpc_transport.stop()
         if self.http_transport is not None:

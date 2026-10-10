@@ -40,7 +40,6 @@ def _page_request():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R3-02: stale queued submit reaches run_process")
 def test_requeued_attempt_never_enters_process_start(tmp_path):
     async def exercise():
         _, _, task = _shell_tree(tmp_path)
