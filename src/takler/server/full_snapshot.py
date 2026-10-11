@@ -9,6 +9,8 @@ import hashlib
 import hmac
 import json
 import secrets
+import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -45,6 +47,53 @@ COMPACT_PUBLIC_MEDIAN_BYTES = 1600
 MAX_FIELD_BYTES = 16 * 1024 * 1024
 BLOB_THRESHOLD = 32_768
 CHUNK_BYTES = 65_536
+GC_TUNE_MIN_PATHS = 50_000
+GC_TUNE_OLD_SCAN = 1000
+
+_gc_tune_lock = threading.Lock()
+_gc_tune_users = 0
+_gc_tune_previous: tuple[int, int, int] | None = None
+_gc_tune_applied: tuple[int, int, int] | None = None
+
+
+def _has_incremental_gc() -> bool:
+    # CPython 3.14.0-3.14.4 uses an incremental old-generation collector.
+    # Later 3.14 releases restored the earlier generational collector.
+    return sys.implementation.name == "cpython" and (3, 14, 0) <= sys.version_info[
+        :3
+    ] < (3, 14, 5)
+
+
+def _acquire_large_snapshot_gc() -> bool:
+    """Use smaller old-generation scan steps while a large stream is active."""
+    global _gc_tune_users, _gc_tune_previous, _gc_tune_applied
+    if not _has_incremental_gc() or not gc.isenabled():
+        return False
+    with _gc_tune_lock:
+        if _gc_tune_users:
+            _gc_tune_users += 1
+            return True
+        previous = gc.get_threshold()
+        if previous[1] >= GC_TUNE_OLD_SCAN:
+            return False
+        applied = (previous[0], GC_TUNE_OLD_SCAN, previous[2])
+        gc.set_threshold(*applied)
+        _gc_tune_previous = previous
+        _gc_tune_applied = applied
+        _gc_tune_users = 1
+        return True
+
+
+def _release_large_snapshot_gc() -> None:
+    global _gc_tune_users, _gc_tune_previous, _gc_tune_applied
+    with _gc_tune_lock:
+        _gc_tune_users -= 1
+        if _gc_tune_users:
+            return
+        if gc.get_threshold() == _gc_tune_applied:
+            gc.set_threshold(*_gc_tune_previous)
+        _gc_tune_previous = None
+        _gc_tune_applied = None
 
 
 def _error(code: str, message: str) -> FailureReply:
@@ -279,6 +328,7 @@ class _Lease:
     blobs: dict[str, tuple[str, str, int, str]] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     expiry_handle: asyncio.TimerHandle | None = None
+    gc_tuned: bool = False
 
 
 class FullSnapshotService:
@@ -306,6 +356,14 @@ class FullSnapshotService:
         lease = self._leases.pop(key, None)
         if lease is not None and lease.expiry_handle is not None:
             lease.expiry_handle.cancel()
+        if lease is not None and lease.gc_tuned:
+            lease.gc_tuned = False
+            _release_large_snapshot_gc()
+
+    def close(self) -> None:
+        """Release retained leases and process-wide GC tuning at shutdown."""
+        for key in tuple(self._leases):
+            self._drop(key)
 
     def _schedule_expiry(self, lease: _Lease) -> None:
         if lease.expiry_handle is not None:
@@ -409,6 +467,8 @@ class FullSnapshotService:
                 ):
                     return _error("resource_exhausted", "full snapshot retention limit")
                 self._leases[lease.snapshot_id] = lease
+                if len(paths) >= GC_TUNE_MIN_PATHS:
+                    lease.gc_tuned = _acquire_large_snapshot_gc()
                 self._schedule_expiry(lease)
         else:
             async with self._lock:
@@ -463,6 +523,9 @@ class FullSnapshotService:
                     return _error("snapshot_expired", "full snapshot cancelled")
                 lease.last_page = page
                 lease.used = time.monotonic()
+                if page.complete and lease.gc_tuned:
+                    lease.gc_tuned = False
+                    _release_large_snapshot_gc()
                 self._schedule_expiry(lease)
                 return page
 

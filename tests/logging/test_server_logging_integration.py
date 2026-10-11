@@ -119,6 +119,7 @@ def _make_hermetic_server() -> TaklerServer:
     server = TaklerServer(host="localhost", port=33999)
     server.scheduler = mock.AsyncMock()
     server.scheduler.begin_shutdown = mock.MagicMock()
+    server.scheduler.query_service.full_snapshots.close = mock.MagicMock()
     server.grpc_transport = mock.AsyncMock()
     server.checkpoint_manager = mock.AsyncMock()
     server.checkpoint_manager.restore = mock.MagicMock(return_value=False)
@@ -294,3 +295,4 @@ def test_shutdown_emits_info_record() -> None:
     # The hermetic collaborators were stopped (no real I/O).
     server.grpc_transport.stop.assert_awaited_once()
     server.scheduler.stop.assert_awaited_once()
+    server.scheduler.query_service.full_snapshots.close.assert_called_once()

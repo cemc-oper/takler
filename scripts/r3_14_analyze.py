@@ -151,6 +151,13 @@ def summarize(raw: dict) -> dict:
             for label, items in (("all", lag), ("overlap", lag_overlapping))
         },
         "gc_totals": raw.get("gc_totals", {}),
+        "gc_thresholds_observed": sorted(
+            {
+                tuple(item["gc_threshold"])
+                for item in resources
+                if "gc_threshold" in item
+            }
+        ),
         "rss_peak_bytes": {
             "server_and_probe": max(
                 (item["server_rss_bytes"] for item in resources), default=0

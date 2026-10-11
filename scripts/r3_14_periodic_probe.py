@@ -83,6 +83,7 @@ async def observe(manager, duration: float, lag: list[dict], resources: list[dic
                     "wall_ns": time.time_ns(),
                     "server_rss_bytes": rss_bytes(os.getpid()),
                     "server_cpu_seconds": time.process_time(),
+                    "gc_threshold": gc.get_threshold(),
                     "worker_rss_bytes": sum(rss_bytes(pid) for pid in worker_pids),
                     "worker_cpu_seconds": sum(cpu_seconds(pid) for pid in worker_pids),
                     "background_writes": len(manager._background_writes),
@@ -105,6 +106,10 @@ def run(
     duration: float,
     components: set[str],
     full_readers: int,
+    sync_transport: str = "http",
+    child_transport: str = "grpc",
+    full_transport: str = "http",
+    full_language: str = "go",
 ) -> dict:
     fixture_started_utc = datetime.now(timezone.utc).isoformat()
     fixtures = runpy.run_path(str(Path.cwd() / "tests/integration/conftest.py"))
@@ -312,17 +317,18 @@ def run(
                     return error is None
 
                 def sync_reader():
+                    query_port = http_port if sync_transport == "http" else grpc_port
                     command = [
                         sys.executable,
                         str(Path.cwd() / "scripts/r3_14_query_worker.py"),
                         "--transport",
-                        "http",
+                        sync_transport,
                         "--port",
-                        str(http_port),
+                        str(query_port),
                     ]
                     worker = subprocess.Popen(
                         command,
-                        env=child_environment("http"),
+                        env=child_environment(sync_transport),
                         stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -350,9 +356,9 @@ def run(
                         result = receive()
                         requests.append(
                             {
-                                "kind": f"{name}_python_http"
+                                "kind": f"{name}_python_{sync_transport}"
                                 if name != "summary"
-                                else "summary_initial_python_http",
+                                else f"summary_initial_python_{sync_transport}",
                                 "start_ns": started,
                                 "end_ns": time.perf_counter_ns(),
                                 "error": result.get("error"),
@@ -382,19 +388,20 @@ def run(
                         worker.wait(timeout=10)
 
                 def child_writer():
+                    child_port = http_port if child_transport == "http" else grpc_port
                     command = [
                         sys.executable,
                         str(Path.cwd() / "scripts/r3_14_child_worker.py"),
                         "--transport",
-                        "grpc",
+                        child_transport,
                         "--port",
-                        str(grpc_port),
+                        str(child_port),
                         "--attempt",
                         task.attempt_id,
                     ]
                     worker = subprocess.Popen(
                         command,
-                        env=child_environment("grpc"),
+                        env=child_environment(child_transport),
                         stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
@@ -431,15 +438,18 @@ def run(
                         )
 
                     try:
-                        send("init", "child_init_python_grpc")
+                        send("init", f"child_init_python_{child_transport}")
                         index = 0
                         while time.perf_counter() < cutoff:
-                            send(f"meter:{index % 11}", "child_meter_python_grpc")
+                            send(
+                                f"meter:{index % 11}",
+                                f"child_meter_python_{child_transport}",
+                            )
                             if index % 10 == 0:
-                                send("event", "child_event_python_grpc")
+                                send("event", f"child_event_python_{child_transport}")
                             index += 1
                             time.sleep(0.01)
-                        send("complete", "child_complete_python_grpc")
+                        send("complete", f"child_complete_python_{child_transport}")
                     finally:
                         if worker.poll() is None:
                             worker.stdin.write("quit\n")
@@ -447,16 +457,20 @@ def run(
                         worker.wait(timeout=10)
 
                 def full_reader():
+                    if full_language == "python":
+                        full_reader_python()
+                        return
                     go_binary = Path.cwd().parent / "takler-client/bin/takler_client"
                     if not go_binary.is_file():
                         raise RuntimeError("build the Go client before mixed probe")
+                    full_port = http_port if full_transport == "http" else grpc_port
                     command = [
                         str(go_binary),
                         "snapshot",
                         "--host",
                         "127.0.0.1",
                         "--port",
-                        str(http_port),
+                        str(full_port),
                         "--stream",
                     ]
 
@@ -467,7 +481,7 @@ def run(
                             with tempfile.TemporaryFile(mode="w+b") as error_output:
                                 process = subprocess.Popen(
                                     command,
-                                    env=child_environment("http"),
+                                    env=child_environment(full_transport),
                                     stdout=output,
                                     stderr=error_output,
                                 )
@@ -541,7 +555,75 @@ def run(
                             }
 
                     while time.perf_counter() < cutoff:
-                        record("full_stream_go_http", read)
+                        record(f"full_stream_go_{full_transport}", read)
+
+                def full_reader_python():
+                    full_port = http_port if full_transport == "http" else grpc_port
+                    worker = subprocess.Popen(
+                        [
+                            sys.executable,
+                            str(Path.cwd() / "scripts/r3_14_query_worker.py"),
+                            "--transport",
+                            full_transport,
+                            "--port",
+                            str(full_port),
+                        ],
+                        env=child_environment(full_transport),
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        bufsize=1,
+                    )
+                    assert worker.stdin is not None and worker.stdout is not None
+
+                    def receive():
+                        if not select.select([worker.stdout], [], [], 180)[0]:
+                            raise TimeoutError("independent full reader did not reply")
+                        line = worker.stdout.readline()
+                        if not line:
+                            raise RuntimeError("independent full reader exited")
+                        return json.loads(line)
+
+                    try:
+                        if not receive().get("ready"):
+                            raise RuntimeError("independent full reader did not start")
+
+                        def read():
+                            worker.stdin.write("full_stream\n")
+                            worker.stdin.flush()
+                            result = receive()
+                            if result.get("error"):
+                                raise RuntimeError(result["error"])
+                            expected_nodes = size + (size + 999) // 1000 + 3
+                            if result.get("nodes") != expected_nodes:
+                                raise RuntimeError("incomplete full snapshot")
+                            snapshot_id = result.get("snapshot_id")
+                            return {
+                                "nodes": expected_nodes,
+                                "bytes": result["bytes"],
+                                "first_batch_ns": result["first_ns"],
+                                "rss_before_bytes": result["rss_before_bytes"],
+                                "rss_peak_bytes": result["rss_peak_bytes"],
+                                "cpu_seconds": result["cpu_seconds"],
+                                "snapshot_id": snapshot_id,
+                                "page_calls": sum(
+                                    event["snapshot_id"] == snapshot_id
+                                    for event in page_events
+                                ),
+                                "chunk_calls": sum(
+                                    event["snapshot_id"] == snapshot_id
+                                    for event in chunk_events
+                                ),
+                            }
+
+                        while time.perf_counter() < cutoff:
+                            record(f"full_stream_python_{full_transport}", read)
+                    finally:
+                        if worker.poll() is None:
+                            worker.stdin.write("quit\n")
+                            worker.stdin.flush()
+                        worker.wait(timeout=10)
 
                 with ThreadPoolExecutor(max_workers=2 + full_readers) as executor:
                     jobs = [
@@ -586,6 +668,10 @@ def run(
         "duration_s": duration,
         "components": sorted(components),
         "full_readers": full_readers,
+        "sync_transport": sync_transport,
+        "child_transport": child_transport,
+        "full_transport": full_transport,
+        "full_language": full_language,
         "state": state,
         "events": events,
         "gc_totals": gc_totals,
@@ -606,6 +692,10 @@ def main():
     parser.add_argument("--mixed", action="store_true")
     parser.add_argument("--components", choices=("sync", "child", "full"), nargs="+")
     parser.add_argument("--full-readers", type=int, default=1)
+    parser.add_argument("--sync-transport", choices=("http", "grpc"), default="http")
+    parser.add_argument("--child-transport", choices=("http", "grpc"), default="grpc")
+    parser.add_argument("--full-transport", choices=("http", "grpc"), default="http")
+    parser.add_argument("--full-language", choices=("go", "python"), default="go")
     parser.add_argument("--output", type=Path, required=True)
     options = parser.parse_args()
     if options.full_readers < 1:
@@ -620,6 +710,10 @@ def main():
         options.duration,
         components,
         options.full_readers,
+        options.sync_transport,
+        options.child_transport,
+        options.full_transport,
+        options.full_language,
     )
     options.output.parent.mkdir(parents=True, exist_ok=True)
     options.output.write_text(json.dumps(result, separators=(",", ":")) + "\n")

@@ -53,6 +53,9 @@ def _mock_services(server: TaklerServer, calls: List[str]) -> None:
     server.scheduler.start.side_effect = lambda: calls.append("scheduler.start")
     server.scheduler.stop.side_effect = lambda: calls.append("scheduler.stop")
     server.scheduler.begin_shutdown = mock.MagicMock()
+    server.scheduler.query_service.full_snapshots.close = mock.MagicMock(
+        side_effect=lambda: calls.append("snapshots.close")
+    )
 
     server.grpc_transport = mock.AsyncMock()
     server.grpc_transport.start.side_effect = lambda: calls.append("network.start")
@@ -171,7 +174,12 @@ def test_shutdown_stops_the_checkpoint_manager_last(tmp_path: Path) -> None:
 
     asyncio.run(server.stop())
 
-    assert calls == ["network.stop", "scheduler.stop", "checkpoint.stop"]
+    assert calls == [
+        "network.stop",
+        "scheduler.stop",
+        "snapshots.close",
+        "checkpoint.stop",
+    ]
 
 
 def test_shutdown_writes_a_final_snapshot_of_the_quiesced_bunch(

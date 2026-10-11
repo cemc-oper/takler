@@ -16,6 +16,7 @@ from takler.protocol.query_v1 import (
     FullSnapshotRequest,
 )
 from takler.server.scheduler import Scheduler
+import takler.server.full_snapshot as snapshot_module
 
 
 def _service(tasks=1, payload=""):
@@ -43,6 +44,80 @@ class _LocalTransport:
         else:
             result = self.service.capabilities()
         return self.mutate(result)
+
+
+def test_large_snapshot_gc_setting_is_restored_on_release(monkeypatch):
+    current = [(2000, 10, 0)]
+    monkeypatch.setattr(snapshot_module, "_has_incremental_gc", lambda: True)
+    monkeypatch.setattr(snapshot_module, "GC_TUNE_MIN_PATHS", 1)
+    monkeypatch.setattr(snapshot_module.gc, "isenabled", lambda: True)
+    monkeypatch.setattr(snapshot_module.gc, "get_threshold", lambda: current[0])
+    monkeypatch.setattr(
+        snapshot_module.gc,
+        "set_threshold",
+        lambda *values: current.__setitem__(0, values),
+    )
+
+    async def run():
+        scheduler, _ = _service(tasks=1000)
+        service = scheduler.query_service.full_snapshots
+        request = FullSnapshotRequest(kind="full_snapshot_request", schema_version=1)
+        try:
+            first = await service.page(request)
+            second = await service.page(request)
+            assert not first.complete and not second.complete
+            assert current[0] == (2000, 1000, 0)
+
+            cancelled = await service.cancel(
+                CancelFullSnapshotRequest(
+                    kind="cancel_full_snapshot_request",
+                    schema_version=1,
+                    session_id=first.session_id,
+                    full_snapshot_id=first.full_snapshot_id,
+                )
+            )
+            assert cancelled.cancelled
+            assert current[0] == (2000, 1000, 0)
+            service.close()
+            assert current[0] == (2000, 10, 0)
+
+            page = await service.page(request)
+            assert not page.complete
+            while not page.complete:
+                page = await service.page(
+                    request.model_copy(
+                        update={
+                            "full_snapshot_id": page.full_snapshot_id,
+                            "cursor": page.next_cursor,
+                        }
+                    )
+                )
+            assert current[0] == (2000, 10, 0)
+
+            expired = await service.page(request)
+            assert not expired.complete
+            service._leases[
+                expired.full_snapshot_id
+            ].used -= snapshot_module.IDLE_SECONDS
+            service._purge()
+            assert current[0] == (2000, 10, 0)
+
+            small_scheduler, _ = _service()
+            small_service = small_scheduler.query_service.full_snapshots
+            complete = await small_service.page(request)
+            assert complete.complete
+            assert current[0] == (2000, 10, 0)
+            small_service.close()
+
+            third = await service.page(request)
+            assert not third.complete
+            current[0] = (2000, 400, 0)
+            service.close()
+            assert current[0] == (2000, 400, 0)
+        finally:
+            service.close()
+
+    asyncio.run(run())
 
 
 def test_full_snapshot_keeps_one_version_across_pages_and_cancellation():

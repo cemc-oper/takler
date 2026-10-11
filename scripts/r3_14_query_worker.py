@@ -122,6 +122,7 @@ def main():
                         bytes=completion.total_bytes,
                         first_ns=first_ns,
                         sha256=completion.sha256,
+                        snapshot_id=completion.full_snapshot_id,
                     )
                 else:
                     raise ValueError("unknown probe command")
