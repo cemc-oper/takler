@@ -210,10 +210,11 @@ class TaklerServer:
         # it alongside the scheduler task so both modes share one clean shutdown
         # path (Requirements 2.4, 2.5, 3.4).
         self._fatal_error_event: asyncio.Event = asyncio.Event()
-        # Guard so the clean shutdown flow runs at most once, whether it is
-        # reached through ``stop()`` or through ``run()`` after the scheduler
-        # task completes / the fatal-error event fires.
+        # Both stop() and run() must await the same shutdown to completion.
+        # A Boolean guard alone lets run() return while stop() is still
+        # writing the final checkpoint, closing its event loop too early.
         self._stopped: bool = False
+        self._shutdown_task: Optional[asyncio.Task] = None
         self.shutdown_checkpoint_ok: bool = True
 
         # The one Zombie_Detector of this server, built from the settings already
@@ -639,18 +640,26 @@ class TaklerServer:
         """
         Clean shutdown flow shared by :meth:`stop` and :meth:`run`.
 
-        Stops the gRPC transport, the scheduler and the checkpoint manager
-        without raising. Guarded by ``self._stopped`` so it runs at most once
-        even when both an external ``stop()`` call and ``run()`` reach it
-        (Requirement 3.4).
+        Both callers await the same task, including the final checkpoint.
+        Shielding it lets shutdown finish if one waiter is cancelled.
+        """
+        task = self._shutdown_task
+        if task is None:
+            # Close the process-start gate before create_task yields. Deferred
+            # shell submissions must not start while transports are stopping.
+            self.scheduler.begin_shutdown()
+            task = asyncio.create_task(self._shutdown_once())
+            self._shutdown_task = task
+        await asyncio.shield(task)
+
+    async def _shutdown_once(self):
+        """Stop services once, with the final checkpoint after the scheduler.
 
         The checkpoint manager is stopped last on purpose: its ``stop()`` writes
         the final snapshot, and by then no RPC handler and no scheduler pass can
         still change the bunch, so that snapshot is a consistent view of a
         quiesced tree (Requirement 5.9).
         """
-        if self._stopped:
-            return
         self._stopped = True
         self.bunch._service_stopping = True
         logger.info("stop server...")
