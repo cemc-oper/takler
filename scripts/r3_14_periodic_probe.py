@@ -116,6 +116,7 @@ def run(
     page_events: list[dict] = []
     chunk_events: list[dict] = []
     gc_started: dict[tuple[int, int], int] = {}
+    gc_totals: dict[int, dict[str, int]] = {}
 
     def observe_gc(phase, info):
         key = (threading.get_ident(), info["generation"])
@@ -125,15 +126,25 @@ def run(
         else:
             start_ns = gc_started.pop(key, None)
             if start_ns is not None:
-                events.append(
-                    {
-                        "phase": "gc",
-                        "generation": info["generation"],
-                        "start_ns": start_ns,
-                        "end_ns": now_ns,
-                        "collected": info["collected"],
-                    }
-                )
+                elapsed_ns = now_ns - start_ns
+                totals = gc_totals.get(info["generation"])
+                if totals is None:
+                    totals = {"count": 0, "duration_ns": 0}
+                    gc_totals[info["generation"]] = totals
+                totals["count"] += 1
+                totals["duration_ns"] += elapsed_ns
+                # Retaining every sub-millisecond collection creates hundreds
+                # of thousands of probe objects during long runs and skews GC.
+                if elapsed_ns >= 1_000_000:
+                    events.append(
+                        {
+                            "phase": "gc",
+                            "generation": info["generation"],
+                            "start_ns": start_ns,
+                            "end_ns": now_ns,
+                            "collected": info["collected"],
+                        }
+                    )
 
     gc.callbacks.append(observe_gc)
     with tempfile.TemporaryDirectory(prefix="r3-14-periodic-") as temporary:
@@ -577,6 +588,7 @@ def run(
         "full_readers": full_readers,
         "state": state,
         "events": events,
+        "gc_totals": gc_totals,
         "requests": requests,
         "page_events": page_events,
         "chunk_events": chunk_events,

@@ -380,8 +380,17 @@ class QueryService:
                 self.scheduler.bunch, scope_path=scope, depth=request.depth
             )
         )
-        for node, generation in source:
-            node_size = len(node.model_dump_json(exclude_unset=True).encode()) + 2
+        for index, (node, generation) in enumerate(source):
+            if version is not None and index and index % 256 == 0:
+                # A 100k capture runs on a worker thread. Release the GIL at
+                # predictable intervals so child calls keep making progress.
+                time.sleep(0.0005)
+            fixed_row = version.node(node.path) if version is not None else None
+            node_size = (
+                len(fixed_row.summary)
+                if fixed_row is not None and fixed_row.summary is not None
+                else len(node.model_dump_json(exclude_unset=True).encode())
+            ) + 2
             flow_path = "/" + node.path.split("/", 2)[1] if node.path != "/" else None
             generation_size = 0
             if flow_path and flow_path not in generations:

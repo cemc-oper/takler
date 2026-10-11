@@ -4,6 +4,7 @@ import asyncio
 import errno
 import json
 import pickle
+import stat
 from dataclasses import replace
 from io import StringIO
 
@@ -254,11 +255,27 @@ def test_process_transfer_excludes_public_records_and_keeps_secrets(tmp_path):
 def test_saved_at_advances_for_repeated_fixed_writes(tmp_path):
     manager, _, _ = _manager(tmp_path)
     assert manager.write_checkpoint()
+    first_bytes = manager.checkpoint_file.read_bytes()
     first = json.loads(manager.checkpoint_file.read_text())["saved_at"]
     assert manager.write_checkpoint()
     second = json.loads(manager.checkpoint_file.read_text())["saved_at"]
     assert second > first
-    assert manager.backup_file.exists()
+    assert manager.backup_file.read_bytes() == first_bytes
+    assert stat.S_IMODE(manager.backup_file.stat().st_mode) == 0o600
+
+
+def test_fixed_backup_falls_back_to_copy_without_hardlinks(tmp_path, monkeypatch):
+    manager, _, _ = _manager(tmp_path)
+    assert manager.write_checkpoint()
+    first_bytes = manager.checkpoint_file.read_bytes()
+
+    def unavailable(*args, **kwargs):
+        raise OSError(errno.EOPNOTSUPP, "no hard links")
+
+    monkeypatch.setattr("takler.server.checkpoint.os.link", unavailable)
+    assert manager.write_checkpoint()
+    assert manager.backup_file.read_bytes() == first_bytes
+    assert stat.S_IMODE(manager.backup_file.stat().st_mode) == 0o600
 
 
 def test_prepared_write_failure_preserves_primary_and_cleans_temp(tmp_path):

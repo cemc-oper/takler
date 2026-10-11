@@ -1,5 +1,6 @@
 """R2-12B paired delta differential and fault matrix."""
 
+import asyncio
 from dataclasses import replace
 from io import StringIO
 import json
@@ -101,6 +102,13 @@ def _sync(language, binary, transport, port, *, scope="/flow", polls=1):
         text=True,
         timeout=45,
     )
+
+
+def _add_extra_tasks(runner, flow):
+    async def add():
+        return [flow.add_task(f"extra{index:04d}") for index in range(1500)]
+
+    return asyncio.run_coroutine_threadsafe(add(), runner._loop).result(timeout=10)
 
 
 def _summary_lines(output):
@@ -380,7 +388,7 @@ def test_paired_partial_delta_failure_prints_no_view(
 ):
     runner, grpc_port, http_port, flow, _ = query_b_server
     port = http_port if transport == "http" else grpc_port
-    tasks = [flow.add_task(f"extra{index:04d}") for index in range(1500)]
+    tasks = _add_extra_tasks(runner, flow)
     tracker = runner.server.scheduler.query_changes
     service = runner.server.scheduler.query_service
     original_since = service.since
@@ -426,7 +434,7 @@ def test_paired_expired_delta_cursor_rebuilds_full_view(
 ):
     runner, grpc_port, http_port, flow, _ = query_b_server
     port = http_port if transport == "http" else grpc_port
-    tasks = [flow.add_task(f"extra{index:04d}") for index in range(1500)]
+    tasks = _add_extra_tasks(runner, flow)
     tracker = runner.server.scheduler.query_changes
     service = runner.server.scheduler.query_service
     original_since = service.since
@@ -469,7 +477,7 @@ def test_change_during_delta_pagination_is_seen_on_next_poll(
 ):
     runner, grpc_port, http_port, flow, _ = query_b_server
     port = http_port if transport == "http" else grpc_port
-    tasks = [flow.add_task(f"extra{index:04d}") for index in range(1500)]
+    tasks = _add_extra_tasks(runner, flow)
     tracker = runner.server.scheduler.query_changes
     service = runner.server.scheduler.query_service
     original_since = service.since

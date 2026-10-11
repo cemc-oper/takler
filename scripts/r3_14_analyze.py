@@ -33,6 +33,13 @@ def summarize(raw: dict) -> dict:
     checkpoints = [
         event for event in raw["events"] if event["phase"] == "periodic_total"
     ]
+    captures = [event for event in raw["events"] if event["phase"] == "capture"]
+    publications = [
+        event
+        for event in raw["events"]
+        if event["phase"] == "publish" and event["success"]
+    ]
+    publication_times = sorted(event["end_ns"] for event in publications)
     windows = [(event["start_ns"], event["end_ns"]) for event in checkpoints]
     by_kind: dict[str, dict[str, list]] = defaultdict(
         lambda: {"all": [], "overlap": []}
@@ -121,6 +128,18 @@ def summarize(raw: dict) -> dict:
             "duration_ms": distribution(
                 [(item["end_ns"] - item["start_ns"]) / 1e6 for item in checkpoints]
             ),
+            "capture_ms": distribution(
+                [(item["end_ns"] - item["start_ns"]) / 1e6 for item in captures]
+            ),
+            "publish_ms": distribution(
+                [(item["end_ns"] - item["start_ns"]) / 1e6 for item in publications]
+            ),
+            "publication_interval_s": distribution(
+                [
+                    (later - earlier) / 1e9
+                    for earlier, later in zip(publication_times, publication_times[1:])
+                ]
+            ),
         },
         "loop_lag": {
             label: {
@@ -131,6 +150,7 @@ def summarize(raw: dict) -> dict:
             }
             for label, items in (("all", lag), ("overlap", lag_overlapping))
         },
+        "gc_totals": raw.get("gc_totals", {}),
         "rss_peak_bytes": {
             "server_and_probe": max(
                 (item["server_rss_bytes"] for item in resources), default=0

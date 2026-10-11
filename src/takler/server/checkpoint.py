@@ -26,6 +26,7 @@ import errno
 import multiprocessing
 import os
 import shutil
+import stat
 import threading
 import time
 from datetime import datetime, timezone
@@ -96,16 +97,17 @@ def _prepare_fixed_version(
     target.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, CHECKPOINT_FILE_MODE)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        with os.fdopen(fd, "wb") as stream:
             os.fchmod(stream.fileno(), CHECKPOINT_FILE_MODE)
             written = 0
 
             def bounded_write(chunk: str) -> None:
                 nonlocal written
-                written += len(chunk.encode("utf-8"))
+                encoded = chunk.encode("utf-8")
+                written += len(encoded)
                 if written > MAX_CHECKPOINT_OUTPUT_BYTES:
                     raise CheckpointResourceError("checkpoint output limit")
-                stream.write(chunk)
+                stream.write(encoded)
 
             version.checkpoint_stream(
                 bounded_write, saved_at=saved_at, registry=registry
@@ -366,6 +368,7 @@ class CheckpointManager:
         self._next_sequence = 0
         self._last_attempted_sequence = 0
         self._last_attempt_succeeded = False
+        self._can_link_backup = False
         self._last_outcome_sequence = 0
         self._last_success_sequence = 0
         self._write_error_kind: Optional[str] = None
@@ -617,6 +620,7 @@ class CheckpointManager:
                 self._cleanup_temp_files(prepared, backup_temp)
                 return False, False, self._write_error_kind
             self._last_attempt_succeeded = True
+            self._can_link_backup = True
             self._cleanup_temp_files(backup_temp)
             return True, True, None
 
@@ -924,9 +928,8 @@ class CheckpointManager:
     def _copy_to_backup_temp(self, backup_temp: Path) -> None:
         """Copy the current Checkpoint_File aside as the next backup.
 
-        Copy-then-replace rather than renaming the live file (requirement 5.3):
-        renaming would leave a window in which the Checkpoint_File does not
-        exist, while copying keeps it complete and in place the whole time.
+        Preserve the live file until the new one is ready (requirement 5.3):
+        renaming it first would leave a window with no Checkpoint_File.
         Nothing to do on the very first snapshot, when no Checkpoint_File
         exists yet.
 
@@ -937,6 +940,23 @@ class CheckpointManager:
         """
         if not self.checkpoint_file.exists():
             return
+
+        if self._can_link_backup:
+            try:
+                source = self.checkpoint_file.lstat()
+                if (
+                    stat.S_ISREG(source.st_mode)
+                    and stat.S_IMODE(source.st_mode) == CHECKPOINT_FILE_MODE
+                    and source.st_nlink == 1
+                ):
+                    # The old primary was fsynced by this process and is never
+                    # modified in place. The link becomes the previous version
+                    # after the new primary is atomically installed.
+                    os.link(self.checkpoint_file, backup_temp, follow_symlinks=False)
+                    return
+            except (OSError, NotImplementedError):
+                # Filesystems without hard links retain the copy path.
+                pass
 
         with open(self.checkpoint_file, "rb") as source:
             with self._open_restricted(backup_temp, "wb") as target:

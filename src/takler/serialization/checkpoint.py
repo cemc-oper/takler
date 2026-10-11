@@ -437,9 +437,12 @@ def _validate_checkpoint_view(
                 raise DefinitionError("unresolved_reference")
         return target_path
 
+    checked_kinds = {}
     for path, item in definitions.items():
         state = runtime[path]
-        if state.kind != registry.by_id(item.type_id).kind:
+        if item.type_id not in checked_kinds:
+            checked_kinds[item.type_id] = registry.by_id(item.type_id).kind
+        if state.kind != checked_kinds[item.type_id]:
             raise DefinitionError("invalid_runtime")
         attrs = root.root_attributes if path == "/" else item
         _same_names((event.name for event in attrs.events), state.event_values)

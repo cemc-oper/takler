@@ -489,11 +489,27 @@ class FullSnapshotService:
                 record["ancestor_context"] = context
             if service is not None and position == 0:
                 record["service"] = service
-            record = self._blobify(lease, record, BLOB_THRESHOLD)
+            source = version.node(path)
+            needs_blob_scan = (
+                len(source.public or b"") + len(source.definition) + len(source.runtime)
+                > BLOB_THRESHOLD
+                or "ancestor_context" in record
+                or "service" in record
+            )
+            # The compact row contains every exported group value. If its
+            # entire encoding is below the blob threshold, no group string
+            # can require a chunk. Metadata is separate from that row, so
+            # the first page still checks it below.
+            if not needs_blob_scan:
+                packed = pack_node(record, lease.groups)
+                raw = _canonical(packed)
+                needs_blob_scan = len(raw) > BLOB_THRESHOLD
+            if needs_blob_scan:
+                record = self._blobify(lease, record, BLOB_THRESHOLD)
+                packed = pack_node(record, lease.groups)
+                raw = _canonical(packed)
             candidate_context = record.pop("ancestor_context", None)
             candidate_service = record.pop("service", None)
-            packed = pack_node(record, lease.groups)
-            raw = _canonical(packed)
             if len(raw) > lease.page_target_bytes - 4096:
                 record = _full_node(version, path, lease.groups)
                 if context is not None and position == 0:

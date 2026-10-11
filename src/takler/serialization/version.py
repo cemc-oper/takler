@@ -373,9 +373,13 @@ class StateVersion:
 
         runtime = {}
         passwords = {}
+        checked_entries = {}
         for row in self.iter_nodes():
             item = NodeRuntime.model_validate_json(row.runtime)
-            entry = registry.by_id(definitions[row.path].type_id)
+            type_id = definitions[row.path].type_id
+            if type_id not in checked_entries:
+                checked_entries[type_id] = registry.by_id(type_id)
+            entry = checked_entries[type_id]
             if entry.type_id.startswith("takler."):
                 if item.runtime_data:
                     raise DefinitionError("invalid_runtime")
@@ -425,8 +429,26 @@ class StateVersion:
                 write(value)
                 continue
             row = self.node(value)
-            data = json.loads(row.definition)
             child_key = "flows" if value == "/" else "children"
+            # Built-in shallow definitions were encoded and validated when
+            # captured. Most task nodes are leaves, so decoding and encoding
+            # every field again would repeat millions of JSON operations.
+            if row.definition.startswith(b'{"type_id":"takler.'):
+                encoded = row.definition.decode("utf-8")
+                if not row.children:
+                    write(encoded)
+                    continue
+                marker = f'"{child_key}":[]'
+                if encoded.count(marker) == 1:
+                    before, _, after = encoded.partition(marker)
+                    write(before + f'"{child_key}":[')
+                    stack.append(("text", "]" + after))
+                    for index in range(len(row.children) - 1, -1, -1):
+                        stack.append(("node", row.children[index]))
+                        if index:
+                            stack.append(("text", ","))
+                    continue
+            data = json.loads(row.definition)
             write("{")
             fields = list(data.items())
             for position, (name, item) in enumerate(fields):
