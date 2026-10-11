@@ -163,7 +163,7 @@ def test_halt_before_deferred_process_start_prevents_submit(tmp_path, monkeypatc
         flow.begin()
         called = []
 
-        async def process(*args):
+        async def process(*args, **kwargs):
             called.append(args)
 
         monkeypatch.setattr(shell_runner, "run_process", process)

@@ -22,7 +22,7 @@ from takler.visitor import pre_order_travel, NodeVisitor
 
 from .constant import TAKLER_SCRIPT, TAKLER_JOB, TAKLER_JOBOUT, JOB_SCRIPT_EXTENSION
 from .shell_render import ShellRender
-from .shell_runner import ShellRunner, redact_job_password
+from .shell_runner import ShellRunner, redact_job_password, skip_pending_commands
 
 
 logger = get_logger("tasks.shell")
@@ -162,6 +162,8 @@ class ShellScriptTask(Task):
         self._require_running()
         token = self._submission_token = object()
         flow, bunch, node_path = self.get_flow(), self.get_bunch(), self.node_path
+        if bunch is not None:
+            bunch._skip_pending_commands = skip_pending_commands
         attempt_id, generation = self.attempt_id, self.definition_generation
         external_submit = self._uses_orvix()
 
@@ -197,7 +199,13 @@ class ShellScriptTask(Task):
             if not is_current_submission():
                 logger.info(f"skip stale job failure: {node_path}")
                 return
-            self.on_job_failure(exc, result_unknown=external_submit)
+            # A saturated pre-start queue has a definite non-start result.
+            # A process timeout may have reached the external scheduler.
+            self.on_job_failure(
+                exc,
+                result_unknown=external_submit
+                and not isinstance(exc, JobSubmissionError),
+            )
 
         def on_skipped() -> None:
             # A valid current submission skipped before run_process has a

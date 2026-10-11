@@ -1,6 +1,7 @@
 import asyncio
 import time
 import datetime
+from collections import deque
 from queue import Queue
 from typing import Callable, Optional
 from uuid import UUID
@@ -9,6 +10,7 @@ from takler.core import Bunch, Task, NodeStatus, ServerStatus, HaltCause, Event,
 from takler.core.bunch import ServerState
 from takler.core.task_node import ensure_synchronous_task
 from takler.core.node import Node
+from takler.core.node_container import NodeContainer
 from takler.exceptions import (
     AttemptMismatchError,
     FlowStateError,
@@ -49,6 +51,8 @@ logger = get_logger("server.scheduler")
 
 
 DEFAULT_INTERVAL_LOOP_SECONDS = 10.0
+FLOW_SCAN_SLICE_NODES = 16
+FLOW_SCAN_SLICE_SECONDS = 0.005
 
 
 class Scheduler:
@@ -100,8 +104,9 @@ class Scheduler:
         self.query_changes.on_mark = self.version_store.note
         self.query_changes.on_commit = self.version_store.enqueue
         self.interval_main_loop: float = interval_main_loop
-        self.command_queue: Queue = Queue()
+        self.command_queue: Queue = Queue(maxsize=128)
         self.should_stop: bool = False
+        self._stop_event = asyncio.Event()
         # Exception-handling policy and fatal-shutdown trigger are threaded in
         # from ``TaklerServer`` (task 3.2). They are stored here so the main
         # loop can consult them once the per-flow exception boundary lands in
@@ -134,6 +139,7 @@ class Scheduler:
         Called after main loop is done, unset ``should_stop`` flag.
         """
         self.should_stop = False
+        self._stop_event.clear()
 
     async def main_loop(self):
         """
@@ -152,13 +158,34 @@ class Scheduler:
             # mutation mid-iteration cannot raise ``RuntimeError``.
             time_now = datetime.datetime.now()
             fatal = False
-            for name, flow in list(self.bunch.flows.items()):
+            work = deque(
+                (name, flow, self._flow_work(name, flow, time_now))
+                for name, flow in list(self.bunch.flows.items())
+            )
+            while work and not self.should_stop:
+                name, flow, steps = work.popleft()
+                if self.bunch.flows.get(name) is not flow:
+                    continue
                 try:
                     async with self.query_state_lock:
                         self.query_revision += 1
                         self.query_changes.begin()
                         try:
-                            self._process_flow(name, flow, time_now)
+                            slice_started = time.monotonic()
+                            complete = False
+                            for _ in range(FLOW_SCAN_SLICE_NODES):
+                                try:
+                                    next(steps)
+                                except StopIteration:
+                                    complete = True
+                                    break
+                                if (
+                                    time.monotonic() - slice_started
+                                    >= FLOW_SCAN_SLICE_SECONDS
+                                ):
+                                    break
+                            if not complete:
+                                work.append((name, flow, steps))
                         finally:
                             self.query_changes.end()
                             self.version_store.flush()
@@ -190,8 +217,11 @@ class Scheduler:
                         # RESILIENT (default): skip only this flow, keeping the
                         # loop running for the rest.
                         continue
+                # Child reports and queued process starts get a turn between
+                # bounded scan slices, including with only one large flow.
+                await asyncio.sleep(0)
 
-            if fatal:
+            if fatal or self.should_stop:
                 # Fail-fast triggered: leave the main loop so the server can go
                 # through its unified clean-shutdown path.
                 break
@@ -205,11 +235,18 @@ class Scheduler:
             else:
                 duration = self.interval_main_loop - elapsed
 
-            await asyncio.sleep(duration)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=duration)
+            except TimeoutError:
+                pass
 
     def begin_shutdown(self) -> None:
         """Close deferred process starts before shutdown first yields."""
         self.bunch._service_stopping = True
+        self._stop_event.set()
+        skip_pending = getattr(self.bunch, "_skip_pending_commands", None)
+        if skip_pending is not None:
+            skip_pending()
 
     async def stop(self):
         """
@@ -278,6 +315,55 @@ class Scheduler:
         ):
             return
         flow.resolve_dependencies()
+
+    def _flow_work(self, name: str, flow: Flow, time_now: datetime.datetime):
+        """Visit built-in flow nodes incrementally on the single writer.
+
+        Extension overrides keep their existing synchronous contract. A hook
+        that blocks for a long time still needs to execute outside the server.
+        """
+        if type(flow) is not Flow or "resolve_dependencies" in flow.__dict__:
+            self._process_flow(name, flow, time_now)
+            yield
+            return
+        if (
+            self.bunch._service_stopping
+            or self.bunch.server_state.status is ServerStatus.halted
+            or not flow.begun
+        ):
+            return
+        flow.update_calendar(time_now)
+        if (
+            self.bunch._service_stopping
+            or self.bunch.server_state.status is ServerStatus.halted
+        ):
+            return
+        if not flow.check_dependencies():
+            return
+        stack = [iter(flow.children)]
+        while stack:
+            if (
+                self.bunch._service_stopping
+                or self.bunch.server_state.status is ServerStatus.halted
+                or not flow.begun
+                or self.bunch.flows.get(name) is not flow
+            ):
+                return
+            try:
+                node = next(stack[-1])
+            except StopIteration:
+                stack.pop()
+                continue
+            if (
+                isinstance(node, NodeContainer)
+                and type(node).resolve_dependencies
+                is NodeContainer.resolve_dependencies
+            ):
+                if node.check_dependencies():
+                    stack.append(iter(node.children))
+            else:
+                node.resolve_dependencies()
+            yield
 
     def notify_query_change(
         self, path: str, *groups: str, invalidate: bool = False
@@ -1024,6 +1110,9 @@ class Scheduler:
             causes.append(HaltCause.manual)
             self.bunch.server_state = ServerState.from_causes(causes)
             self.notify_query_change("/", "service")
+        skip_pending = getattr(self.bunch, "_skip_pending_commands", None)
+        if skip_pending is not None:
+            skip_pending()
         return self.server_status_response(message="service halted in memory")
 
     def run_command_server_resume(self, command) -> ServerStatusResponse:

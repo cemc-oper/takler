@@ -42,7 +42,7 @@ def test_requeued_attempt_never_enters_process_start(tmp_path):
         _, _, task = _shell_tree(tmp_path)
         commands = []
 
-        async def fake_process(argv):
+        async def fake_process(argv, **kwargs):
             commands.append(argv[-1])
 
         with patch("takler.tasks.shell.shell_runner.run_process", fake_process):

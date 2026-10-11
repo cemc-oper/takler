@@ -47,7 +47,7 @@ def test_invalidated_pending_command_never_starts(tmp_path, monkeypatch, invalid
         scheduler, flow, task = _pending_task(tmp_path, monkeypatch)
         calls = []
 
-        async def fake_process(argv):
+        async def fake_process(argv, **kwargs):
             calls.append(argv)
 
         monkeypatch.setattr(shell_runner, "run_process", fake_process)
@@ -120,7 +120,7 @@ def test_server_stop_closes_gate_before_transport_yields(tmp_path, monkeypatch):
         flow.begin()
         calls = []
 
-        async def fake_process(argv):
+        async def fake_process(argv, **kwargs):
             calls.append(argv)
 
         async def stop_transport():
@@ -149,7 +149,7 @@ def test_shutdown_gate_can_precede_scheduler_stop(tmp_path, monkeypatch):
         scheduler.interval_main_loop = 0.01
         calls = []
 
-        async def fake_process(argv):
+        async def fake_process(argv, **kwargs):
             calls.append(argv)
 
         monkeypatch.setattr(shell_runner, "run_process", fake_process)

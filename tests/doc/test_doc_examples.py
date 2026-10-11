@@ -2914,13 +2914,13 @@ def test_operation_resilience_per_flow_isolation():
     )
 
     processed = []
-    original = scheduler._process_flow
+    original = scheduler._flow_work
 
     def spy(name, flow, time_now):
         processed.append(name)
-        return original(name, flow, time_now)
+        yield from original(name, flow, time_now)
 
-    scheduler._process_flow = spy
+    scheduler._flow_work = spy
 
     async def main():
         task = asyncio.ensure_future(scheduler.main_loop())

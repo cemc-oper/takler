@@ -110,7 +110,7 @@ def test_actual_runner_delivers_old_failure_after_requeue(monkeypatch):
         gates = [asyncio.Event(), asyncio.Event()]
         attempts = []
 
-        async def process(*args):
+        async def process(*args, **kwargs):
             index = len(attempts)
             attempts.append(asyncio.current_task())
             await gates[index].wait()

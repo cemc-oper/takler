@@ -1,8 +1,10 @@
 import os
+import posixpath
 from typing import Union, List, Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
+from jinja2.loaders import split_template_path
 
 from .constant import (
     TAKLER_JOB,
@@ -13,6 +15,24 @@ from .constant import (
 
 if TYPE_CHECKING:
     from .shell_script_task import ShellScriptTask
+
+MAX_TEMPLATE_BYTES = 1024 * 1024
+MAX_JOB_SCRIPT_BYTES = 1024 * 1024
+MAX_SUBMIT_COMMAND_BYTES = 64 * 1024
+
+
+class _BoundedFileSystemLoader(FileSystemLoader):
+    def get_source(self, environment, template):
+        parts = split_template_path(template)
+        for directory in self.searchpath:
+            filename = posixpath.join(directory, *parts)
+            if os.path.exists(filename) and not os.path.isfile(filename):
+                raise ValueError("job template source is not a regular file")
+            if os.path.isfile(filename):
+                if os.path.getsize(filename) > MAX_TEMPLATE_BYTES:
+                    raise ValueError(f"job template exceeds {MAX_TEMPLATE_BYTES} bytes")
+                break
+        return super().get_source(environment, template)
 
 
 class ShellRender(object):
@@ -37,17 +57,32 @@ class ShellRender(object):
         * ``TAKLER_JOB``: generated job script path
         """
         script_path = Path(script_path)
+        if not script_path.is_file():
+            raise ValueError(
+                f"job template source is not a regular file: {script_path}"
+            )
+        if script_path.stat().st_size > MAX_TEMPLATE_BYTES:
+            raise ValueError(f"job template exceeds {MAX_TEMPLATE_BYTES} bytes")
         loader_paths = [script_path.parent]
         loader_paths.extend(self.get_include_paths())
 
         template_params = self.template_params()
 
-        file_loader = FileSystemLoader(loader_paths)
+        file_loader = _BoundedFileSystemLoader(loader_paths)
         env = Environment(loader=file_loader)
 
         # TODO: may raise exception
         template = env.get_template(script_path.name)
-        job_script_content = template.render(**template_params)
+        parts = []
+        size = 0
+        for part in template.generate(**template_params):
+            size += len(part.encode("utf-8"))
+            if size > MAX_JOB_SCRIPT_BYTES:
+                raise ValueError(
+                    f"rendered job script exceeds {MAX_JOB_SCRIPT_BYTES} bytes"
+                )
+            parts.append(part)
+        job_script_content = "".join(parts)
 
         job_script_path = Path(self.node.find_parameter(TAKLER_JOB).value)
         job_script_path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,8 +114,16 @@ class ShellRender(object):
         env = Environment()
         template = env.from_string(command)
 
-        rendered_command = template.render(**template_params)
-        return rendered_command
+        parts = []
+        size = 0
+        for part in template.generate(**template_params):
+            size += len(part.encode("utf-8"))
+            if size > MAX_SUBMIT_COMMAND_BYTES:
+                raise ValueError(
+                    f"submit command exceeds {MAX_SUBMIT_COMMAND_BYTES} bytes"
+                )
+            parts.append(part)
+        return "".join(parts)
 
     def get_include_paths(self) -> List[str]:
         """

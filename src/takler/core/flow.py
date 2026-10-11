@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..exceptions import FlowStateError
 from .node_container import NodeContainer
+from .node import Node
 from .task_node import Task
 from .calendar import Calendar
 from .parameter import Parameter, DATE, TIME
@@ -24,6 +25,9 @@ class Flow(NodeContainer):
         self.definition_generation: Optional[str] = None
         self.calendar: Calendar = Calendar()
         self.begun: bool = False
+        # Built-in calendar propagation only touches nodes with time attributes.
+        # Structure/time edits invalidate this process-local index.
+        self._calendar_nodes: Optional[list[Node]] = None
 
         self.generated_parameters: FlowGeneratedParameters = FlowGeneratedParameters(
             flow=self
@@ -139,7 +143,28 @@ class Flow(NodeContainer):
         if self.calendar.to_dict() != previous:
             self.notify_query_change("runtime")
         self.update_generated_parameters()
-        self.calendar_changed(self.calendar)
+        if type(self) is not Flow:
+            self.calendar_changed(self.calendar)
+            return
+        if self._calendar_nodes is None:
+            timed_nodes = []
+            pending = [self]
+            while pending:
+                node = pending.pop()
+                if type(node).calendar_changed not in (
+                    Node.calendar_changed,
+                    NodeContainer.calendar_changed,
+                ):
+                    # Extension callbacks retain the original traversal and
+                    # synchronous execution contract.
+                    self.calendar_changed(self.calendar)
+                    return
+                if node.times:
+                    timed_nodes.append(node)
+                pending.extend(node.children)
+            self._calendar_nodes = timed_nodes
+        for node in self._calendar_nodes:
+            Node.calendar_changed(node, self.calendar)
 
     # Parameter ---------------------------------------------------
 
