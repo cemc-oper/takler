@@ -24,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--transport", choices=("grpc", "http"), required=True)
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--phase-timings", action="store_true")
     options = parser.parse_args()
     client = TaklerServiceClient(
         "127.0.0.1",
@@ -33,6 +34,57 @@ def main():
         retry_window=60,
     )
     client.start()
+    active_phase = [None]
+    if options.phase_timings:
+        if options.transport == "grpc":
+            import takler.client.grpc_transport as transport_module
+
+            decode_name = "query_from_pb2"
+        else:
+            import takler.client.http_transport as transport_module
+
+            decode_name = "decode_query_document"
+        original_decode = getattr(transport_module, decode_name)
+        original_query = client.transport.query
+
+        def timed_decode(raw, *args, **kwargs):
+            phase = active_phase[0]
+            if phase is None:
+                return original_decode(raw, *args, **kwargs)
+            started = time.perf_counter_ns()
+            reply = original_decode(raw, *args, **kwargs)
+            phase["decode_events"].append(
+                {
+                    "duration_ns": time.perf_counter_ns() - started,
+                    "bytes": len(raw.json) if options.transport == "grpc" else len(raw),
+                }
+            )
+            return reply
+
+        def timed_query(document):
+            phase = active_phase[0]
+            if phase is None or document.kind != "page_request":
+                return original_query(document)
+            before_decode = len(phase["decode_events"])
+            started = time.perf_counter_ns()
+            reply = original_query(document)
+            ended = time.perf_counter_ns()
+            decoded = phase["decode_events"][before_decode:]
+            phase["pages"].append(
+                {
+                    "start_ns": started,
+                    "end_ns": ended,
+                    "decode_ns": sum(item["duration_ns"] for item in decoded),
+                    "bytes": sum(item["bytes"] for item in decoded),
+                    "snapshot_id": getattr(reply, "snapshot_id", None),
+                    "page_index": getattr(reply, "page_index", None),
+                    "error_code": getattr(reply, "code", None),
+                }
+            )
+            return reply
+
+        setattr(transport_module, decode_name, timed_decode)
+        client.transport.query = timed_query
     view = None
     print(json.dumps({"ready": True, "pid": os.getpid()}), flush=True)
     try:
@@ -55,23 +107,46 @@ def main():
             result: dict = {"command": command, "start_ns": start_ns, "failures": []}
             try:
                 if command == "summary":
-                    for attempt in range(3):
-                        attempt_start = time.perf_counter_ns()
-                        try:
-                            view = client.run_query_snapshot()
-                            result["nodes"] = len(view.ordered_paths)
-                            break
-                        except QueryResponseError as exc:
-                            result["failures"].append(
-                                {
-                                    "code": exc.code,
-                                    "start_ns": attempt_start,
-                                    "end_ns": time.perf_counter_ns(),
-                                }
+                    phase = {"pages": [], "decode_events": []}
+                    if options.phase_timings:
+                        active_phase[0] = phase
+                    summary_started = time.perf_counter_ns()
+                    try:
+                        for attempt in range(3):
+                            attempt_start = time.perf_counter_ns()
+                            try:
+                                view = client.run_query_snapshot()
+                                result["nodes"] = len(view.ordered_paths)
+                                break
+                            except QueryResponseError as exc:
+                                result["failures"].append(
+                                    {
+                                        "code": exc.code,
+                                        "start_ns": attempt_start,
+                                        "end_ns": time.perf_counter_ns(),
+                                    }
+                                )
+                                if exc.code != "resource_exhausted" or attempt == 2:
+                                    raise
+                                time.sleep(0.2)
+                    finally:
+                        if options.phase_timings:
+                            phase["client_total_ns"] = (
+                                time.perf_counter_ns() - summary_started
                             )
-                            if exc.code != "resource_exhausted" or attempt == 2:
-                                raise
-                            time.sleep(0.2)
+                            phase["transport_ns"] = sum(
+                                item["end_ns"] - item["start_ns"]
+                                for item in phase["pages"]
+                            )
+                            phase["decode_ns"] = sum(
+                                item["duration_ns"]
+                                for item in phase.pop("decode_events")
+                            )
+                            phase["client_other_ns"] = (
+                                phase["client_total_ns"] - phase["transport_ns"]
+                            )
+                            result["summary_phases"] = phase
+                            active_phase[0] = None
                 elif command == "since":
                     if view is None:
                         raise RuntimeError("summary view is absent")

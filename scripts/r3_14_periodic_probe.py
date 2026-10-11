@@ -25,6 +25,7 @@ import traceback
 from uuid import uuid4
 
 from query_a_matrix_100k import child_environment, make_tree
+from r3_14_phase_probe import SummaryPhaseProbe
 from takler.core import NodeStatus
 from takler.server.connect_config import Address, ConnectConfig, HttpSettings, Server
 
@@ -110,6 +111,7 @@ def run(
     child_transport: str = "grpc",
     full_transport: str = "http",
     full_language: str = "go",
+    phase_timings: bool = False,
 ) -> dict:
     fixture_started_utc = datetime.now(timezone.utc).isoformat()
     fixtures = runpy.run_path(str(Path.cwd() / "tests/integration/conftest.py"))
@@ -120,6 +122,7 @@ def run(
     requests: list[dict] = []
     page_events: list[dict] = []
     chunk_events: list[dict] = []
+    phase_events: list[dict] = []
     gc_started: dict[tuple[int, int], int] = {}
     gc_totals: dict[int, dict[str, int]] = {}
 
@@ -171,6 +174,7 @@ def run(
             connect_config=config,
         )
         runner.start()
+        phase_probe = None
         try:
             for flow in bunch.flows.values():
                 flow.begun = False
@@ -274,6 +278,12 @@ def run(
 
             full_service.page = counted_page
             full_service.chunk = counted_chunk
+            if phase_timings:
+                phase_probe = SummaryPhaseProbe(
+                    runner.server.scheduler.query_service,
+                    runner.server.grpc_transport,
+                ).install()
+                phase_events = phase_probe.events
 
             async def start_periodic():
                 old_task = manager._snapshot_task
@@ -326,6 +336,8 @@ def run(
                         "--port",
                         str(query_port),
                     ]
+                    if phase_timings:
+                        command.append("--phase-timings")
                     worker = subprocess.Popen(
                         command,
                         env=child_environment(sync_transport),
@@ -657,6 +669,8 @@ def run(
             try:
                 runner.stop(timeout=120)
             finally:
+                if phase_probe is not None:
+                    phase_probe.close()
                 gc.callbacks.remove(observe_gc)
     return {
         "fixture_started_utc": fixture_started_utc,
@@ -672,12 +686,14 @@ def run(
         "child_transport": child_transport,
         "full_transport": full_transport,
         "full_language": full_language,
+        "phase_timings": phase_timings,
         "state": state,
         "events": events,
         "gc_totals": gc_totals,
         "requests": requests,
         "page_events": page_events,
         "chunk_events": chunk_events,
+        "phase_events": phase_events,
         "lag": lag,
         "resources": resources,
     }
@@ -696,13 +712,14 @@ def main():
     parser.add_argument("--child-transport", choices=("http", "grpc"), default="grpc")
     parser.add_argument("--full-transport", choices=("http", "grpc"), default="http")
     parser.add_argument("--full-language", choices=("go", "python"), default="go")
+    parser.add_argument("--phase-timings", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     options = parser.parse_args()
-    if options.full_readers < 1:
-        parser.error("--full-readers must be positive")
     components = set(
         options.components or (("sync", "child", "full") if options.mixed else ())
     )
+    if options.full_readers < 0 or ("full" in components and options.full_readers < 1):
+        parser.error("--full-readers must be positive when full reads are enabled")
     result = run(
         options.size,
         options.wide,
@@ -714,6 +731,7 @@ def main():
         options.child_transport,
         options.full_transport,
         options.full_language,
+        options.phase_timings,
     )
     options.output.parent.mkdir(parents=True, exist_ok=True)
     options.output.write_text(json.dumps(result, separators=(",", ":")) + "\n")
