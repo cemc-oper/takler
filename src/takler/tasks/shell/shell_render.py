@@ -1,5 +1,6 @@
 import os
 import posixpath
+import shlex
 from typing import Union, List, Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
 
@@ -112,6 +113,7 @@ class ShellRender(object):
         template_params = self.template_params()
 
         env = Environment()
+        env.filters["shquote"] = lambda value: shlex.quote(str(value))
         template = env.from_string(command)
 
         parts = []

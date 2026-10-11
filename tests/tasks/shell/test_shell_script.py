@@ -1,4 +1,5 @@
 from pathlib import Path
+import shlex
 import sys
 
 import pytest
@@ -54,3 +55,15 @@ def test_script_with_include_render(
 
     shell_script = ShellRender(node=task1)
     shell_script.render_script(script_path=task1_script_path)
+
+
+def test_command_shquote_keeps_special_path_as_one_argument():
+    task = ShellScriptTask("task")
+    path = "/tmp/job $' with spaces.sh"
+    task.add_parameter("SCRIPT_PATH", path)
+
+    command = ShellRender(task).render_command(
+        "orvix submit {{ SCRIPT_PATH | shquote }}"
+    )
+
+    assert shlex.split(command) == ["orvix", "submit", path]
