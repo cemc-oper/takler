@@ -104,6 +104,7 @@ def _row_bytes(row: FrozenNode, secret: bytes | None) -> int:
         + len(row.definition)
         + len(row.runtime)
         + len(row.public or b"")
+        + len(row.summary or b"")
         + len(secret or b"")
         + 160
     )
@@ -118,6 +119,7 @@ class FrozenNode:
     definition: bytes
     runtime: bytes
     public: bytes | None
+    summary: bytes | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -633,6 +635,18 @@ class VersionStore:
                 if item["name"] not in {"TAKLER_JOB", "TAKLER_JOBOUT"}
             ]
         public = _encode(value)
+        summary_fields = {
+            "path": path,
+            "node_kind": value["node_kind"],
+            "type_id": value["type_id"],
+            "status": NodeStatus(value["state"]["status"]).name,
+            "suspended": value["state"]["suspended"],
+        }
+        if value["node_kind"] == "task" and value.get("attempt_id") is not None:
+            summary_fields["attempt_id"] = value["attempt_id"]
+            if value.get("submission_unknown_reason") is not None:
+                summary_fields["submission_unknown"] = True
+        summary = _encode(summary_fields)
         secret = None
         if isinstance(node, Task) and node.state.node_status in _IN_FLIGHT:
             if not node.attempt_id or not node.job_password:
@@ -641,7 +655,13 @@ class VersionStore:
                 {"attempt_id": node.attempt_id, "password": node.job_password}
             )
         if (
-            max(len(definition), len(runtime), len(public or b""), len(secret or b""))
+            max(
+                len(definition),
+                len(runtime),
+                len(public or b""),
+                len(summary),
+                len(secret or b""),
+            )
             > MAX_RECORD_BYTES
         ):
             raise VersionUnavailable("field_too_large")
@@ -654,6 +674,7 @@ class VersionStore:
                 definition,
                 runtime,
                 public,
+                summary,
             ),
             secret,
         )

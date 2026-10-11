@@ -81,38 +81,57 @@ def _error(code: str, message: str) -> FailureReply:
     return FailureReply(kind="error", schema_version=1, code=code, message=message)
 
 
-def _fixed_summary(version, path: str) -> tuple[SummaryNode, str | None]:
+def _fixed_summary(
+    version, path: str, generations: dict[str, str | None] | None = None
+) -> tuple[SummaryNode, str | None]:
     row = version.node(path)
     if row.public is None:
         raise VersionUnavailable("unsupported_plugin_detail")
-    source = json.loads(row.public)
+    source = None
+    if row.summary is not None:
+        summary = SummaryNode.model_validate_json(row.summary)
+    else:
+        source = json.loads(row.public)
+        fields = dict(
+            path=path,
+            node_kind=source["node_kind"],
+            type_id=source["type_id"],
+            status=NodeStatus(source["state"]["status"]).name,
+            suspended=source["state"]["suspended"],
+        )
+        if source["node_kind"] == "task" and source.get("attempt_id") is not None:
+            fields["attempt_id"] = source["attempt_id"]
+            if source.get("submission_unknown_reason") is not None:
+                fields["submission_unknown"] = True
+        summary = SummaryNode(**fields)
     generation = None
     if path != "/":
         flow_path = "/" + path.split("/", 2)[1]
-        flow = version.node(flow_path)
-        if flow.public is None:
-            raise VersionUnavailable("unsupported_plugin_detail")
-        generation = json.loads(flow.public).get("definition_generation")
-    fields = dict(
-        path=path,
-        node_kind=source["node_kind"],
-        type_id=source["type_id"],
-        status=NodeStatus(source["state"]["status"]).name,
-        suspended=source["state"]["suspended"],
-    )
-    if source["node_kind"] == "task" and source.get("attempt_id") is not None:
-        fields["attempt_id"] = source["attempt_id"]
-        if source.get("submission_unknown_reason") is not None:
-            fields["submission_unknown"] = True
-    return SummaryNode(**fields), generation
+        if generations is not None and flow_path in generations:
+            generation = generations[flow_path]
+        elif flow_path == path:
+            if source is None:
+                source = json.loads(row.public)
+            generation = source.get("definition_generation")
+            if generations is not None:
+                generations[flow_path] = generation
+        else:
+            flow = version.node(flow_path)
+            if flow.public is None:
+                raise VersionUnavailable("unsupported_plugin_detail")
+            generation = json.loads(flow.public).get("definition_generation")
+            if generations is not None:
+                generations[flow_path] = generation
+    return summary, generation
 
 
 def _iter_fixed_summaries(version, scope: str, depth: int | None):
     version.node(scope)
+    generations: dict[str, str | None] = {}
     pending = [(scope, 0)]
     while pending:
         path, level = pending.pop()
-        yield _fixed_summary(version, path)
+        yield _fixed_summary(version, path, generations)
         if depth is None or level < depth:
             pending.extend(
                 (child, level + 1) for child in reversed(version.node(path).children)
@@ -362,16 +381,7 @@ class QueryService:
             )
         )
         for node, generation in source:
-            node_size = (
-                len(
-                    json.dumps(
-                        node.model_dump(exclude_unset=True),
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    ).encode()
-                )
-                + 2
-            )
+            node_size = len(node.model_dump_json(exclude_unset=True).encode()) + 2
             flow_path = "/" + node.path.split("/", 2)[1] if node.path != "/" else None
             generation_size = 0
             if flow_path and flow_path not in generations:

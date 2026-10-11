@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import gc
 import hashlib
 import hmac
 import json
@@ -39,6 +40,8 @@ MAX_RETAINED_BYTES = 1536 * 1024 * 1024
 MAX_ENCODED_BYTES = 512 * 1024 * 1024
 MAX_PAGE_BYTES = 262_144
 PAGE_TARGET_BYTES = 230_000
+COMPACT_PAGE_TARGET_BYTES = 160_000
+COMPACT_PUBLIC_MEDIAN_BYTES = 1600
 MAX_FIELD_BYTES = 16 * 1024 * 1024
 BLOB_THRESHOLD = 32_768
 CHUNK_BYTES = 65_536
@@ -95,7 +98,26 @@ def _full_node(version: StateVersion, path: str, groups: tuple[str, ...]) -> dic
     row = version.node(path)
     if row.definition == b"{}" and row.runtime == b"{}":
         raise VersionUnavailable("unsupported_plugin_detail")
-    public = version.public_node(path)
+    # Built-in non-shell records already contain every field this projection
+    # reads. Walking and decoding ancestors for each of 100k nodes repeats the
+    # same work; only shell paths need the inherited TAKLER_HOME derivation.
+    own_public = json.loads(row.public) if row.public is not None else None
+    if own_public is None:
+        raise VersionUnavailable("unsupported_plugin_detail")
+    if own_public["type_id"] in {
+        "takler.bunch",
+        "takler.flow",
+        "takler.container",
+        "takler.task",
+    }:
+        public = own_public
+        public["generated_parameters"] = [
+            value
+            for value in public.get("generated_parameters", [])
+            if value["name"] not in {"TAKLER_JOB", "TAKLER_JOBOUT"}
+        ]
+    else:
+        public = version.public_node(path)
     if not public["type_id"].startswith("takler."):
         raise VersionUnavailable("unsupported_plugin_detail")
     state = public["state"]
@@ -217,6 +239,16 @@ def _paths(version: StateVersion, scope: str, depth: int | None) -> tuple[str, .
     )
 
 
+def _page_target(version: StateVersion, paths: tuple[str, ...]) -> int:
+    """Use smaller pages when public records are compact enough to stay within
+    the 100k standard-tree request budget. Wide records keep full-size pages.
+    """
+    sizes = sorted(len(version.node(path).public or b"") for path in paths[:64])
+    if sizes and sizes[len(sizes) // 2] <= COMPACT_PUBLIC_MEDIAN_BYTES:
+        return COMPACT_PAGE_TARGET_BYTES
+    return PAGE_TARGET_BYTES
+
+
 def _pointer_value(value: Any, pointer: str):
     for part in pointer.split("/")[1:]:
         part = part.replace("~1", "/").replace("~0", "~")
@@ -237,6 +269,7 @@ class _Lease:
     created: float
     used: float
     reserved_bytes: int
+    page_target_bytes: int = PAGE_TARGET_BYTES
     next_offset: int = 0
     next_page: int = 0
     total_bytes: int = 0
@@ -363,6 +396,7 @@ class FullSnapshotService:
                 now,
                 now,
                 reserve,
+                _page_target(version, paths),
             )
             async with self._lock:
                 self._purge()
@@ -460,7 +494,7 @@ class FullSnapshotService:
             candidate_service = record.pop("service", None)
             packed = pack_node(record, lease.groups)
             raw = _canonical(packed)
-            if len(raw) > PAGE_TARGET_BYTES - 4096:
+            if len(raw) > lease.page_target_bytes - 4096:
                 record = _full_node(version, path, lease.groups)
                 if context is not None and position == 0:
                     record["ancestor_context"] = context
@@ -471,9 +505,9 @@ class FullSnapshotService:
                 candidate_service = record.pop("service", None)
                 packed = pack_node(record, lease.groups)
                 raw = _canonical(packed)
-            if len(raw) > PAGE_TARGET_BYTES - 4096:
+            if len(raw) > lease.page_target_bytes - 4096:
                 raise ValueError(f"record exceeds page budget: {path}")
-            if nodes and page_bytes + len(raw) > PAGE_TARGET_BYTES - 4096:
+            if nodes and page_bytes + len(raw) > lease.page_target_bytes - 4096:
                 break
             if lease.next_page == 0 and position == 0:
                 metadata = _canonical(
@@ -533,6 +567,11 @@ class FullSnapshotService:
         lease.total_bytes = total_bytes
         lease.payload_bytes = payload_bytes
         lease.digest = digest
+        # Large page streams create many short-lived container objects. A small
+        # collection per page avoids rare whole-generation pauses on the event
+        # loop while preserving normal GC for the rest of the process.
+        if gc.isenabled():
+            gc.collect(0)
         return page
 
     def _blobify(self, lease: _Lease, record: dict, threshold: int) -> dict:
