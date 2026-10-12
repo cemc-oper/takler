@@ -243,7 +243,6 @@ class Scheduler:
     def begin_shutdown(self) -> None:
         """Close deferred process starts before shutdown first yields."""
         self.bunch._service_stopping = True
-        self._stop_event.set()
         skip_pending = getattr(self.bunch, "_skip_pending_commands", None)
         if skip_pending is not None:
             skip_pending()
@@ -257,6 +256,10 @@ class Scheduler:
         logger.info("scheduler shutting down...")
         self.begin_shutdown()
         self.should_stop = True
+        # Wake only once the loop can exit. On Python 3.12+, wait_for on
+        # an already-set Event does not yield; waking earlier would spin
+        # and prevent the transport shutdown task from reaching stop().
+        self._stop_event.set()
 
         while self.should_stop:
             await asyncio.sleep(0.1)

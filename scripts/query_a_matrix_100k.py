@@ -8,6 +8,7 @@ Use --output PATH to retain the JSON result. One server is used per tree shape.
 """
 
 import argparse
+import asyncio
 import hashlib
 import json
 import os
@@ -115,6 +116,24 @@ def summary_digest(output):
     return digest.hexdigest()
 
 
+def install_tree(runner, bunch):
+    """Publish the fixture on the server's writer loop in one transaction."""
+
+    async def install():
+        scheduler = runner.server.scheduler
+        async with scheduler.query_state_lock:
+            scheduler.query_changes.begin()
+            try:
+                for flow in bunch.flows.values():
+                    runner.server.bunch.add_flow(flow)
+            finally:
+                scheduler.query_changes.end()
+            scheduler.version_store.flush()
+            scheduler.version_store.pin()
+
+    asyncio.run_coroutine_threadsafe(install(), runner._loop).result(timeout=90)
+
+
 def measure(wide, ServerRunner, free_port, make_tree):
     bunch, tasks = make_tree(100_000, wide)
     grpc_port, http_port = free_port(), free_port()
@@ -134,18 +153,17 @@ def measure(wide, ServerRunner, free_port, make_tree):
         )
         runner.start()
         try:
-            for flow in bunch.flows.values():
-                runner.server.bunch.add_flow(flow)
+            install_tree(runner, bunch)
             service = runner.server.scheduler.query_service
             page_calls = 0
-            original_page = service.page
+            original_page = service.page_encoded
 
             async def counted_page(request):
                 nonlocal page_calls
                 page_calls += 1
                 return await original_page(request)
 
-            service.page = counted_page
+            service.page_encoded = counted_page
             for transport in ("grpc", "http"):
                 port = http_port if transport == "http" else grpc_port
                 env = child_environment(transport)

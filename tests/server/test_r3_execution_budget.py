@@ -21,11 +21,13 @@ def test_submit_capacity_is_shared_and_rejects_before_start(monkeypatch):
 
     async def scenario():
         gate = asyncio.Event()
+        first_started = asyncio.Event()
         started = []
 
         async def slow(command, **kwargs):
             started.append(command)
             assert kwargs == {"stdout": DEVNULL, "stderr": DEVNULL}
+            first_started.set()
             await gate.wait()
 
         monkeypatch.setattr(shell_runner, "run_process", slow)
@@ -33,7 +35,7 @@ def test_submit_capacity_is_shared_and_rejects_before_start(monkeypatch):
         tasks = [runner.spawn("sleep 1") for runner in runners[:3]]
         with pytest.raises(JobSubmissionError, match="capacity exhausted"):
             runners[3].spawn("must-not-start")
-        await asyncio.sleep(0)
+        await asyncio.wait_for(first_started.wait(), 1)
         assert len(started) == 1
         gate.set()
         await asyncio.gather(*tasks)
@@ -190,6 +192,27 @@ def test_stop_wakes_idle_scheduler_promptly():
         await asyncio.sleep(0)
         await asyncio.wait_for(scheduler.stop(), 0.5)
         await asyncio.wait_for(loop, 0.5)
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_gate_keeps_idle_scheduler_yielding():
+    async def scenario():
+        scheduler = Scheduler(Bunch(), interval_main_loop=0.01)
+        loop = asyncio.create_task(scheduler.run())
+        try:
+            await asyncio.sleep(0)
+            scheduler.begin_shutdown()
+            # Transports must still get a turn before Scheduler.stop is called.
+            await asyncio.sleep(0.03)
+            assert scheduler.bunch._service_stopping
+            assert not loop.done()
+            await asyncio.wait_for(scheduler.stop(), 0.5)
+            await asyncio.wait_for(loop, 0.5)
+        finally:
+            if not loop.done():
+                loop.cancel()
+                await asyncio.gather(loop, return_exceptions=True)
 
     asyncio.run(scenario())
 

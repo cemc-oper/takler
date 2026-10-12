@@ -4,9 +4,11 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -27,6 +29,42 @@ from takler.server.connect_config import (
 
 FIRST_ATTEMPT = "11111111-1111-4111-8111-111111111111"
 SECOND_ATTEMPT = "22222222-2222-4222-8222-222222222222"
+
+
+def test_benchmark_tree_install_uses_server_writer_transaction(
+    takler_server, monkeypatch
+):
+    from takler.core import Bunch, Flow
+    from takler.serialization.version import VersionUnavailable
+
+    fixture = Bunch()
+    for index in range(3):
+        fixture.add_flow(Flow(f"f{index}")).add_task("t")
+    scheduler = takler_server.server.scheduler
+    live = takler_server.server.bunch
+    original_add = live.add_flow
+    writer_threads = []
+
+    def checked_add(flow):
+        writer_threads.append(threading.current_thread())
+        assert scheduler.query_changes._depth == 1
+        with pytest.raises(VersionUnavailable, match="state_changing"):
+            scheduler.version_store.pin()
+        return original_add(flow)
+
+    monkeypatch.setattr(live, "add_flow", checked_add)
+    script = Path(__file__).resolve().parents[2] / "scripts/query_a_matrix_100k.py"
+    runpy.run_path(str(script))["install_tree"](takler_server, fixture)
+    assert writer_threads == [takler_server._thread] * 3
+    assert set(scheduler.version_store.current.index) == {
+        "/",
+        "/f0",
+        "/f0/t",
+        "/f1",
+        "/f1/t",
+        "/f2",
+        "/f2/t",
+    }
 
 
 @pytest.fixture(scope="module")
