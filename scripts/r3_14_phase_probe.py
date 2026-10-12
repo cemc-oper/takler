@@ -3,12 +3,29 @@
 from __future__ import annotations
 
 import contextvars
+import re
 import threading
 import time
 
 import takler.server.grpc_transport as grpc_module
 import takler.server.http_transport as http_module
 import takler.server.query_service as query_module
+
+
+_SNAPSHOT_ID = re.compile(rb'"snapshot_id":"([^"]+)"')
+_PAGE_INDEX = re.compile(rb'"page_index":(\d+)')
+
+
+def _page_identity(document):
+    if not isinstance(document, bytes):
+        return getattr(document, "snapshot_id", None), getattr(
+            document, "page_index", None
+        )
+    snapshot = _SNAPSHOT_ID.search(document)
+    index = _PAGE_INDEX.search(document)
+    if snapshot is None or index is None:
+        return None, None
+    return snapshot.group(1).decode("ascii"), int(index.group(1))
 
 
 class SummaryPhaseProbe:
@@ -24,13 +41,13 @@ class SummaryPhaseProbe:
             "r3_14_summary_rpc_event", default=None
         )
         self._original_capture = service._capture
-        self._original_page = service.page
+        self._original_page = service._page
         self._original_grpc_query = grpc_service._query
         self._original_grpc_decode = grpc_module.query_from_pb2
         self._original_encode = query_module.encode_query_document
         self._original_decode = query_module.decode_query_document
         self._original_grpc_encode = grpc_module.query_to_pb2
-        self._original_http_encode = http_module.encode_query_document
+        self._original_http_encode = http_module._query_wire_bytes
 
     def install(self):
         def capture(*args):
@@ -84,8 +101,7 @@ class SummaryPhaseProbe:
             token = self._page_event.set(event)
             try:
                 reply = await self._original_page(request)
-                event["snapshot_id"] = getattr(reply, "snapshot_id", None)
-                event["page_index"] = getattr(reply, "page_index", None)
+                event["snapshot_id"], event["page_index"] = _page_identity(reply)
                 event["error_code"] = getattr(reply, "code", None)
                 rpc_event = self._rpc_event.get()
                 if rpc_event is not None:
@@ -123,7 +139,8 @@ class SummaryPhaseProbe:
             return reply
 
         def grpc_encode(document):
-            if document.kind != "page":
+            snapshot_id, page_index = _page_identity(document)
+            if snapshot_id is None:
                 return self._original_grpc_encode(document)
             started = time.perf_counter_ns()
             encoded = self._original_grpc_encode(document)
@@ -131,8 +148,8 @@ class SummaryPhaseProbe:
                 {
                     "phase": "summary_wire_encode",
                     "transport": "grpc",
-                    "snapshot_id": document.snapshot_id,
-                    "page_index": document.page_index,
+                    "snapshot_id": snapshot_id,
+                    "page_index": page_index,
                     "start_ns": started,
                     "end_ns": time.perf_counter_ns(),
                     "bytes": len(encoded.json),
@@ -141,7 +158,8 @@ class SummaryPhaseProbe:
             return encoded
 
         def http_encode(document):
-            if document.kind != "page":
+            snapshot_id, page_index = _page_identity(document)
+            if snapshot_id is None:
                 return self._original_http_encode(document)
             started = time.perf_counter_ns()
             encoded = self._original_http_encode(document)
@@ -149,8 +167,8 @@ class SummaryPhaseProbe:
                 {
                     "phase": "summary_wire_encode",
                     "transport": "http",
-                    "snapshot_id": document.snapshot_id,
-                    "page_index": document.page_index,
+                    "snapshot_id": snapshot_id,
+                    "page_index": page_index,
                     "start_ns": started,
                     "end_ns": time.perf_counter_ns(),
                     "bytes": len(encoded),
@@ -159,21 +177,21 @@ class SummaryPhaseProbe:
             return encoded
 
         self.service._capture = capture
-        self.service.page = page
+        self.service._page = page
         self.grpc_service._query = grpc_query
         query_module.encode_query_document = encode
         query_module.decode_query_document = decode
         grpc_module.query_from_pb2 = grpc_decode
         grpc_module.query_to_pb2 = grpc_encode
-        http_module.encode_query_document = http_encode
+        http_module._query_wire_bytes = http_encode
         return self
 
     def close(self):
         self.service._capture = self._original_capture
-        self.service.page = self._original_page
+        self.service._page = self._original_page
         self.grpc_service._query = self._original_grpc_query
         query_module.encode_query_document = self._original_encode
         query_module.decode_query_document = self._original_decode
         grpc_module.query_from_pb2 = self._original_grpc_decode
         grpc_module.query_to_pb2 = self._original_grpc_encode
-        http_module.encode_query_document = self._original_http_encode
+        http_module._query_wire_bytes = self._original_http_encode

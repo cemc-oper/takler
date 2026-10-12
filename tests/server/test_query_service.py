@@ -11,6 +11,7 @@ from takler.protocol.query_v1 import (
     DetailRequest,
     PageRequest,
     SinceRequest,
+    decode_query_document,
     encode_query_document,
 )
 from takler.server.auth import (
@@ -38,6 +39,47 @@ def page_request(**changes):
 
 def test_snapshot_pages_survive_live_mutation_and_replay():
     asyncio.run(_snapshot_pages_survive_live_mutation_and_replay())
+
+
+def test_cached_page_bytes_preserve_replay_and_cursor_errors():
+    async def exercise():
+        bunch = Bunch("root")
+        flow = bunch.add_flow(Flow("f"))
+        for index in range(2300):
+            flow.add_task(f"t{index:05}")
+        service = Scheduler(bunch).query_service
+        first_raw = await service.page_encoded(page_request())
+        first = decode_query_document(first_raw, expected="page")
+        assert first_raw is service._snapshots[first.snapshot_id].pages[0]
+        assert first.next_cursor is not None
+        next_request = page_request(cursor=first.next_cursor)
+        next_raw = await service.page_encoded(next_request)
+        assert next_raw is service._snapshots[first.snapshot_id].pages[1]
+        assert await service.page_encoded(next_request) is next_raw
+        assert decode_query_document(next_raw, expected="page").page_index == 1
+
+        token = set_call_credentials(CallCredentials(user="other", secret="other"))
+        try:
+            denied = await service.page_encoded(next_request)
+        finally:
+            reset_call_credentials(token)
+        assert decode_query_document(denied, expected="error").code == (
+            "invalid_request"
+        )
+        changed_scope = await service.page_encoded(
+            page_request(scope_path="/f", cursor=first.next_cursor)
+        )
+        assert decode_query_document(changed_scope, expected="error").code == (
+            "permission_denied"
+        )
+        malformed = await service.page_encoded(
+            page_request(cursor=first.next_cursor + "x")
+        )
+        assert decode_query_document(malformed, expected="error").code == (
+            "invalid_request"
+        )
+
+    asyncio.run(exercise())
 
 
 def test_owner_replacement_expires_old_cursor():
@@ -330,6 +372,10 @@ async def _http_and_grpc_query_routes():
         )
         assert response.status_code == 200
         http_page = decode_query_document(response.content, expected="page")
+        assert (
+            response.content
+            == scheduler.query_service._snapshots[http_page.snapshot_id].pages[0]
+        )
         assert [node.path for node in http_page.nodes] == ["/", "/f", "/f/t"]
         assert http_page.base_revision == scheduler.query_changes.revision
         valid_since = since_request.model_copy(
@@ -414,6 +460,10 @@ async def _http_and_grpc_query_routes():
             stub = takler_pb2_grpc.TaklerQueryStub(channel)
             response = await stub.ReadPage(query_to_pb2(page_request()))
             grpc_page = query_from_pb2(response, expected="page")
+            assert (
+                response.json
+                == scheduler.query_service._snapshots[grpc_page.snapshot_id].pages[0]
+            )
             assert [node.path for node in grpc_page.nodes] == ["/", "/f", "/f/t"]
             assert grpc_page.session_id == http_page.session_id
             assert grpc_page.base_revision == http_page.base_revision

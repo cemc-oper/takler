@@ -414,6 +414,19 @@ class QueryService:
         return scope, tuple(pages), total_size
 
     async def page(self, request: PageRequest) -> QueryModel:
+        reply = await self._page(request)
+        return (
+            decode_query_document(reply, expected="page")
+            if isinstance(reply, bytes)
+            else reply
+        )
+
+    async def page_encoded(self, request: PageRequest) -> bytes:
+        """Return the validated snapshot page without decoding its cached JSON."""
+        reply = await self._page(request)
+        return reply if isinstance(reply, bytes) else encode_query_document(reply)
+
+    async def _page(self, request: PageRequest) -> bytes | QueryModel:
         if request.field_groups != ["summary"]:
             return _error(
                 "unsupported_capability", "initial pages support summary only"
@@ -434,7 +447,7 @@ class QueryService:
                     return _error("permission_denied", "query identity changed")
                 if index < 1 or index >= len(snapshot.pages):
                     return _error("invalid_request", "cursor index out of range")
-                return decode_query_document(snapshot.pages[index], expected="page")
+                return snapshot.pages[index]
             replacement = self._replaceable_snapshot(owner)
             if (
                 self._owner_reserved.get(owner, 0) >= MAX_OWNER_SNAPSHOTS
@@ -514,7 +527,7 @@ class QueryService:
                 size,
             )
             self._renew_lease(query_id, owner, scope, request.depth)
-        return decode_query_document(pages[0], expected="page")
+        return pages[0]
 
     @staticmethod
     def _scope(request: PageRequest) -> str:

@@ -104,6 +104,11 @@ logger = get_logger("server.service")
 #: envelope format can be served next to this one.
 API_PREFIX: str = "/v1"
 
+
+def _query_wire_bytes(reply) -> bytes:
+    return reply if isinstance(reply, bytes) else encode_query_document(reply)
+
+
 #: The one route: the command is addressed by its CLI word in the path.
 COMMAND_PATH: str = API_PREFIX + "/commands/{command}"
 
@@ -312,7 +317,9 @@ def create_app(
                 if method == "GetCapabilities":
                     reply = handlers.scheduler.query_service.capabilities()
                 elif method == "ReadPage":
-                    reply = await handlers.scheduler.query_service.page(document)
+                    reply = await handlers.scheduler.query_service.page_encoded(
+                        document
+                    )
                 elif method == "ReadDetail":
                     reply = await handlers.scheduler.query_service.detail(document)
                 elif method == "ReadSince":
@@ -336,7 +343,7 @@ def create_app(
             finally:
                 if token is not None:
                     reset_call_credentials(token)
-        return Response(encode_query_document(reply), media_type="application/json")
+        return Response(_query_wire_bytes(reply), media_type="application/json")
 
     @app.post(API_PREFIX + "/query/capabilities")
     async def query_capabilities(request: Request):

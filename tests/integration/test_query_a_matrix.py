@@ -234,15 +234,17 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         str(port),
     ]
     service = runner.server.scheduler.query_service
-    original_page, original_detail = service.page, service.detail
+    original_page, original_detail = service.page_encoded, service.detail
 
     async def expired_second_page(request):
         if request.cursor:
-            return FailureReply(
-                kind="error",
-                schema_version=1,
-                code="snapshot_expired",
-                message="injected continuation expiry",
+            return encode_query_document(
+                FailureReply(
+                    kind="error",
+                    schema_version=1,
+                    code="snapshot_expired",
+                    message="injected continuation expiry",
+                )
             )
         return await original_page(request)
 
@@ -253,7 +255,7 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         return response
 
     try:
-        service.page = expired_second_page
+        service.page_encoded = expired_second_page
         page_failure = subprocess.run(
             command,
             env=_environment(transport, port),
@@ -263,7 +265,7 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         )
         assert page_failure.returncode != 0
         assert "|- " not in page_failure.stdout
-        service.page = original_page
+        service.page_encoded = original_page
         service.detail = wrong_detail_identity
         detail_failure = subprocess.run(
             command + ["--scope", "/flow/task0000", "--show-parameter"],
@@ -276,7 +278,7 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         assert "|- " not in detail_failure.stdout
         assert "PAYLOAD" not in detail_failure.stdout
     finally:
-        service.page, service.detail = original_page, original_detail
+        service.page_encoded, service.detail = original_page, original_detail
 
 
 @pytest.mark.parametrize("language", ["python", "go"])

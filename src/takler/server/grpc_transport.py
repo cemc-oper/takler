@@ -209,7 +209,7 @@ class GrpcTransport(
         if expected == "capabilities_request":
             reply = service.capabilities()
         elif expected == "page_request":
-            reply = await service.page(document)
+            reply = await service.page_encoded(document)
         elif expected == "detail_request":
             reply = await service.detail(document)
         elif expected == "since_request":
