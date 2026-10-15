@@ -29,10 +29,11 @@ def _page_identity(document):
 
 
 class SummaryPhaseProbe:
-    def __init__(self, service, grpc_service):
+    def __init__(self, service, grpc_service, *, sink=None):
         self.service = service
         self.grpc_service = grpc_service
-        self.events: list[dict] = []
+        # Historical probes retain their list; PERF-03 supplies a bounded sink.
+        self.events = [] if sink is None else sink
         self._capture_local = threading.local()
         self._page_event = contextvars.ContextVar(
             "r3_14_summary_page_event", default=None
