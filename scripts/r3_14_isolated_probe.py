@@ -178,6 +178,7 @@ class Process:
             uncertainty_ns=(after - before) // 2,
             offset_midpoint_ns=reply["monotonic_ns"] - (before + after) // 2,
             gc=reply.get("gc"),
+            lag=reply.get("lag"),
         )
 
     def cleanup(self, timeout=5):
@@ -246,7 +247,10 @@ def run_one(
     smoke=False,
     fault=None,
     profile_service=False,
+    lag_ablation=None,
 ):
+    if lag_ablation is not None and (mode != "L" or workload != "idle_no_clients"):
+        raise ValueError("Lag ablation requires an idle L diagnostic")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     run_id = f"PERF-03-{stamp}-{workload}-{mode}-r{index}"
     run_dir = root / "runs" / run_id
@@ -278,6 +282,7 @@ def run_one(
         fault=fault,
         profile_service=profile_service,
         config_frozen_before_start=True,
+        lag_ablation=lag_ablation,
     )
     config["execution_status"] = "running"
     save(run_dir / "config.json", config)
@@ -425,6 +430,8 @@ def run_one(
             ]
             if fault == "backpressure":
                 extra.append("--synthetic")
+            if lag_ablation is not None:
+                extra.extend(["--lag-ablation", lag_ablation])
             server = launch("server", "service", extra)
             clients = []
             if workload == "T3":
@@ -605,10 +612,17 @@ def main():
     )
     parser.add_argument("--mode", choices=["O", "L", "D"])
     parser.add_argument("--workload", choices=["idle_no_clients", "T3"])
+    parser.add_argument("--lag-ablation", choices=["off", "wake_only", "record"])
     options = parser.parse_args()
     if options.profile_service and not options.smoke:
         raise ValueError("Service profiling requires a separately labelled smoke run")
     base = json.loads(options.config.read_text())
+    if options.lag_ablation and (
+        options.mode != "L"
+        or options.workload != "idle_no_clients"
+        or not base.get("repair_steps", {}).get("lag_ablation")
+    ):
+        raise ValueError("Pre-register lag ablation and select idle L explicitly")
     if base["status"] != "user_adopted":
         raise ValueError("An adopted config is required")
     repo = Path(__file__).resolve().parents[1]
@@ -646,6 +660,7 @@ def main():
                     options.smoke,
                     options.fault,
                     options.profile_service,
+                    options.lag_ablation,
                 )
                 if (summary["semantic_errors"] and not options.fault) or summary[
                     "exit_reason"

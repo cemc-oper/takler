@@ -110,7 +110,12 @@ async def service(options):
     emitter = observation = None
     if options.mode != "O":
         emitter = Emitter(options.socket, options.capacity)
-        observation = ServiceObservation(server, emitter, options.mode == "D").install()
+        observation = ServiceObservation(
+            server,
+            emitter,
+            options.mode == "D",
+            lag_mode=options.lag_ablation or "record",
+        ).install()
     await server.start()
     run_task = asyncio.create_task(server.run())
     print(
@@ -124,11 +129,12 @@ async def service(options):
                 event_loop_type=type(asyncio.get_running_loop()).__qualname__,
                 lag_timer_backend=(
                     None
-                    if observation is None
+                    if observation is None or observation.lag_mode == "off"
                     else "owned_timer_reuse"
                     if observation.reuse_lag_timer
                     else "public_call_at"
                 ),
+                lag=None if observation is None else observation.lag_state(),
             )
         ),
         flush=True,
@@ -154,6 +160,9 @@ async def service(options):
                             gc=dict(
                                 enabled=gc.isenabled(), threshold=gc.get_threshold()
                             ),
+                            lag=None
+                            if observation is None
+                            else observation.lag_state(),
                         )
                     ),
                     flush=True,
@@ -188,6 +197,7 @@ async def service(options):
         dict(
             pid=os.getpid(),
             observation=None if emitter is None else emitter.close(),
+            lag=None if observation is None else observation.lag_state(),
             gc=dict(enabled=gc.isenabled(), threshold=gc.get_threshold()),
             full_leases=len(server.scheduler.query_service.full_snapshots._leases),
             checkpoint_failure=server.checkpoint_manager.checkpoint_failure_reason,
@@ -737,7 +747,10 @@ def main():
     parser.add_argument("--role", choices=["F", "S", "Q"])
     parser.add_argument("--capacity", type=int, default=8192)
     parser.add_argument("--synthetic", action="store_true")
+    parser.add_argument("--lag-ablation", choices=["off", "wake_only", "record"])
     options = parser.parse_args()
+    if options.lag_ablation and (options.kind != "service" or options.mode != "L"):
+        parser.error("lag ablation is a service-only L diagnostic")
     if options.kind == "service":
         asyncio.run(service(options))
     else:

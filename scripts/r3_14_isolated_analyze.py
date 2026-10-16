@@ -240,6 +240,7 @@ def analyze(run_dir):
         mode=config["runtime"]["mode"],
         workload=config["runtime"]["workload"],
         smoke=config["runtime"]["smoke"],
+        lag_ablation=config["runtime"].get("lag_ablation"),
         fault=config["runtime"]["fault"],
         exit_reason=manifest["exit_reason"],
         evidence_status="usable" if not evidence_problems else "incomplete_or_failed",
@@ -310,6 +311,7 @@ def compare(paths):
                 and s["mode"] == mode
                 and not s["smoke"]
                 and not s["fault"]
+                and s.get("lag_ablation") is None
             ]
             for mode in ["O", "L", "D"]
         }

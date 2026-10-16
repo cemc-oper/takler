@@ -283,8 +283,13 @@ class PhaseSink:
 
 
 class ServiceObservation:
-    def __init__(self, server, emitter, detailed=False):
+    def __init__(self, server, emitter, detailed=False, *, lag_mode="record"):
+        if lag_mode not in {"off", "wake_only", "record"}:
+            raise ValueError("unknown lag diagnostic mode")
         self.server, self.emitter, self.detailed = server, emitter, detailed
+        self.lag_mode = lag_mode
+        self.lag_ticks = self.lag_missed = 0
+        self.lag_handle = None
         self.originals = []
         self.tasks = []
         self.phase = None
@@ -301,7 +306,10 @@ class ServiceObservation:
     def _lag_tick(self):
         actual = time.monotonic_ns()
         following, lag, missed = next_grid(self.target, actual)
-        self.emitter.emit(1, self.target, actual, a=lag, b=missed)
+        self.lag_ticks += 1
+        self.lag_missed += missed
+        if self.lag_mode == "record":
+            self.emitter.emit(1, self.target, actual, a=lag, b=missed)
         self.target = following
         if self.reuse_lag_timer:
             # CPython's selector loop pops a TimerHandle before invoking it.
@@ -314,6 +322,9 @@ class ServiceObservation:
             self.lag_handle = self.loop.call_at(
                 self.target / 1e9, self.lag_callback, context=self.lag_context
             )
+
+    def lag_state(self):
+        return dict(mode=self.lag_mode, ticks=self.lag_ticks, missed=self.lag_missed)
 
     async def _state(self):
         while True:
@@ -376,9 +387,10 @@ class ServiceObservation:
         self.target = time.monotonic_ns() + 5_000_000
         self.lag_callback = self._lag_tick
         self.lag_context = contextvars.copy_context()
-        self.lag_handle = self.loop.call_at(
-            self.target / 1e9, self.lag_callback, context=self.lag_context
-        )
+        if self.lag_mode != "off":
+            self.lag_handle = self.loop.call_at(
+                self.target / 1e9, self.lag_callback, context=self.lag_context
+            )
         self.tasks = [asyncio.create_task(self._state())]
         if self.detailed:
             from r3_14_phase_probe import SummaryPhaseProbe
@@ -391,7 +403,8 @@ class ServiceObservation:
         return self
 
     async def close(self):
-        self.lag_handle.cancel()
+        if self.lag_handle is not None:
+            self.lag_handle.cancel()
         if self.gc_callback in gc.callbacks:
             gc.callbacks.remove(self.gc_callback)
         for task in self.tasks:

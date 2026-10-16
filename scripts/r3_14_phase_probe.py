@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import contextvars
 import re
+import sys
 import threading
 import time
 
 import takler.server.grpc_transport as grpc_module
-import takler.server.http_transport as http_module
 import takler.server.query_service as query_module
 
 
@@ -48,7 +48,12 @@ class SummaryPhaseProbe:
         self._original_encode = query_module.encode_query_document
         self._original_decode = query_module.decode_query_document
         self._original_grpc_encode = grpc_module.query_to_pb2
-        self._original_http_encode = http_module._query_wire_bytes
+        # The running HTTP server loads this module before installing its probe.
+        # A gRPC-only observer must not load the optional HTTP/FastAPI stack.
+        self._http_module = sys.modules.get("takler.server.http_transport")
+        self._original_http_encode = (
+            self._http_module._query_wire_bytes if self._http_module else None
+        )
 
     def install(self):
         def capture(*args):
@@ -184,7 +189,8 @@ class SummaryPhaseProbe:
         query_module.decode_query_document = decode
         grpc_module.query_from_pb2 = grpc_decode
         grpc_module.query_to_pb2 = grpc_encode
-        http_module._query_wire_bytes = http_encode
+        if self._http_module is not None:
+            self._http_module._query_wire_bytes = http_encode
         return self
 
     def close(self):
@@ -195,4 +201,5 @@ class SummaryPhaseProbe:
         query_module.decode_query_document = self._original_decode
         grpc_module.query_from_pb2 = self._original_grpc_decode
         grpc_module.query_to_pb2 = self._original_grpc_encode
-        http_module._query_wire_bytes = self._original_http_encode
+        if self._http_module is not None:
+            self._http_module._query_wire_bytes = self._original_http_encode

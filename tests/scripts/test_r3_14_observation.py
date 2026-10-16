@@ -6,6 +6,7 @@ import gc
 import importlib
 from pathlib import Path
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -18,6 +19,106 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 observation = importlib.import_module("r3_14_observation")
 probe = importlib.import_module("r3_14_isolated_probe")
+
+
+def test_grpc_phase_probe_never_imports_optional_http_dependencies():
+    script = f"""
+import builtins, sys
+from types import SimpleNamespace
+sys.path[:0] = [{str(SCRIPTS)!r}, {str(SCRIPTS.parent / "src")!r}]
+original_import = builtins.__import__
+def guarded(name, *args, **kwargs):
+    if name.startswith(('takler.server.http_transport', 'fastapi', 'starlette', 'uvicorn')):
+        raise AssertionError('unnecessary HTTP dependency: ' + name)
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = guarded
+from r3_14_phase_probe import SummaryPhaseProbe
+async def query(*args):
+    return None
+service = SimpleNamespace(_capture=lambda *args: None, _page=query)
+grpc = SimpleNamespace(_query=query)
+phase = SummaryPhaseProbe(service, grpc).install()
+phase.close()
+assert service._page is query and grpc._query is query
+assert 'takler.server.http_transport' not in sys.modules
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_http_phase_hook_still_records_and_restores_already_loaded_transport():
+    script = f"""
+import sys
+from types import SimpleNamespace
+sys.path[:0] = [{str(SCRIPTS)!r}, {str(SCRIPTS.parent / "src")!r}]
+from r3_14_phase_probe import SummaryPhaseProbe
+import takler.server.http_transport as http
+original = http._query_wire_bytes
+async def query(*args):
+    return None
+phase = SummaryPhaseProbe(
+    SimpleNamespace(_capture=lambda *args: None, _page=query),
+    SimpleNamespace(_query=query),
+).install()
+raw = b'{{"snapshot_id":"s","page_index":0}}'
+assert http._query_wire_bytes(raw) == raw
+assert phase.events[-1]['transport'] == 'http'
+phase.close()
+assert http._query_wire_bytes is original
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("mode", ["off", "wake_only", "record"])
+def test_lag_cost_controls_preserve_other_hooks_and_count_blocked_grids(tmp_path, mode):
+    async def run():
+        async def write():
+            return True
+
+        manager = SimpleNamespace(
+            _pin_fixed_for_write=lambda: (1, object(), ""),
+            _publish_prepared=lambda *args: (True, True, None),
+            write_checkpoint_async=write,
+            _background_writes={},
+            _background_reserved=0,
+        )
+        query = SimpleNamespace(
+            full_snapshots=SimpleNamespace(_leases={}), _snapshots={}
+        )
+        server = SimpleNamespace(
+            checkpoint_manager=manager, scheduler=SimpleNamespace(query_service=query)
+        )
+        emitter = observation.Emitter(str(tmp_path / "absent"), 256, start_sender=False)
+        callbacks = list(gc.callbacks)
+        hook = observation.ServiceObservation(server, emitter, lag_mode=mode).install()
+        await asyncio.sleep(0.02)
+        time.sleep(0.027)
+        await asyncio.sleep(0.02)
+        await manager.write_checkpoint_async()
+        await hook.close()
+        records = []
+        while not emitter.ready.empty():
+            record = emitter.ready.get_nowait()
+            records.append(observation.decode_record(record))
+            emitter.available.put(record)
+        kinds = [record["kind"] for record in records]
+        assert {"service_state", "gc_state", "checkpoint_total"} <= set(kinds)
+        assert gc.callbacks == callbacks
+        if mode == "off":
+            assert hook.lag_ticks == hook.lag_missed == 0
+            assert hook.lag_handle is None
+        else:
+            assert hook.lag_ticks >= 3 and hook.lag_missed >= 4
+            assert hook.lag_handle.cancelled()
+        assert kinds.count("loop_lag") == (hook.lag_ticks if mode == "record" else 0)
+        emitter.close()
+
+    asyncio.run(run())
 
 
 def test_lag_grid_skips_blocked_ticks_without_zero_backfill():
