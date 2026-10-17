@@ -248,6 +248,7 @@ def run_one(
     fault=None,
     profile_service=False,
     lag_ablation=None,
+    clock_diagnostics=None,
 ):
     if lag_ablation is not None and (mode != "L" or workload != "idle_no_clients"):
         raise ValueError("Lag ablation requires an idle L diagnostic")
@@ -293,7 +294,13 @@ def run_one(
         run_id=run_id,
         task_id="PERF-03",
         decision_id="G0-2026-10-13",
-        start_utc=datetime.now(timezone.utc).isoformat(),
+        start_utc=(
+            datetime.now(timezone.utc).isoformat()
+            if clock_diagnostics is None
+            else clock_diagnostics.read(
+                "start_utc", lambda: datetime.now(timezone.utc).isoformat()
+            )
+        ),
         gc_variant="default_no_intervention",
         takler_head=json.loads((source / "source-meta.json").read_text())[
             "takler_head"
@@ -336,7 +343,11 @@ def run_one(
     )
     save(run_dir / "manifest.json", manifest)
     processes = []
-    started = time.monotonic()
+    started = (
+        time.monotonic()
+        if clock_diagnostics is None
+        else clock_diagnostics.read("started", time.monotonic)
+    )
     memory = Path("/proc/meminfo").read_text().splitlines()
     mem = {
         s.split(":")[0]: int(s.split()[1]) * 1024 for s in memory if len(s.split()) == 3
@@ -463,6 +474,8 @@ def run_one(
                 time.monotonic() + timings["ready_baseline_no_requests_seconds"]
             )
             while time.monotonic() < baseline_end:
+                if clock_diagnostics is not None:
+                    clock_diagnostics.check()
                 if reason := safety(config, swap_start):
                     raise RuntimeError(reason)
                 time.sleep(0.05)
@@ -489,6 +502,8 @@ def run_one(
                 end_ns / 1e9 + timings["withdrawal_no_new_requests_seconds"]
             )
             while time.monotonic() < withdrawal_end:
+                if clock_diagnostics is not None:
+                    clock_diagnostics.check()
                 if reason := safety(config, swap_start):
                     raise RuntimeError(reason)
                 if time.monotonic() - started >= timings["whole_run_max_seconds"]:
@@ -571,8 +586,18 @@ def run_one(
     finally:
         for process in reversed(processes):
             manifest["cleanup"][process.role] = process.cleanup(timeout=2)
-        manifest["end_utc"] = datetime.now(timezone.utc).isoformat()
-        manifest["elapsed_seconds"] = time.monotonic() - started
+        manifest["end_utc"] = (
+            datetime.now(timezone.utc).isoformat()
+            if clock_diagnostics is None
+            else clock_diagnostics.read(
+                "end_utc", lambda: datetime.now(timezone.utc).isoformat()
+            )
+        )
+        manifest["elapsed_seconds"] = (
+            time.monotonic()
+            if clock_diagnostics is None
+            else clock_diagnostics.read("ended", time.monotonic)
+        ) - started
         manifest["evidence_files"] = {
             p.name: digest(p)
             for p in sorted(run_dir.iterdir())
