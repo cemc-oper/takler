@@ -1,4 +1,4 @@
-"""MIX100K-01 only: bounded real-service mixed load, no product optimization.
+"""Bounded MIX100K diagnostic batches, no product optimization.
 
 Run freeze, no-service tests, then run-one smoke/D/B/C/A from the frozen copy.
 No old runner CLI is invoked. All paths are batch-local; raw failures survive.
@@ -1369,13 +1369,13 @@ def finish_collector(directory, process, server_pid, produced, deadline_ns):
     return observed
 
 
-def freeze(batch, repo):
+def freeze(batch, repo, batch_id="MIX100K-01"):
     from r3_14_isolated_probe import diagnostic_copy
 
     if (batch / "config.json").exists():
         raise ValueError("batch already frozen")
     config = dict(
-        batch="MIX100K-01",
+        batch=batch_id,
         seed=20261018,
         tasks=100000,
         flows=100,
@@ -2034,11 +2034,12 @@ def main():
     )
     parser.add_argument("--batch", type=Path)
     parser.add_argument("--repo", type=Path)
+    parser.add_argument("--batch-id", default="MIX100K-01")
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--condition", choices=["smoke", "D", "B", "C", "A"])
     options = parser.parse_args()
     if options.action == "freeze":
-        freeze(options.batch.resolve(), options.repo.resolve())
+        freeze(options.batch.resolve(), options.repo.resolve(), options.batch_id)
     elif options.action == "run-one":
         run_one(options.batch.resolve(), options.condition)
     elif options.action == "server":
