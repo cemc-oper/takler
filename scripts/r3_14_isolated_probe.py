@@ -20,6 +20,7 @@ import tempfile
 import time
 import uuid
 
+from r3_14_health import HealthGuard
 from r3_14_isolated_worker import save
 
 
@@ -145,13 +146,26 @@ class Process:
         self.proc.stdin.write(json.dumps(value) + "\n")
         self.proc.stdin.flush()
 
-    def receive(self, timeout):
+    def receive(self, timeout, check=None):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            if check is not None:
+                check()
             ready, _, _ = select.select(
-                [self.proc.stdout], [], [], max(0, deadline - time.monotonic())
+                [self.proc.stdout],
+                [],
+                [],
+                max(
+                    0,
+                    min(
+                        0.2 if check is not None else timeout,
+                        deadline - time.monotonic(),
+                    ),
+                ),
             )
             if not ready:
+                if check is not None:
+                    continue
                 break
             line = self.proc.stdout.readline()
             if not line:
@@ -162,11 +176,11 @@ class Process:
                 self.log.write(line)
         raise TimeoutError(f"{self.role} control timed out")
 
-    def clock(self, timeout=2):
+    def clock(self, timeout=2, check=None):
         nonce = uuid.uuid4().hex
         before = time.monotonic_ns()
         self.send(dict(command="clock", nonce=nonce))
-        reply = self.receive(timeout)
+        reply = self.receive(timeout, check=check)
         after = time.monotonic_ns()
         if reply.get("nonce") != nonce:
             raise ValueError("clock handshake mismatch")
@@ -394,6 +408,39 @@ def run_one(
         PYTHONPATH=f"{source / 'src'}:{source / 'scripts'}", TAKLER_LOG_LEVEL="ERROR"
     )
     worker = source / "scripts/r3_14_isolated_worker.py"
+    health_guard = None
+    progress_required = False
+
+    def check_guards(*, whole_limit=True):
+        if clock_diagnostics is not None:
+            clock_diagnostics.check()
+        if reason := safety(config, swap_start):
+            raise RuntimeError(reason)
+        if (
+            whole_limit
+            and time.monotonic() - started >= timings["whole_run_max_seconds"]
+        ):
+            raise TimeoutError("whole run hard limit")
+        if health_guard is not None:
+            health_guard.check(
+                collector_exit=processes[0].proc.poll(),
+                check_progress=progress_required,
+            )
+
+    def wait_for_exit(process, timeout):
+        if not perf08a:
+            return process.proc.wait(timeout=timeout)
+        deadline = time.monotonic() + timeout
+        while process.proc.poll() is None:
+            check_guards()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(process.args, timeout)
+            try:
+                process.proc.wait(timeout=min(0.2, remaining))
+            except subprocess.TimeoutExpired:
+                pass
+
     try:
         with tempfile.TemporaryDirectory(prefix="perf03-") as temporary:
             temp = Path(temporary)
@@ -417,6 +464,7 @@ def run_one(
                 ]
 
             def launch(role, kind, extra):
+                nonlocal health_guard
                 owner = "F" if role in {"F1", "F2"} else role
                 env = dict(source_env, LOGNAME=f"perf-{owner}", USER=f"perf-{owner}")
                 prefix = [sys.executable]
@@ -435,7 +483,15 @@ def run_one(
                 )
                 processes.append(process)
                 if perf08a:
-                    if role != "collector":
+                    if role == "collector":
+                        health_guard = HealthGuard(
+                            run_dir / "collector-health.json",
+                            run_id,
+                            process.pid,
+                            int(started * 1e9),
+                            clock=time.monotonic_ns,
+                        )
+                    else:
                         processes[0].send(
                             dict(
                                 command="track",
@@ -444,10 +500,7 @@ def run_one(
                             )
                         )
                     while True:
-                        if clock_diagnostics is not None:
-                            clock_diagnostics.check()
-                        if reason := safety(config, swap_start):
-                            raise RuntimeError(reason)
+                        check_guards()
                         if time.monotonic() - started >= timings["startup_max_seconds"]:
                             raise TimeoutError("startup hard limit")
                         try:
@@ -516,15 +569,14 @@ def run_one(
                 )
             )
             for process in processes:
-                manifest["clock_start"][process.role] = process.clock()
+                manifest["clock_start"][process.role] = process.clock(
+                    **(dict(check=check_guards) if perf08a else {})
+                )
             baseline_end = (
                 time.monotonic() + timings["ready_baseline_no_requests_seconds"]
             )
             while time.monotonic() < baseline_end:
-                if clock_diagnostics is not None:
-                    clock_diagnostics.check()
-                if reason := safety(config, swap_start):
-                    raise RuntimeError(reason)
+                check_guards(whole_limit=perf08a)
                 time.sleep(0.05)
             start_ns = time.monotonic_ns() + 100_000_000
             end_ns = start_ns + int(timings["measurement_seconds"] * 1e9)
@@ -532,6 +584,9 @@ def run_one(
                 start_ns,
                 end_ns,
             )
+            if health_guard is not None:
+                health_guard.measurement_start_ns = start_ns
+                progress_required = True
             for process in clients:
                 process.send(dict(start_ns=start_ns, end_ns=end_ns))
             if fault == "backpressure":
@@ -549,28 +604,7 @@ def run_one(
                 end_ns / 1e9 + timings["withdrawal_no_new_requests_seconds"]
             )
             while time.monotonic() < withdrawal_end:
-                if clock_diagnostics is not None:
-                    clock_diagnostics.check()
-                if reason := safety(config, swap_start):
-                    raise RuntimeError(reason)
-                if time.monotonic() - started >= timings["whole_run_max_seconds"]:
-                    raise TimeoutError("whole run hard limit")
-                if perf08a:
-                    health_path = run_dir / "collector-health.json"
-                    if health_path.exists():
-                        try:
-                            health = json.loads(health_path.read_text())
-                        except json.JSONDecodeError:
-                            health = {}
-                        if health.get("failure"):
-                            raise RuntimeError(
-                                f"collector detected failure: {health['failure']}"
-                            )
-                        latest = max(start_ns, health.get("last_progress_ns", 0))
-                        if time.monotonic_ns() - latest >= 60_000_000_000:
-                            raise RuntimeError(
-                                "60s without completed request or periodic publication"
-                            )
+                check_guards()
                 elapsed = time.monotonic() - start_ns / 1e9
                 if (
                     not midpoint_checked
@@ -578,7 +612,8 @@ def run_one(
                 ):
                     if server.proc.poll() is None:
                         manifest["measurement_gc_handshake"] = server.clock(
-                            timeout=10 if perf08a else 2
+                            timeout=10 if perf08a else 2,
+                            **(dict(check=check_guards) if perf08a else {}),
                         )
                     midpoint_checked = True
                 if (
@@ -625,22 +660,30 @@ def run_one(
                             f"Unexpected {process.role} exit {process.proc.returncode}"
                         )
                 time.sleep(0.05)
+            progress_required = False
             # Clients are now idle, but retain their exit-handshake control loop.
             for process in clients:
                 if process.proc.poll() is None:
-                    manifest["clock_exit"][process.role] = process.clock()
-                    process.proc.wait(timeout=5)
+                    manifest["clock_exit"][process.role] = process.clock(
+                        **(dict(check=check_guards) if perf08a else {})
+                    )
+                    wait_for_exit(process, timeout=5)
             if server.proc.poll() is None:
-                manifest["clock_exit"]["server"] = server.clock()
+                manifest["clock_exit"]["server"] = server.clock(
+                    **(dict(check=check_guards) if perf08a else {})
+                )
                 server.send(dict(command="stop"))
                 remaining = timings["whole_run_max_seconds"] - (
                     time.monotonic() - started
                 )
-                server.proc.wait(
-                    timeout=max(0.1, min(timings["drain_exit_max_seconds"], remaining))
+                wait_for_exit(
+                    server,
+                    timeout=max(0.1, min(timings["drain_exit_max_seconds"], remaining)),
                 )
             if collector.proc.poll() is None:
-                manifest["clock_exit"]["collector"] = collector.clock()
+                manifest["clock_exit"]["collector"] = collector.clock(
+                    **(dict(check=check_guards) if perf08a else {})
+                )
                 collector.send(dict(command="stop"))
                 collector.proc.wait(timeout=5)
             manifest["exit_reason"] = (
@@ -648,6 +691,8 @@ def run_one(
             )
     except Exception as exc:
         manifest["exit_reason"] = f"{type(exc).__name__}: {exc}"
+        if health_guard is not None and health_guard.trigger is None:
+            health_guard.record_stop(manifest["exit_reason"], time.monotonic_ns())
     finally:
         for process in reversed(processes):
             manifest["cleanup"][process.role] = process.cleanup(timeout=2)
@@ -655,6 +700,15 @@ def run_one(
             deadline_timer.cancel()
             if (run_dir / "hard-deadline.json").exists():
                 manifest["exit_reason"] = "whole run hard limit"
+                if health_guard is not None:
+                    health_guard.record_stop(
+                        manifest["exit_reason"], time.monotonic_ns()
+                    )
+        if health_guard is not None:
+            save(
+                run_dir / "collector-health-diagnostics.json",
+                health_guard.diagnostics(),
+            )
         manifest["end_utc"] = (
             datetime.now(timezone.utc).isoformat()
             if clock_diagnostics is None

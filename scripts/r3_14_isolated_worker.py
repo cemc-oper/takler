@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 
+from r3_14_health import publish_health, update_health
 from r3_14_observation import (
     CHANNELS,
     MAX_PACKET_RECORDS,
@@ -363,28 +364,7 @@ def collector(options):
                         batch_peak = max(batch_peak, len(pending))
                         event_count += 1
                         if options.perf08a:
-                            v, kind = event["values"], event["kind"]
-                            if (
-                                kind == "request"
-                                and v[2] == 0
-                                or kind == "checkpoint_publish"
-                                and v[1:4] == [1, 1, 0]
-                            ):
-                                health["last_progress_ns"] = event["at_ns"]
-                            if (
-                                kind == "request"
-                                and v[2] == 1
-                                or kind == "watchdog"
-                                or kind == "checkpoint_outcome"
-                                and not v[1]
-                            ):
-                                health["failure"] = dict(
-                                    kind=kind,
-                                    at_ns=event["at_ns"],
-                                    identity=event["identity"],
-                                )
-                            if kind == "service_state":
-                                health["service_state"] = event
+                            update_health(health, event)
             if now - last_sample >= 0.1:
                 take_pss = now - last_pss >= 1
                 pids = dict(tracked)
@@ -418,7 +398,13 @@ def collector(options):
                 if take_pss:
                     last_pss = now
             if options.perf08a and now - last_health >= 1:
-                save(Path(options.run_dir) / "collector-health.json", health)
+                publish_health(
+                    Path(options.run_dir) / "collector-health.json",
+                    health,
+                    Path(options.run_dir).name,
+                    os.getpid(),
+                    time.monotonic_ns(),
+                )
                 last_health = now
             if pending and (now - last_flush >= 0.1 or stopped):
                 events.write(pending)
