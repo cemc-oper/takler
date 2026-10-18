@@ -272,7 +272,7 @@ def test_transport_boundary_rechecks_expiry_and_emits_three_waits():
     ledger.offered(row)
     ledger.dispatch(row)
     ledger.sent(2, 110)
-    ledger.completed(2, 160, "success", True)
+    ledger.completed(2, 160, "success", True, rpc_returned_ns=160)
     completion = rows[-1]
     assert [
         completion[k] for k in ["send_wait_ns", "rpc_wait_ns", "total_wait_ns"]

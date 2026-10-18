@@ -7,7 +7,7 @@ import queue
 import threading
 import time
 
-SCHEMA = "r3-perf04-tools-v2"
+SCHEMA = "r3-perf04-s-tools-v3"
 
 
 class Journal:
@@ -201,7 +201,16 @@ class Ledger:
             )
         )
 
-    def completed(self, rid, now, outcome, effective=False):
+    def completed(
+        self,
+        rid,
+        now,
+        outcome,
+        effective=False,
+        *,
+        rpc_returned_ns=None,
+        proof_completed_ns=None,
+    ):
         row = self.active.pop(rid)
         if row["status"] != "sent" or now < row["sent_ns"]:
             raise RuntimeError("completion without transport send")
@@ -218,7 +227,15 @@ class Ledger:
                 outcome=outcome,
                 effective=effective,
                 send_wait_ns=row["sent_ns"] - row["scheduled_ns"],
-                rpc_wait_ns=now - row["sent_ns"],
+                rpc_wait_ns=None
+                if rpc_returned_ns is None
+                else rpc_returned_ns - row["sent_ns"],
+                rpc_returned_ns=rpc_returned_ns,
+                proof_completed_ns=proof_completed_ns,
+                proof_wait_ns=None
+                if rpc_returned_ns is None or proof_completed_ns is None
+                else proof_completed_ns - rpc_returned_ns,
+                logical_wait_ns=now - row["sent_ns"],
                 total_wait_ns=now - row["scheduled_ns"],
             )
         )
@@ -242,4 +259,98 @@ class Ledger:
             dispatch_pending=dispatched,
             counts_closed=closed and dispatched == 0,
             provisional_counts_closed=closed,
+        )
+
+
+def audit_s_window(path, start_ns):
+    """Recompute S admission from raw W rows, RPC results and writer proofs."""
+    from r3_14_perf04 import STEPS
+
+    rows = {k: [] for k in ("offered", "sent", "completed", "not_sent")}
+    facts = defaultdict(Counter)
+    unexpected = []
+    with path.open() as stream:
+        for line in stream:
+            row = json.loads(line)
+            kind = row.get("kind")
+            if row.get("role") == "W" and kind in rows:
+                rows[kind].append(row)
+            if kind == "expired_range":
+                unexpected.append("expired grid range")
+            if kind == "role_event":
+                event = row["event"]
+                if event["role"] == "W" and event["kind"] in (
+                    "rpc",
+                    "rpc_result",
+                    "proof_completed",
+                ):
+                    facts[event["id"]][event["kind"]] += 1
+                    if event["kind"] == "rpc" and event["outcome"] != "returned":
+                        unexpected.append("transport not returned")
+                    if event["kind"] == "rpc_result" and event["flag"] != 0:
+                        unexpected.append("business error")
+    problems = list(dict.fromkeys(unexpected))
+    offered = rows["offered"]
+    if len(offered) != 600 or any(
+        r["scheduled_ns"] != start_ns + i * 100_000_000
+        or r["stage"] != i % 10
+        or r["operation"] != STEPS[i % 10][0]
+        for i, r in enumerate(offered)
+    ):
+        problems.append("raw 600-slot grid mismatch")
+    ids = {r["id"] for r in offered}
+    if len(ids) != 600 or rows["not_sent"]:
+        problems.append("missing/duplicate/unsent W slots")
+    seconds = Counter()
+    for row in rows["sent"]:
+        seconds[(row["sent_ns"] - start_ns) // 1_000_000_000] += 1
+    if seconds != Counter({i: 10 for i in range(60)}):
+        problems.append("raw per-second sent mismatch")
+    for kind in ("sent", "completed"):
+        if len(rows[kind]) != 600 or {r["id"] for r in rows[kind]} != ids:
+            problems.append("raw " + kind + " identities mismatch")
+    if any(
+        r.get("outcome") != "success" or not r.get("effective")
+        for r in rows["completed"]
+    ):
+        problems.append("raw effective completion mismatch")
+    if any(
+        facts[rid] != Counter(rpc=1, rpc_result=1, proof_completed=1) for rid in ids
+    ):
+        problems.append("raw RPC/business/proof correlation mismatch")
+    return dict(
+        problems=problems,
+        counts={k: len(v) for k, v in rows.items()},
+        sent_by_second=dict(sorted(seconds.items())),
+        rpc_business_proof_ids=len(facts),
+    )
+
+
+class SequenceWindow:
+    """Bounded receipt window for GC-reentrant L producers; no loss is hidden."""
+
+    def __init__(self, capacity=8192):
+        self.capacity, self.next, self.received = capacity, 1, 0
+        self.waiting = set()
+
+    def accept(self, sequence):
+        if sequence < self.next or sequence in self.waiting:
+            raise RuntimeError("duplicate L producer sequence")
+        if sequence >= self.next + self.capacity:
+            raise RuntimeError("L sequence window exceeded")
+        self.waiting.add(sequence)
+        self.received += 1
+        while self.next in self.waiting:
+            self.waiting.remove(self.next)
+            self.next += 1
+
+    def final(self, produced):
+        return dict(
+            known=not self.waiting
+            and self.received == produced
+            and self.next == produced + 1,
+            received=self.received,
+            next_sequence=self.next,
+            unresolved_sequences=sorted(self.waiting),
+            capacity=self.capacity,
         )

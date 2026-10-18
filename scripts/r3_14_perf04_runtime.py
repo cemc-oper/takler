@@ -98,6 +98,7 @@ class Engine:
         self.stopped = None
         self.last_child_ns = start_ns
         self.templates = templates or {}
+        self.phase_deadline_ns = self.grid.end_ns + 30 * NS
         self.cursors = dict(batch=10, structure=60, since=0, detail=0, status=0)
 
     def stop(self, reason):
@@ -131,7 +132,15 @@ class Engine:
             self.ledger.not_sent(row, reason)
             return False
         self.ledger.dispatch(row)
-        job = dict(row, payload=payload, reservation=asdict(token) if token else None)
+        job = dict(
+            row,
+            payload=payload,
+            reservation=asdict(token) if token else None,
+            rpc_deadline_ns=min(
+                self.phase_deadline_ns,
+                row["dispatch_ns"] + (60 if row["channel"] == "verify" else 10) * NS,
+            ),
+        )
         if token:
             job["credentials"] = self.identities[row["path"]]
         elif row["channel"] == "detail":
@@ -188,7 +197,12 @@ class Engine:
             self.ledger.emit(dict(kind="ignored_callback", id=rid))
             return
         row, token = self.requests[rid]
-        if event["kind"] == "verification_node":
+        if event["kind"] in (
+            "verification_node",
+            "verification_fragment",
+            "rpc_result",
+            "proof_completed",
+        ):
             self.ledger.emit(event)
             return
         if event["kind"] == "query_reset":
@@ -196,7 +210,7 @@ class Engine:
             return
         if event["kind"] == "rpc":
             self.ledger.bump("rpc_completed", row)
-            if event["outcome"] != "success":
+            if event["outcome"] not in ("success", "returned"):
                 self.ledger.bump("rpc_failed", row)
             self.ledger.emit(
                 dict(
@@ -241,7 +255,14 @@ class Engine:
                     effective = False
             if not effective and outcome == "success":
                 outcome = "invalid_effect"
-            self.ledger.completed(rid, event["at_ns"], outcome, effective)
+            self.ledger.completed(
+                rid,
+                event["at_ns"],
+                outcome,
+                effective,
+                rpc_returned_ns=event.get("rpc_returned_ns"),
+                proof_completed_ns=event.get("proof_completed_ns"),
+            )
             if token:
                 if outcome != "success":
                     self.pool.finish(token, success=False)
@@ -414,7 +435,12 @@ class Engine:
         row = self._row(
             "full_verify", "verify", now, min(deadline_ns, now + 60 * NS), now
         )
-        return self._submit(row, {})
+        old = self.phase_deadline_ns
+        self.phase_deadline_ns = min(deadline_ns, now + 60 * NS)
+        try:
+            return self._submit(row, {})
+        finally:
+            self.phase_deadline_ns = old
 
     def finish(self):
         return dict(

@@ -120,6 +120,68 @@ def verify_view(view, expected_paths=None, pool=None, sentinel=None):
     return True
 
 
+def record_fragments(request_id, ordinal, record):
+    """Preserve complete records across the unchanged 16 KiB event channel."""
+    import base64
+
+    raw = canonical(record)
+    if len(raw) > 1024**2:
+        raise ValueError("S verification record exceeds 1 MiB")
+    digest = hashlib.sha256(raw).hexdigest()
+    for offset in range(0, len(raw), 6144):
+        yield dict(
+            kind="verification_fragment",
+            id=request_id,
+            record_ordinal=ordinal,
+            offset=offset,
+            total_bytes=len(raw),
+            sha256=digest,
+            data_base64=base64.b64encode(raw[offset : offset + 6144]).decode(),
+        )
+
+
+class RecordAssembler:
+    """One bounded record at a time; the caller streams completed nodes to disk."""
+
+    def __init__(self):
+        self.ordinal = 0
+        self.data = bytearray()
+        self.identity = None
+
+    def accept(self, event):
+        import base64
+
+        identity = (
+            event["id"],
+            event["record_ordinal"],
+            event["total_bytes"],
+            event["sha256"],
+        )
+        if not 0 < identity[2] <= 1024**2 or identity[1] != self.ordinal:
+            raise ValueError("verification ordinal/size mismatch")
+        if self.identity is None:
+            self.identity = identity
+        if identity != self.identity or event["offset"] != len(self.data):
+            raise ValueError("verification fragment identity/offset mismatch")
+        part = base64.b64decode(event["data_base64"], validate=True)
+        if not part or len(part) > 6144 or len(self.data) + len(part) > identity[2]:
+            raise ValueError("verification fragment length mismatch")
+        self.data.extend(part)
+        if len(self.data) != identity[2]:
+            return None
+        if hashlib.sha256(self.data).hexdigest() != identity[3]:
+            raise ValueError("verification fragment digest mismatch")
+        record = json.loads(self.data)
+        self.ordinal += 1
+        self.data.clear()
+        self.identity = None
+        return record
+
+    def finish(self, count):
+        if self.data or self.identity is not None or self.ordinal != count:
+            raise ValueError("verification fragments incomplete")
+
+
 def checkpoint_equivalence(path, expected_version):
     """Validate main OR backup independently without starting a restore service."""
     from takler.serialization.checkpoint import restore_checkpoint
@@ -457,6 +519,7 @@ class HandoffServer:
 
     async def _serve(self, reader, writer):
         import asyncio
+        import time
 
         task = asyncio.current_task()
         if len(self.connections) >= 256:
@@ -471,12 +534,25 @@ class HandoffServer:
             if len(raw) > 1024:
                 raise ValueError("handoff request bound")
             request = json.loads(raw)
+            deadline = min(
+                time.monotonic_ns() + int(max(0, self.remaining()) * 1e9),
+                request.get("rpc_deadline_ns", 2**63 - 1),
+            )
+            if time.monotonic_ns() >= deadline:
+                raise TimeoutError("handoff server absolute deadline")
             value = self.verifier.handoff(request)
             response = canonical(value) + b"\n"
             if len(response) > 65536:
                 raise ValueError("handoff response bound")
             writer.write(response)
-            await asyncio.wait_for(writer.drain(), min(left, max(0, self.remaining())))
+            await asyncio.wait_for(
+                writer.drain(),
+                min(
+                    left,
+                    max(0, self.remaining()),
+                    max(0, (deadline - time.monotonic_ns()) / 1e9),
+                ),
+            )
         finally:
             self.connections.discard(task)
             writer.close()
@@ -493,28 +569,49 @@ class HandoffServer:
 
 
 class HandoffClient:
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, path, clock=None, check=lambda: None):
+        import time
+
+        self.path, self.clock, self.check = path, clock or time.monotonic_ns, check
 
     def __call__(self, job, timeout=10):
         import socket
 
-        request = dict(path=job["path"], reservation=job.get("reservation"))
+        request = dict(
+            path=job["path"],
+            reservation=job.get("reservation"),
+            rpc_deadline_ns=job.get("rpc_deadline_ns", 2**63 - 1),
+        )
         raw = canonical(request) + b"\n"
         if len(raw) > 1024:
             raise ValueError("handoff request bound")
+        deadline = min(
+            job.get("rpc_deadline_ns", 2**63 - 1),
+            self.clock() + int(min(10, timeout) * 1e9),
+        )
+
+        def remaining():
+            self.check()
+            left = (deadline - self.clock()) / 1e9
+            if left <= 0:
+                raise TimeoutError("handoff absolute deadline")
+            return left
+
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.settimeout(min(10, timeout))
+            sock.settimeout(remaining())
             sock.connect(str(self.path))
+            sock.settimeout(remaining())
             sock.sendall(raw)
             data = bytearray()
             while b"\n" not in data:
+                sock.settimeout(remaining())
                 chunk = sock.recv(min(4096, 65537 - len(data)))
                 if not chunk:
                     raise ValueError("incomplete handoff response")
                 data.extend(chunk)
                 if len(data) > 65536:
                     raise ValueError("handoff response bound")
+        remaining()
         return json.loads(data)
 
 
@@ -601,6 +698,7 @@ class CheckpointAudit:
         self.pending = {}
         self.main = self.backup = None
         self.jobs = queue.Queue(3)
+        self.fd_lock = threading.Lock()
         self.stop = threading.Event()
         self.failure = None
         self.originals = []
@@ -639,16 +737,19 @@ class CheckpointAudit:
 
             result = publish(sequence, prepared)
             source = self.pending.pop(sequence, None)
-            if result[0] and result[1] and source is not None:
-                self.backup, self.main = self.main, source[0]
-                fd = os.open(manager.checkpoint_file, os.O_RDONLY)
-                try:
-                    self.jobs.put_nowait((fd, sequence, EXIT_SAVE.get()))
-                except queue.Full:
-                    os.close(fd)
-                    self.failure = "checkpoint archive capacity exceeded"
-            elif not result[0]:
-                self.failure = "periodic/exit checkpoint failure"
+            with self.fd_lock:
+                if self.failure:
+                    return result
+                if result[0] and result[1] and source is not None:
+                    self.backup, self.main = self.main, source[0]
+                    fd = os.open(manager.checkpoint_file, os.O_RDONLY)
+                    try:
+                        self.jobs.put_nowait((fd, sequence, EXIT_SAVE.get()))
+                    except queue.Full:
+                        os.close(fd)
+                        self.failure = "checkpoint archive capacity exceeded"
+                elif not result[0]:
+                    self.failure = "periodic/exit checkpoint failure"
             return result
 
         for name, replacement in [
@@ -672,19 +773,19 @@ class CheckpointAudit:
                 digest = hashlib.sha256()
                 size = 0
                 path = self.directory / f"checkpoint-{sequence:04d}.check"
-                target_fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                with (
-                    os.fdopen(fd, "rb") as source,
-                    os.fdopen(target_fd, "wb") as target,
-                ):
-                    while chunk := source.read(1024**2):
-                        size += len(chunk)
-                        if size > 1024**3:
-                            raise ValueError("checkpoint evidence exceeds 1 GiB")
-                        target.write(chunk)
-                        digest.update(chunk)
-                    target.flush()
-                    os.fsync(target.fileno())
+                with os.fdopen(fd, "rb") as source:
+                    target_fd = os.open(
+                        path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                    )
+                    with os.fdopen(target_fd, "wb") as target:
+                        while chunk := source.read(1024**2):
+                            size += len(chunk)
+                            if size > 1024**3:
+                                raise ValueError("checkpoint evidence exceeds 1 GiB")
+                            target.write(chunk)
+                            digest.update(chunk)
+                        target.flush()
+                        os.fsync(target.fileno())
                 self.record(
                     dict(
                         kind="checkpoint_archive",
@@ -697,6 +798,15 @@ class CheckpointAudit:
                 )
         except BaseException as exc:
             self.failure = type(exc).__name__
+            self.stop.set()
+        finally:
+            with self.fd_lock:
+                while True:
+                    try:
+                        fd, _, _ = self.jobs.get_nowait()
+                    except queue.Empty:
+                        break
+                    os.close(fd)
 
     def check(self):
         if self.failure:

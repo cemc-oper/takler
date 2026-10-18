@@ -9,6 +9,19 @@ import queue
 import time
 
 
+def public_event(value):
+    """Credentials cross private IPC only, including when archiving raw events."""
+    if isinstance(value, dict):
+        return {
+            k: public_event(v)
+            for k, v in value.items()
+            if k not in ("password", "job_password")
+        }
+    if isinstance(value, list):
+        return [public_event(v) for v in value]
+    return value
+
+
 ROLE_CAPS = dict(W=250, R=16, C=2, Q=4)
 
 
@@ -35,6 +48,7 @@ def execute(job, transport, emit, clock=time.monotonic_ns):
         )
         if not sent:
             raise ValueError("transport returned without sending")
+        timing = result.pop("_timing", {})
         outcome = "success" if result.get("flag", 0) == 0 else "error"
         emit(
             dict(
@@ -44,6 +58,7 @@ def execute(job, transport, emit, clock=time.monotonic_ns):
                 outcome=outcome,
                 result=result,
                 channel=job["channel"],
+                **timing,
             )
         )
     except Exception as exc:
@@ -176,10 +191,18 @@ class ProcessRoles:
     """
 
     def __init__(
-        self, factory, registry, watchdog, context=None, observation_socket=None
+        self,
+        factory,
+        registry,
+        watchdog,
+        context=None,
+        observation_socket=None,
+        event_sink=None,
     ):
         watchdog.arm()  # Before semaphores, queues, or any other helper process.
         self.context = context or multiprocessing.get_context("fork")
+        self.event_sink = event_sink
+        self.handshakes = {}
         self.stop = self.context.Event()
         self.incoming = {r: self.context.Queue(ROLE_CAPS[r]) for r in ROLE_CAPS}
         self.outgoing = self.context.Queue(256)
@@ -218,6 +241,8 @@ class ProcessRoles:
             except queue.Empty:
                 break
             role = event["role"]
+            if self.event_sink is not None:
+                self.event_sink(dict(kind="role_event", event=public_event(event)))
             if event["sequence"] != self.sequence[role] + 1:
                 raise RuntimeError("critical role sequence loss")
             self.sequence[role] = event["sequence"]
@@ -253,7 +278,7 @@ class ProcessRoles:
 
         lifecycle.wait(lambda: len(replies()) == 4, guard)
         after = time.monotonic_ns()
-        return {
+        result = {
             e["role"]: dict(
                 stage=stage,
                 pid=e["pid"],
@@ -265,6 +290,10 @@ class ProcessRoles:
             )
             for e in replies()
         }
+        self.handshakes[stage] = result
+        if self.event_sink is not None:
+            self.event_sink(dict(kind="role_handshake", stage=stage, roles=result))
+        return result
 
     def audit(self):
         problems = []
@@ -308,10 +337,18 @@ class GrpcSingleAttempt:
     This class never launches a service and is tested with substituted stubs.
     """
 
-    def __init__(self, client_factory, proof_handoff, rpc_sink=lambda row: None):
+    def __init__(
+        self,
+        client_factory,
+        proof_handoff,
+        rpc_sink=lambda row: None,
+        clock=time.monotonic_ns,
+        check=lambda: None,
+    ):
         import threading
 
         self.local = threading.local()
+        self.clock, self.check = clock, check
         self.client_factory, self.proof_handoff = client_factory, proof_handoff
         self.rpc_sink = rpc_sink
         self.clients = []
@@ -336,32 +373,47 @@ class GrpcSingleAttempt:
         original_call = transport._call
         original_query = transport.query
         marked = False
-        deadline_ns = None
+        deadline_ns = min(
+            self.clock() + int(timeout * 1e9), job.get("rpc_deadline_ns", 2**63 - 1)
+        )
         ordinal = 0
+        last_returned_ns = None
+
+        def remaining():
+            self.check()
+            left = (deadline_ns - self.clock()) / 1e9
+            if left <= 0:
+                raise TimeoutError("logical request absolute deadline")
+            return left
 
         def mark():
-            nonlocal marked, deadline_ns
+            nonlocal marked
+            remaining()
             if not marked:
                 boundary()
                 marked = True
-                deadline_ns = min(
-                    time.monotonic_ns() + int(timeout * 1e9),
-                    job.get("rpc_deadline_ns", 2**63 - 1),
-                )
 
         def actual_rpc(method, rpc, *args, **kwargs):
-            nonlocal ordinal
+            nonlocal ordinal, last_returned_ns
             mark()
-            started = time.monotonic_ns()
-            left = (deadline_ns - started) / 1e9
-            if left <= 0:
-                raise TimeoutError("logical request deadline")
+            started = self.clock()
+            left = remaining()
             kwargs["timeout"] = min(timeout, left, kwargs.get("timeout", timeout))
             ordinal += 1
             outcome = "unknown"
+            business_kind = None
+            business_code = None
             try:
                 response = rpc(*args, **kwargs)
-                outcome = "success" if getattr(response, "flag", 0) == 0 else "error"
+                last_returned_ns = self.clock()
+                outcome = "returned"  # A transport response is not a business success.
+                if hasattr(response, "json"):
+                    from takler.server.protocol.query_adapter import query_from_pb2
+
+                    document = query_from_pb2(response)
+                    business_kind = document.kind
+                    business_code = getattr(document, "code", None)
+                remaining()
                 return response
             finally:
                 self.rpc_sink(
@@ -371,10 +423,45 @@ class GrpcSingleAttempt:
                         ordinal=ordinal,
                         method=method,
                         started_ns=started,
-                        at_ns=time.monotonic_ns(),
+                        at_ns=self.clock(),
                         outcome=outcome,
+                        business_kind=business_kind,
+                        business_code=business_code,
                     )
                 )
+
+        def business(result, proof=False):
+            remaining()
+            self.rpc_sink(
+                dict(
+                    kind="rpc_result",
+                    id=job["id"],
+                    at_ns=self.clock(),
+                    flag=result.get("flag"),
+                    rpc_returned_ns=last_returned_ns,
+                )
+            )
+            proof_done = None
+            if proof and not result.get("flag"):
+                result.update(
+                    self.proof_handoff(
+                        dict(job, rpc_deadline_ns=deadline_ns), min(10, remaining())
+                    )
+                )
+                remaining()
+                proof_done = self.clock()
+                self.rpc_sink(
+                    dict(
+                        kind="proof_completed",
+                        id=job["id"],
+                        at_ns=proof_done,
+                        rpc_returned_ns=last_returned_ns,
+                    )
+                )
+            result["_timing"] = dict(
+                rpc_returned_ns=last_returned_ns, proof_completed_ns=proof_done
+            )
+            return result
 
         def call(operation, rpc, request, kind):
             def actual(*args, **kwargs):
@@ -407,16 +494,25 @@ class GrpcSingleAttempt:
             if job["channel"] == "verify":
                 from r3_14_perf04_verify import stream_fixed_view
 
-                deadline = time.monotonic_ns() + int(min(60, timeout) * 1e9)
+                from r3_14_perf04_verify import record_fragments
+
+                record_number = 0
+
+                def emit_record(record):
+                    nonlocal record_number
+                    for fragment in record_fragments(job["id"], record_number, record):
+                        remaining()
+                        self.rpc_sink(fragment)
+                    record_number += 1
+
                 result = stream_fixed_view(
                     transport,
-                    deadline,
-                    lambda: None,
-                    lambda record: self.rpc_sink(
-                        dict(kind="verification_node", id=job["id"], record=record)
-                    ),
+                    deadline_ns,
+                    remaining,
+                    emit_record,
+                    clock=self.clock,
                 )
-                return dict(flag=0, verification=result)
+                return business(dict(flag=0, verification=result))
             if job["channel"] in ("since", "detail"):
                 query = self.local.query
                 if self.local.view is None:
@@ -438,7 +534,7 @@ class GrpcSingleAttempt:
                             )
                         )
                         self.local.view = query.read_snapshot()
-                    return dict(flag=0)
+                    return business(dict(flag=0))
                 from takler.protocol.query_v1 import DetailRequest
 
                 view = self.local.view
@@ -461,11 +557,14 @@ class GrpcSingleAttempt:
                     or reply.flow_generation != request.flow_generation
                 ):
                     raise ValueError("detail identity mismatch")
-                return dict(flag=0)
+                return business(dict(flag=0))
             code = Command.SERVER_STATUS if op == "status" else Command(op)
             # Child passwords are request-local, never environment mutation.
             if job["channel"] == "child":
-                payload = adapter.request_to_pb2(code, job["payload"])
+                wire_payload = dict(job["payload"])
+                if code == Command.METER:
+                    wire_payload["meter_value"] = str(wire_payload["meter_value"])
+                payload = adapter.request_to_pb2(code, wire_payload)
                 rpc = getattr(transport.stub, adapter.GRPC_METHOD_BY_COMMAND[code])
                 metadata = [("takler-pass", job["credentials"]["password"])]
                 response = actual_rpc(
@@ -475,19 +574,10 @@ class GrpcSingleAttempt:
             else:
                 reply = transport.call(code, job["payload"])
             result = reply.model_dump(mode="json")
-            if (
-                job["channel"] in ("child", "rotation", "batch", "structure")
-                and not reply.flag
-            ):
-                # Normal RPC reply does not expose passwords. Only this private
-                # bounded writer handoff can release a task into a new attempt.
-                result.update(
-                    self.proof_handoff(
-                        job,
-                        min(timeout, max(0, (deadline_ns - time.monotonic_ns()) / 1e9)),
-                    )
-                )
-            return result
+            return business(
+                result,
+                proof=job["channel"] in ("child", "rotation", "batch", "structure"),
+            )
         finally:
             transport._call = original_call
             transport.query = original_query
@@ -498,3 +588,4 @@ class GrpcSingleAttempt:
         for client in self.clients:
             client.close_channel()
         self.clients.clear()
+        self.local.__dict__.clear()

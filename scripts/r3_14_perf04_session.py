@@ -20,6 +20,7 @@ class Session:
         emit,
         clock=time.monotonic_ns,
         sleep=time.sleep,
+        step_seconds=0.001,
     ):
         self.variant, self.registry, self.watchdog, self.guard, self.emit = (
             variant,
@@ -29,6 +30,9 @@ class Session:
             emit,
         )
         self.clock, self.sleep = clock, sleep
+        if not 0 < step_seconds <= 0.005:
+            raise ValueError("coordinator step exceeds 5ms safety cadence")
+        self.step_seconds = step_seconds
         origin = (
             getattr(
                 watchdog, "hard_ns", clock() + (320 if variant == "S" else 440) * NS
@@ -38,6 +42,7 @@ class Session:
         self.lifecycle = Lifecycle(variant, origin, clock=clock)
         self.engine = None
         self.outcome = None
+        self.failures = []
 
     def check(self):
         if self.clock() >= self.lifecycle.operational_ns:
@@ -59,7 +64,7 @@ class Session:
             action()
             if self.engine is not None and self.engine.stopped:
                 raise RuntimeError(self.engine.stopped)
-            self.sleep(min(0.001, max(0, (end_ns - self.clock()) / NS)))
+            self.sleep(min(self.step_seconds, max(0, (end_ns - self.clock()) / NS)))
         self.check()
 
     def phase(self, name, start_ns, end_ns):
@@ -121,6 +126,11 @@ class Session:
             )
         except BaseException as exc:
             self.outcome = type(exc).__name__ + ": " + str(exc)
+            self.failures.append(
+                dict(
+                    phase=self.lifecycle.phase, reason=self.outcome, at_ns=self.clock()
+                )
+            )
             if self.engine:
                 self.engine.stop(self.outcome)
         finally:
@@ -134,12 +144,16 @@ class Session:
                     )
                 }
                 self.outcome = "cleanup failure: " + type(exc).__name__
+                self.failures.append(
+                    dict(phase="cleanup", reason=self.outcome, at_ns=self.clock())
+                )
             if cleanup.get("live_registered") or self.clock() > self.lifecycle.hard_ns:
                 self.outcome = "cleanup incomplete or actual lifecycle budget breach"
             self.emit(dict(kind="exit_reason", reason=self.outcome, at_ns=self.clock()))
         return dict(
             task_id="PERF-04",
             exit_reason=self.outcome,
+            failures=self.failures,
             workload=None if self.engine is None else self.engine.finish(),
             registry=self.registry.summary(),
         )
