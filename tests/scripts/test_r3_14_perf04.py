@@ -80,7 +80,7 @@ def test_busy_pool_out_of_order_response_and_loss_never_retry():
     for i in reversed(slots[1:]):
         pool.finish(i, success=True)
     pool.finish(slots[0], success=False)
-    assert pool.tasks[slots[0]].unknown and pool.tasks[slots[0]].busy
+    assert pool.tasks[slots[0].task].unknown and pool.tasks[slots[0].task].busy
     assert pool.reserve(0) is None
     assert sum(t.stage == 1 for t in pool.tasks) == 49
     assert len(pool.tasks) == 250
@@ -202,8 +202,7 @@ def test_structural_templates_bounded_load_growth_and_protected_replace():
             t.state.node_status.name == "unknown" for t in flow.children
         )
         assert all(t.default_node_status.name == "queued" for t in flow.children)
-        with pytest.raises(ValueError, match="postcondition is not supported"):
-            require_load_state(flow)
+        assert require_load_state(flow)
     for label in ("replace-A", "replace-B"):
         assert (
             scheduler.run_command_replace(

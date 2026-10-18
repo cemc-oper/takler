@@ -287,6 +287,16 @@ def collector(options):
         ),
         flush=True,
     )
+    perf04 = getattr(options, "perf04", False)
+    perf04_health = None
+    if perf04:
+        from r3_14_perf04_safety import Perf04Health
+
+        perf04_health = Perf04Health(
+            Path(options.run_dir) / "collector-health.json",
+            Path(options.run_dir).name,
+            os.getpid(),
+        )
     tracked = {}
     limits_state = {}
     limits = json.loads((Path(options.run_dir) / "config.json").read_text()).get(
@@ -363,7 +373,9 @@ def collector(options):
                         pending.extend(line)
                         batch_peak = max(batch_peak, len(pending))
                         event_count += 1
-                        if options.perf08a:
+                        if perf04_health is not None:
+                            perf04_health.accept_legacy(event)
+                        elif options.perf08a:
                             update_health(health, event)
             if now - last_sample >= 0.1:
                 take_pss = now - last_pss >= 1
@@ -397,6 +409,9 @@ def collector(options):
                 last_sample = now
                 if take_pss:
                     last_pss = now
+            if perf04 and now - last_health >= 1:
+                perf04_health.publish(time.monotonic_ns())
+                last_health = now
             if options.perf08a and now - last_health >= 1:
                 publish_health(
                     Path(options.run_dir) / "collector-health.json",
@@ -814,6 +829,7 @@ def main():
     parser.add_argument("--mode", choices=["O", "L", "D"], default="L")
     parser.add_argument("--role", choices=["F", "F1", "F2", "S", "Q"])
     parser.add_argument("--perf08a", action="store_true")
+    parser.add_argument("--perf04", action="store_true")
     parser.add_argument("--tasks", type=int, default=1000)
     parser.add_argument("--summary-period-ns", type=int, default=1_000_000_000)
     parser.add_argument("--idle", action="store_true")
@@ -824,7 +840,11 @@ def main():
     if options.perf08a:
         # Register the diagnostic kinds in every PERF-08A producer/collector.
         import r3_14_perf08a_hooks  # noqa: F401
-    if options.tasks != 1000 and not options.perf08a:
+    if options.perf04 and options.kind != "collector":
+        parser.error("PERF-04 flag is collector-only; no service authorization")
+    if options.perf04:
+        import r3_14_perf08a_hooks  # noqa: F401 - shared checkpoint event kinds only
+    if options.tasks != 1000 and not (options.perf08a or options.perf04):
         parser.error("tree size override is PERF-08A-only")
     if options.lag_ablation and (options.kind != "service" or options.mode != "L"):
         parser.error("lag ablation is a service-only L diagnostic")

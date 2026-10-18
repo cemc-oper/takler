@@ -3,6 +3,7 @@
 from collections import Counter
 from dataclasses import dataclass
 import random
+import itertools
 
 NS = 1_000_000_000
 SEED = 20261018
@@ -90,6 +91,15 @@ def candidates(size, dispersed):
     return pool, sentinel
 
 
+@dataclass(frozen=True)
+class Reservation:
+    serial: int
+    task: int
+    stage: int
+    attempt: str
+    operation: str
+
+
 @dataclass
 class SlotTask:
     path: str
@@ -97,42 +107,78 @@ class SlotTask:
     attempt: str
     busy: bool = False
     unknown: bool = False
+    reservation: Reservation | None = None
 
 
 class Pool:
-    """In-memory reservation model; no production transport is wired here."""
+    """One current identity and reservation per task; no historical callback map."""
 
-    def __init__(self, paths):
+    def __init__(self, paths, identities=None):
         if len(paths) != 250 or len(set(paths)) != 250:
             raise ValueError("exactly 250 distinct pool tasks required")
-        self.tasks = [SlotTask(p, i // 25, f"initial-{i}") for i, p in enumerate(paths)]
-        self.next = [0] * 10
+        self.tasks = [
+            SlotTask(
+                p, i // 25, identities[p]["attempt"] if identities else f"initial-{i}"
+            )
+            for i, p in enumerate(paths)
+        ]
+        self.next = [0] * 12
+        self.serial = itertools.count(1)
 
     def reserve(self, stage):
         for offset in range(250):
             i = (self.next[stage] + offset) % 250
             task = self.tasks[i]
             if task.stage == stage and not task.busy and not task.unknown:
-                task.busy = True
+                operation = (
+                    STEPS[stage][0]
+                    if stage < 10
+                    else "requeue"
+                    if stage == 10
+                    else "run"
+                )
+                token = Reservation(
+                    next(self.serial), i, stage, task.attempt, operation
+                )
+                task.busy, task.reservation = True, token
                 self.next[stage] = (i + 1) % 250
-                return i
+                return token
         return None
 
-    def finish(self, i, *, success, attempt=None):
-        task = self.tasks[i]
-        if not task.busy:
-            raise ValueError("completion without reservation")
+    def current(self, token):
+        if not isinstance(token, Reservation) or not 0 <= token.task < 250:
+            return False
+        task = self.tasks[token.task]
+        return (
+            not task.unknown
+            and task.busy
+            and task.reservation == token
+            and task.stage == token.stage
+            and task.attempt == token.attempt
+        )
+
+    def cancel_unsent(self, token):
+        if not self.current(token):
+            return False
+        task = self.tasks[token.task]
+        task.busy, task.reservation = False, None
+        return True
+
+    def finish(self, token, *, success, attempt=None):
+        if not self.current(token):
+            return False
+        task = self.tasks[token.task]
         if not success:
-            task.unknown = True
-            # Keep the reservation: an unknown write must never be rotated/retried.
-            return
-        if task.stage == 10:
+            task.unknown, task.reservation = True, None
+            return True
+        if token.stage == 11:
             if not attempt or attempt == task.attempt:
                 raise ValueError("rotation must establish a new attempt")
             task.attempt, task.stage = attempt, 0
         else:
             task.stage += 1
-        task.busy = False
+        task.busy, task.reservation = False, None
+        return True
 
 
 def prefix(stage):
@@ -162,12 +208,18 @@ def simulate(delay_ns=0, *, pauses=()):
             now = pauses[pause_index][1]
             pause_index += 1
         while pending and pending[0][0] <= now:
-            _, _, i, control = heapq.heappop(pending)
-            pool.finish(i, success=True, attempt=f"rotated-{seq}" if control else None)
+            _, _, token, control = heapq.heappop(pending)
+            pool.finish(
+                token,
+                success=True,
+                attempt=f"rotated-{seq}" if token.stage == 11 else None,
+            )
             seq += 1
-            if pool.tasks[i].stage == 10:
-                pool.tasks[i].busy = True
-                heapq.heappush(pending, (now + 2 * delay_ns, seq, i, True))
+            if pool.tasks[token.task].stage in (10, 11):
+                stage = pool.tasks[token.task].stage
+                pool.next[stage] = token.task
+                rotation = pool.reserve(stage)
+                heapq.heappush(pending, (now + delay_ns, seq, rotation, True))
             counts["control_completed" if control else "completed"] += 1
         expired, index = grid.poll(now)
         counts["offered"] += expired[1] - expired[0]
