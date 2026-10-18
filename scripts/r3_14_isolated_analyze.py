@@ -155,7 +155,7 @@ def analyze(run_dir):
     producers = {}
     evidence_problems = []
     for role, data in manifest["processes"].items():
-        if role not in {"server", "F", "S", "Q"}:
+        if role not in {"server", "F", "F1", "F2", "S", "Q"}:
             continue
         path = run_dir / f"{role}-final.json"
         if not path.exists():

@@ -103,19 +103,27 @@ async def service(options):
         checkpoint_interval=10,
     )
     server.scheduler.interval_main_loop = 0.05
-    bunch, _ = make_tree(1000, False)
+    bunch, _ = make_tree(options.tasks, False)
     for flow in bunch.flows.values():
         flow.begun = False
         server.bunch.add_flow(flow)
     emitter = observation = None
     if options.mode != "O":
         emitter = Emitter(options.socket, options.capacity)
+        if options.perf08a:
+            from r3_14_perf08a_hooks import install_capture_link
+
+            install_capture_link(server, emitter)
         observation = ServiceObservation(
             server,
             emitter,
             options.mode == "D",
             lag_mode=options.lag_ablation or "record",
         ).install()
+        if options.perf08a:
+            from r3_14_perf08a_hooks import install_checkpoint_boundaries
+
+            install_checkpoint_boundaries(observation)
     await server.start()
     run_task = asyncio.create_task(server.run())
     print(
@@ -125,6 +133,8 @@ async def service(options):
                 pid=os.getpid(),
                 fresh_gc=fresh_gc,
                 ready_gc=dict(enabled=gc.isenabled(), threshold=gc.get_threshold()),
+                tree_tasks=options.tasks,
+                tree_flows=len(bunch.flows),
                 source=__import__("takler").__file__,
                 event_loop_type=type(asyncio.get_running_loop()).__qualname__,
                 lag_timer_backend=(
@@ -200,6 +210,9 @@ async def service(options):
             lag=None if observation is None else observation.lag_state(),
             gc=dict(enabled=gc.isenabled(), threshold=gc.get_threshold()),
             full_leases=len(server.scheduler.query_service.full_snapshots._leases),
+            background_writes=len(server.checkpoint_manager._background_writes),
+            background_last_reference="unknown",
+            summary_snapshots=len(server.scheduler.query_service._snapshots),
             checkpoint_failure=server.checkpoint_manager.checkpoint_failure_reason,
             checkpoint_last_at=server.checkpoint_manager.last_checkpoint_at,
         ),
@@ -274,6 +287,10 @@ def collector(options):
         flush=True,
     )
     tracked = {}
+    limits_state = {}
+    limits = json.loads((Path(options.run_dir) / "config.json").read_text()).get(
+        "resource_limits"
+    )
     input_buffer = bytearray()
     event_count = 0
     pending = bytearray()
@@ -281,6 +298,8 @@ def collector(options):
     stopped = False
     last_sample = last_pss = last_flush = 0
     pause_start = pause_end = 0
+    health = dict(last_progress_ns=0, failure=None)
+    last_health = 0
     with (
         (Path(options.run_dir) / "events.jsonl").open("ab", buffering=0) as events,
         (Path(options.run_dir) / "resources.jsonl").open(
@@ -343,6 +362,29 @@ def collector(options):
                         pending.extend(line)
                         batch_peak = max(batch_peak, len(pending))
                         event_count += 1
+                        if options.perf08a:
+                            v, kind = event["values"], event["kind"]
+                            if (
+                                kind == "request"
+                                and v[2] == 0
+                                or kind == "checkpoint_publish"
+                                and v[1:4] == [1, 1, 0]
+                            ):
+                                health["last_progress_ns"] = event["at_ns"]
+                            if (
+                                kind == "request"
+                                and v[2] == 1
+                                or kind == "watchdog"
+                                or kind == "checkpoint_outcome"
+                                and not v[1]
+                            ):
+                                health["failure"] = dict(
+                                    kind=kind,
+                                    at_ns=event["at_ns"],
+                                    identity=event["identity"],
+                                )
+                            if kind == "service_state":
+                                health["service_state"] = event
             if now - last_sample >= 0.1:
                 take_pss = now - last_pss >= 1
                 pids = dict(tracked)
@@ -362,9 +404,22 @@ def collector(options):
                 resources.write(
                     json.dumps(sample, separators=(",", ":")).encode() + b"\n"
                 )
+                if options.perf08a and limits:
+                    from r3_14_perf08a_hooks import resource_violation
+
+                    violation = resource_violation(sample, limits, limits_state)
+                    if violation:
+                        save(
+                            Path(options.run_dir) / "collector-safety.json",
+                            dict(reason=violation, sample=sample),
+                        )
+                        raise RuntimeError(violation)
                 last_sample = now
                 if take_pss:
                     last_pss = now
+            if options.perf08a and now - last_health >= 1:
+                save(Path(options.run_dir) / "collector-health.json", health)
+                last_health = now
             if pending and (now - last_flush >= 0.1 or stopped):
                 events.write(pending)
                 pending.clear()
@@ -391,12 +446,17 @@ def client(options):
     emitter = Emitter(options.socket)
     clients = {}
     active = {}
+    cancellations = {}
     lock = threading.Lock()
     view = [None]
     # Exactly three persistent processes; Q channels use separate connections
     # and threads within their process to avoid serializing unrelated reads.
     channels = (
-        [1] if options.role == "F" else [2] if options.role == "S" else [3, 4, 5, 6]
+        [1]
+        if options.role in {"F", "F1", "F2"}
+        else [2]
+        if options.role == "S"
+        else [3, 4, 5, 6]
     )
     for channel in channels:
         cl = TaklerServiceClient(
@@ -430,7 +490,17 @@ def client(options):
                     response_bytes = 0
                     request_bytes = args[0].ByteSize()
                     try:
+                        if options.perf08a and _name == "ReadPage":
+                            from r3_14_perf08a_hooks import attempt_metadata
+
+                            kwargs = attempt_metadata(
+                                kwargs, os.getpid(), rid, attempt_id
+                            )
                         reply = _rpc(*args, **kwargs)
+                        if options.perf08a and _name == "ReadPage":
+                            from r3_14_perf08a_hooks import encode_reply
+
+                            encode_reply(emitter, reply, rid, _channel, attempt_id)
                         response_bytes = reply.ByteSize()
                         return reply
                     except Exception:
@@ -470,6 +540,8 @@ def client(options):
                 raise
             finally:
                 rid = active.get(_channel, (0, 0))[1]
+                if options.perf08a:
+                    cancellations[rid] = confirmed
                 emitter.emit(
                     25,
                     started,
@@ -519,8 +591,14 @@ def client(options):
                         complete = item
                     else:
                         nodes += 1
-                if complete is None or complete.total_nodes != nodes or nodes != 1002:
+                if (
+                    complete is None
+                    or complete.total_nodes != nodes
+                    or nodes != options.tasks + (options.tasks + 999) // 1000 + 1
+                ):
                     raise IntegrityError("full snapshot integrity/node count failure")
+                if options.perf08a and not cancellations.pop(request_id, False):
+                    raise IntegrityError("full cancellation not confirmed")
                 byte_count = complete.total_bytes
                 identity = complete.sha256
                 emitter.emit(
@@ -552,7 +630,7 @@ def client(options):
                         separators=(",", ":"),
                     ),
                 )
-                if nodes != 1002:
+                if nodes != options.tasks + (options.tasks + 999) // 1000 + 1:
                     raise IntegrityError("summary node count failure")
             elif channel == 3:
                 if view[0] is None:
@@ -584,7 +662,7 @@ def client(options):
         except Exception as exc:
             outcome = 1
             identity = getattr(exc, "code", None) or type(exc).__name__
-            fatal = semantic_failure(exc)
+            fatal = semantic_failure(exc) or options.perf08a
             print(
                 f"{CHANNELS[channel]} failure: {type(exc).__name__}",
                 file=sys.stderr,
@@ -625,7 +703,7 @@ def client(options):
 
     def channel_loop(channel):
         period = {
-            2: 1_000_000_000,
+            2: options.summary_period_ns,
             3: 100_000_000,
             4: 200_000_000,
             5: 1_000_000_000,
@@ -653,11 +731,15 @@ def client(options):
                 continue
             target += period
             now = time.monotonic_ns()
-            while target < min(now, end):
-                emitter.emit(20, target, now, b=channel, c=2, identity="busy_or_missed")
-                target += period
+            from r3_14_perf08a_hooks import missed_slots
+
+            for missed in missed_slots(target, now, end, period):
+                emitter.emit(20, missed, now, b=channel, c=2, identity="busy_or_missed")
+                target = missed + period
         emitter.emit(26, a=channel)
 
+    if options.perf08a and options.idle:
+        channels = []
     threads = [
         threading.Thread(
             target=channel_loop, args=(ch,), name=f"perf-{CHANNELS[ch]}", daemon=True
@@ -744,11 +826,20 @@ def main():
     parser.add_argument("--secret")
     parser.add_argument("--whitelist")
     parser.add_argument("--mode", choices=["O", "L", "D"], default="L")
-    parser.add_argument("--role", choices=["F", "S", "Q"])
+    parser.add_argument("--role", choices=["F", "F1", "F2", "S", "Q"])
+    parser.add_argument("--perf08a", action="store_true")
+    parser.add_argument("--tasks", type=int, default=1000)
+    parser.add_argument("--summary-period-ns", type=int, default=1_000_000_000)
+    parser.add_argument("--idle", action="store_true")
     parser.add_argument("--capacity", type=int, default=8192)
     parser.add_argument("--synthetic", action="store_true")
     parser.add_argument("--lag-ablation", choices=["off", "wake_only", "record"])
     options = parser.parse_args()
+    if options.perf08a:
+        # Register the diagnostic kinds in every PERF-08A producer/collector.
+        import r3_14_perf08a_hooks  # noqa: F401
+    if options.tasks != 1000 and not options.perf08a:
+        parser.error("tree size override is PERF-08A-only")
     if options.lag_ablation and (options.kind != "service" or options.mode != "L"):
         parser.error("lag ablation is a service-only L diagnostic")
     if options.kind == "service":

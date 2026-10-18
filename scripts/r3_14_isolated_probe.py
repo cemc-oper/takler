@@ -252,13 +252,14 @@ def run_one(
 ):
     if lag_ablation is not None and (mode != "L" or workload != "idle_no_clients"):
         raise ValueError("Lag ablation requires an idle L diagnostic")
+    perf08a = base.get("task_id") == "PERF-08A"
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    run_id = f"PERF-03-{stamp}-{workload}-{mode}-r{index}"
+    run_id = f"{base.get('task_id', 'PERF-03')}-{stamp}-{workload}-{mode}-r{index}"
     run_dir = root / "runs" / run_id
     run_dir.mkdir(parents=True)
     config = json.loads(json.dumps(base))
     timings = config["performance_runs"]
-    if smoke:
+    if smoke and not perf08a:
         timings.update(
             ready_baseline_no_requests_seconds=2,
             measurement_seconds=12,
@@ -292,8 +293,8 @@ def run_one(
     manifest = dict(
         schema_version="r3-perf-manifest-v2",
         run_id=run_id,
-        task_id="PERF-03",
-        decision_id="G0-2026-10-13",
+        task_id=base.get("task_id", "PERF-03"),
+        decision_id=base.get("decision_id", "G0-2026-10-13"),
         start_utc=(
             datetime.now(timezone.utc).isoformat()
             if clock_diagnostics is None
@@ -348,6 +349,13 @@ def run_one(
         if clock_diagnostics is None
         else clock_diagnostics.read("started", time.monotonic)
     )
+    deadline_timer = None
+    if perf08a:
+        from r3_14_perf08a_hooks import arm_hard_deadline
+
+        deadline_timer = arm_hard_deadline(
+            processes, timings["whole_run_max_seconds"], run_dir
+        )
     memory = Path("/proc/meminfo").read_text().splitlines()
     mem = {
         s.split(":")[0]: int(s.split()[1]) * 1024 for s in memory if len(s.split()) == 3
@@ -399,9 +407,18 @@ def run_one(
                 port_socket.bind(("127.0.0.1", 0))
                 port = port_socket.getsockname()[1]
             common = ["--run-dir", str(run_dir), "--socket", sock]
+            if perf08a:
+                common += [
+                    "--perf08a",
+                    "--tasks",
+                    "100000",
+                    "--summary-period-ns",
+                    "10000000000",
+                ]
 
             def launch(role, kind, extra):
-                env = dict(source_env, LOGNAME=f"perf-{role}", USER=f"perf-{role}")
+                owner = "F" if role in {"F1", "F2"} else role
+                env = dict(source_env, LOGNAME=f"perf-{owner}", USER=f"perf-{owner}")
                 prefix = [sys.executable]
                 if kind == "service" and profile_service:
                     prefix += [
@@ -417,7 +434,30 @@ def run_one(
                     run_dir,
                 )
                 processes.append(process)
-                ready = process.receive(max(0.1, 60 - (time.monotonic() - started)))
+                if perf08a:
+                    if role != "collector":
+                        processes[0].send(
+                            dict(
+                                command="track",
+                                pids={p.pid: p.role for p in processes}
+                                | {os.getpid(): "orchestrator"},
+                            )
+                        )
+                    while True:
+                        if clock_diagnostics is not None:
+                            clock_diagnostics.check()
+                        if reason := safety(config, swap_start):
+                            raise RuntimeError(reason)
+                        if time.monotonic() - started >= timings["startup_max_seconds"]:
+                            raise TimeoutError("startup hard limit")
+                        try:
+                            ready = process.receive(0.2)
+                            break
+                        except TimeoutError:
+                            if any(p.proc.poll() is not None for p in processes):
+                                raise RuntimeError("worker exited during startup")
+                else:
+                    ready = process.receive(max(0.1, 60 - (time.monotonic() - started)))
                 if not ready.get("ready"):
                     raise ValueError("worker not ready")
                 manifest["processes"][role] = dict(
@@ -445,8 +485,8 @@ def run_one(
                 extra.extend(["--lag-ablation", lag_ablation])
             server = launch("server", "service", extra)
             clients = []
-            if workload == "T3":
-                for role in ["F", "S", "Q"]:
+            if workload == "T3" or perf08a:
+                for role in ["S", "F1", "F2"] if perf08a else ["F", "S", "Q"]:
                     clients.append(
                         launch(
                             role,
@@ -458,6 +498,13 @@ def run_one(
                                 str(port),
                                 "--secret",
                                 str(secret),
+                                *(
+                                    ["--idle"]
+                                    if perf08a
+                                    and workload == "A"
+                                    and role in {"F1", "F2"}
+                                    else []
+                                ),
                             ],
                         )
                     )
@@ -508,13 +555,31 @@ def run_one(
                     raise RuntimeError(reason)
                 if time.monotonic() - started >= timings["whole_run_max_seconds"]:
                     raise TimeoutError("whole run hard limit")
+                if perf08a:
+                    health_path = run_dir / "collector-health.json"
+                    if health_path.exists():
+                        try:
+                            health = json.loads(health_path.read_text())
+                        except json.JSONDecodeError:
+                            health = {}
+                        if health.get("failure"):
+                            raise RuntimeError(
+                                f"collector detected failure: {health['failure']}"
+                            )
+                        latest = max(start_ns, health.get("last_progress_ns", 0))
+                        if time.monotonic_ns() - latest >= 60_000_000_000:
+                            raise RuntimeError(
+                                "60s without completed request or periodic publication"
+                            )
                 elapsed = time.monotonic() - start_ns / 1e9
                 if (
                     not midpoint_checked
                     and elapsed >= timings["measurement_seconds"] / 2
                 ):
                     if server.proc.poll() is None:
-                        manifest["measurement_gc_handshake"] = server.clock()
+                        manifest["measurement_gc_handshake"] = server.clock(
+                            timeout=10 if perf08a else 2
+                        )
                     midpoint_checked = True
                 if (
                     fault in {"client_failure", "collector_exit", "service_termination"}
@@ -586,6 +651,10 @@ def run_one(
     finally:
         for process in reversed(processes):
             manifest["cleanup"][process.role] = process.cleanup(timeout=2)
+        if deadline_timer is not None:
+            deadline_timer.cancel()
+            if (run_dir / "hard-deadline.json").exists():
+                manifest["exit_reason"] = "whole run hard limit"
         manifest["end_utc"] = (
             datetime.now(timezone.utc).isoformat()
             if clock_diagnostics is None
@@ -604,7 +673,10 @@ def run_one(
             if p.is_file() and p.name != "manifest.json"
         }
         save(run_dir / "manifest.json", manifest)
-    from r3_14_isolated_analyze import analyze
+    if perf08a:
+        from r3_14_perf08a_analyze import analyze
+    else:
+        from r3_14_isolated_analyze import analyze
 
     summary = analyze(run_dir)
     save(run_dir / "summary.json", summary)
