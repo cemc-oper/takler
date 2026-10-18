@@ -6,7 +6,7 @@ Only process-local timing wrappers change; the product checkout stays intact.
 
 import argparse
 import asyncio
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import gc
 import hashlib
 import inspect
@@ -264,7 +264,12 @@ async def worker(directory):
             ),
         )
         before = time.monotonic_ns()
-        with timed_handlers(server.scheduler, log):
+        with ExitStack() as timing:
+            timing.enter_context(timed_handlers(server.scheduler, log))
+            if config.get("run_chain_timing"):
+                from mix100k_run_timing import timed_run_chain
+
+                timing.enter_context(timed_run_chain(server.scheduler, log))
             credentials = await prepare(server.scheduler, paths, log, deadline)
         stage("prepare", before)
         before = time.monotonic_ns()
