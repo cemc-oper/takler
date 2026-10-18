@@ -70,15 +70,16 @@ def batch_targets(field):
                     )
                     attempted = True
                     operation(scheduler, single)
-                    effect = (
-                        "none"
-                        if before is not None and _snapshot(scheduler) == before
-                        else "applied"
-                    )
                     # Successful run represents acceptance even when a custom
                     # synchronous implementation leaves no serialized changes.
                     if operation.__name__ == "run_command_run":
                         effect = "applied"
+                    else:
+                        effect = (
+                            "none"
+                            if before is not None and _snapshot(scheduler) == before
+                            else "applied"
+                        )
                     item = BatchItemResult(
                         index=index,
                         target=target,

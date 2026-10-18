@@ -186,7 +186,7 @@ def test_real_worker_entry_records_run_chain_and_legal_final_state(
             counts["batch._snapshot"]
             == counts["Bunch.to_dict"]
             == counts["batch.deepcopy"]
-            == 2
+            == 1
         )
         assert len(row["spans"]) <= timing.MAX_SPANS
         for span in row["spans"]:
