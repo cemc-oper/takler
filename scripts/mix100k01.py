@@ -19,6 +19,7 @@ from pathlib import Path
 import platform
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -409,6 +410,91 @@ async def service(directory):
         log.close()
 
 
+class SummaryEvidenceError(ValueError):
+    """A required summary artifact could not be retained or verified."""
+
+
+class SummaryArchive:
+    """One bounded wire page at a time; incomplete reads remain .partial files."""
+
+    def __init__(self, path, deadline_ns):
+        self.path, self.deadline_ns = path, deadline_ns
+        self.partial = Path(str(path) + ".partial")
+        if path.exists():
+            raise SummaryEvidenceError("summary artifact already exists")
+        remaining(deadline_ns)
+        try:
+            self.file = self.partial.open("xb", buffering=0)
+        except OSError as exc:
+            raise SummaryEvidenceError(f"summary artifact open failed: {exc}") from exc
+        self.digest = hashlib.sha256()
+        self.pages = self.bytes = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        try:
+            self.file.close()
+        except OSError as exc:
+            raise SummaryEvidenceError(f"summary artifact close failed: {exc}") from exc
+
+    def append(self, raw):
+        from takler.protocol.query_v1 import MAX_PAGE_BYTES
+
+        remaining(self.deadline_ns)
+        if not 0 < len(raw) <= MAX_PAGE_BYTES:
+            raise SummaryEvidenceError("summary page exceeds archive bound")
+        record = struct.pack("<I", len(raw)) + raw
+        try:
+            written = self.file.write(record)
+        except OSError as exc:
+            raise SummaryEvidenceError(f"summary artifact write failed: {exc}") from exc
+        if written != len(record):
+            raise SummaryEvidenceError("short summary artifact write")
+        self.digest.update(record)
+        self.pages += 1
+        self.bytes += len(record)
+        remaining(self.deadline_ns)
+
+    def finish(self, view, expected_nodes):
+        if (
+            not self.pages
+            or len(view.ordered_paths) != expected_nodes
+            or view.revision is None
+        ):
+            raise SummaryEvidenceError("summary node count/fixed revision missing")
+        remaining(self.deadline_ns)
+        try:
+            self.file.close()
+        except OSError as exc:
+            raise SummaryEvidenceError(f"summary artifact close failed: {exc}") from exc
+        remaining(self.deadline_ns)
+        try:
+            self.partial.rename(self.path)
+        except OSError as exc:
+            raise SummaryEvidenceError(
+                f"summary artifact publication failed: {exc}"
+            ) from exc
+        return dict(
+            format="takler-summary-pages-v1",
+            file=self.path.name,
+            sha256=self.digest.hexdigest(),
+            archive_bytes=self.bytes,
+            pages=self.pages,
+            nodes=expected_nodes,
+            version=view.revision,
+            session_id=view.session_id,
+            query_id=view.query_id,
+            snapshot_id=view.snapshot_id,
+            as_of=view.as_of,
+            expires_at=view.expires_at,
+            root_name=view.root_name,
+            scope_path=view.scope_path,
+            depth=view.depth,
+        )
+
+
 class QueryWire:
     """Public client assembly, one actual stub attempt with a shared deadline."""
 
@@ -430,12 +516,17 @@ class QueryWire:
         self.cancelled = False
         self.bytes = 0
         self.rpcs = 0
+        self.summary_archive = None
+        self.summary_serial = 0
+        self.last_summary_digest = None
         self.client.transport.query = self.query
 
     def query(self, document):
         from takler.server.protocol.query_adapter import query_to_pb2, query_from_pb2
         from takler.client.retry import CommandKind
 
+        if document.kind == "page_request" and self.summary_archive is None:
+            raise SummaryEvidenceError("summary request bypassed required archive")
         methods = dict(
             capabilities_request="GetCapabilities",
             page_request="ReadPage",
@@ -478,7 +569,6 @@ class QueryWire:
                 snapshot_id=getattr(reply, "snapshot_id", None),
                 code=getattr(reply, "code", None),
             )
-            return reply
         except Exception as exc:
             self.log(
                 "rpc_error",
@@ -489,10 +579,39 @@ class QueryWire:
                 error=f"{type(exc).__name__}: {exc}",
             )
             raise
+        if document.kind == "page_request":
+            self.summary_archive.append(bytes(response.json))
+        return reply
 
     def begin(self, request_id, deadline_ns):
         self.request_id, self.deadline_ns = request_id, deadline_ns
         self.cancelled, self.bytes, self.rpcs = False, 0, 0
+        self.last_summary_digest = None
+
+    def snapshot(self, reason, expected_nodes):
+        self.summary_serial += 1
+        filename = f"{self.request_id}-summary-{self.summary_serial:04d}.pages"
+        context = dict(request_id=self.request_id, channel=self.role, reason=reason)
+        self.last_summary_digest = None
+        try:
+            with SummaryArchive(self.directory / filename, self.deadline_ns) as archive:
+                self.log("summary_archive_started", file=filename, **context)
+                self.summary_archive = archive
+                view = self.client.run_query_snapshot(scope_path="/")
+                evidence = archive.finish(view, expected_nodes)
+            self.log("summary_digest", evidence=evidence, **context)
+            self.last_summary_digest = evidence
+            return view
+        except TimeoutError:
+            raise  # Transport/absolute-budget failure leaves a partial, not a false integrity alarm.
+        except (OSError, SummaryEvidenceError) as exc:
+            save(
+                self.directory / "integrity-failure.json",
+                dict(role=self.role, error=f"summary evidence: {exc}"),
+            )
+            raise SummaryEvidenceError(str(exc)) from exc
+        finally:
+            self.summary_archive = None
 
     def full(self, output, nodes):
         from takler.client.full_snapshot import FullSnapshotComplete
@@ -771,11 +890,11 @@ def queries(directory):
             )
             try:
                 if name == "summary":
-                    view = wire.client.run_query_snapshot(scope_path="/")
+                    view = wire.snapshot("scheduled", config["nodes"])
                 else:
                     if view is None:
                         log("baseline_subrequest", request_id=rid, channel=name)
-                        view = wire.client.run_query_snapshot(scope_path="/")
+                        view = wire.snapshot("baseline", config["nodes"])
                     if name == "since":
                         try:
                             view = wire.client.run_query_since(view)
@@ -788,7 +907,7 @@ def queries(directory):
                                 channel=name,
                                 code=exc.code,
                             )
-                            view = wire.client.run_query_snapshot(scope_path="/")
+                            view = wire.snapshot("reset_required", config["nodes"])
                         if view.stale_scopes:
                             log(
                                 "protocol_reset",
@@ -796,7 +915,7 @@ def queries(directory):
                                 channel=name,
                                 code="stale_scopes",
                             )
-                            view = wire.client.run_query_snapshot(scope_path="/")
+                            view = wire.snapshot("stale_scopes", config["nodes"])
                     else:
                         reply = wire.client.run_query_detail(
                             view, paths[slot % 250], ["runtime"]
@@ -817,6 +936,11 @@ def queries(directory):
                     version=view.revision,
                     bytes=wire.bytes,
                     rpcs=wire.rpcs,
+                    **(
+                        dict(summary_digest=wire.last_summary_digest)
+                        if name == "summary"
+                        else {}
+                    ),
                 )
             except Exception as exc:
                 log(
@@ -828,7 +952,10 @@ def queries(directory):
                     ended_ns=time.monotonic_ns(),
                     error=f"{type(exc).__name__}: {exc}",
                 )
-                if type(exc).__name__ in {"ValueError", "ServerResponseError"}:
+                if isinstance(exc, SummaryEvidenceError) or type(exc).__name__ in {
+                    "ValueError",
+                    "ServerResponseError",
+                }:
                     save(
                         directory / "integrity-failure.json",
                         dict(role=name, error=str(exc)),
@@ -1585,7 +1712,7 @@ def run_one(batch, condition):
         log("phase", phase="post_and_exit", deadline_ns=phase_deadline)
         boundary("post")
         verify_final_meters(directory)
-        verify_query_ledgers(directory)
+        verify_query_ledgers(directory, phase_deadline)
         save(directory / "stop-server.json", dict(deadline_ns=phase_deadline))
         final = await_file("server-final.json")
         while processes["server"].poll() is None:
@@ -1705,7 +1832,126 @@ def verify_final_meters(directory):
     )
 
 
-def verify_query_ledgers(directory):
+def verify_summary_archive(directory, evidence, deadline_ns=None):
+    """Recompute exact framed bytes, page identity/order and complete node count."""
+    from takler.protocol.query_v1 import MAX_PAGE_BYTES, decode_query_document
+
+    name = evidence["file"]
+    if (
+        Path(name).name != name
+        or not name.endswith(".pages")
+        or evidence.get("format") != "takler-summary-pages-v1"
+    ):
+        raise SummaryEvidenceError("invalid summary artifact reference")
+    digest, pages, nodes, size = hashlib.sha256(), 0, 0, 0
+    complete = False
+    fields = (
+        "session_id",
+        "query_id",
+        "snapshot_id",
+        "as_of",
+        "expires_at",
+        "root_name",
+    )
+    try:
+        with (directory / name).open("rb") as source:
+            while prefix := source.read(4):
+                if deadline_ns is not None:
+                    remaining(deadline_ns)
+                if complete or len(prefix) != 4:
+                    raise SummaryEvidenceError("extra/truncated summary frame")
+                length = struct.unpack("<I", prefix)[0]
+                if not 0 < length <= MAX_PAGE_BYTES:
+                    raise SummaryEvidenceError("summary frame length exceeds bound")
+                raw = source.read(length)
+                if len(raw) != length:
+                    raise SummaryEvidenceError("truncated summary page")
+                page = decode_query_document(raw, expected="page")
+                if (
+                    page.page_index != pages
+                    or page.base_revision != evidence["version"]
+                    or any(getattr(page, k) != evidence[k] for k in fields)
+                ):
+                    raise SummaryEvidenceError(
+                        "summary fixed identity/page order mismatch"
+                    )
+                if pages == 0 and (
+                    not page.nodes or page.nodes[0].path != evidence["scope_path"]
+                ):
+                    raise SummaryEvidenceError("summary scope root mismatch")
+                nodes += len(page.nodes)
+                if (
+                    page.total_nodes is not None
+                    and page.total_nodes != evidence["nodes"]
+                ):
+                    raise SummaryEvidenceError("summary expected node count mismatch")
+                complete = page.complete
+                digest.update(prefix)
+                digest.update(raw)
+                size += 4 + length
+                pages += 1
+    except OSError as exc:
+        raise SummaryEvidenceError(f"summary artifact unavailable: {name}") from exc
+    if (
+        not complete
+        or pages != evidence["pages"]
+        or nodes != evidence["nodes"]
+        or size != evidence["archive_bytes"]
+        or digest.hexdigest() != evidence["sha256"]
+    ):
+        raise SummaryEvidenceError("summary digest/length/completeness mismatch")
+    if deadline_ns is not None:
+        remaining(deadline_ns)
+
+
+def verify_summary_archives(directory, deadline_ns=None):
+    started, verified, terminals = {}, {}, {}
+    for row in rows(directory / "query-requests.jsonl"):
+        kind, rid = row["kind"], row.get("request_id")
+        if kind == "summary_archive_started":
+            if row["file"] in started:
+                raise SummaryEvidenceError("duplicate summary archive start")
+            started[row["file"]] = (rid, row["channel"], row["reason"])
+        elif kind == "summary_digest":
+            evidence = row["evidence"]
+            name = evidence["file"]
+            if name in verified or started.get(name) != (
+                rid,
+                row["channel"],
+                row["reason"],
+            ):
+                raise SummaryEvidenceError("unmatched/duplicate summary digest")
+            verify_summary_archive(directory, evidence, deadline_ns)
+            verified[name] = evidence
+        elif kind in {"completed", "failed", "not_sent"}:
+            terminals[rid] = kind
+            if kind == "completed" and row["channel"] == "summary":
+                reference = row.get("summary_digest")
+                if (
+                    not reference
+                    or verified.get(reference["file"]) != reference
+                    or started[reference["file"]][:2] != (rid, "summary")
+                    or any(
+                        row[k] != reference[k]
+                        for k in ("nodes", "version", "snapshot_id")
+                    )
+                ):
+                    raise SummaryEvidenceError(
+                        "completed summary digest missing/mismatched"
+                    )
+    partial = 0
+    for name, (rid, _, _) in started.items():
+        if name not in verified:
+            if (
+                terminals.get(rid) != "failed"
+                or not (directory / (name + ".partial")).is_file()
+            ):
+                raise SummaryEvidenceError("summary archive has no trusted terminal")
+            partial += 1
+    return dict(verified=True, complete=len(verified), failed_partial=partial)
+
+
+def verify_query_ledgers(directory, deadline_ns=None):
     config = read(directory / "config.json")
     for role in ("query", "full1", "full2"):
         plans, terminals = set(), set()
@@ -1726,6 +1972,7 @@ def verify_query_ledgers(directory):
             and len(plans) != config["duration"] * 2 + config["duration"] // 10
         ):
             raise ValueError("ordinary query plan incomplete")
+    verify_summary_archives(directory, deadline_ns)
 
 
 def qualify_smoke(directory):

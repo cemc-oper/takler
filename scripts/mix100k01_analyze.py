@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 import math
 from pathlib import Path
 
-from mix100k01 import NS, read, rows, save
+from mix100k01 import NS, read, rows, save, verify_summary_archives
 
 
 def distribution(values):
@@ -180,6 +180,10 @@ def summarize(directory):
         if (directory / "server-final.json").exists()
         else None
     )
+    try:
+        summary_digests = verify_summary_archives(directory)
+    except (ValueError, OSError, KeyError) as exc:
+        summary_digests = dict(verified=False, error=f"{type(exc).__name__}: {exc}")
     summary = dict(
         condition=config["condition"],
         tasks=config["tasks"],
@@ -212,6 +216,7 @@ def summarize(directory):
         ),
         loop_lag_ms=distribution(lag),
         server_final=final,
+        summary_digests=summary_digests,
     )
     child = counts["child"]
     all_queries = all(
@@ -224,9 +229,11 @@ def summarize(directory):
         and child["sent"] == config["slots"]
         and not child["write_unknown"]
         and all_queries
+        and summary_digests["verified"]
     )
     usable_d = (
         config["condition"] == "D"
+        and summary_digests["verified"]
         and checkpoint["measurement_published"] >= 2
         and counts["summary"]["completed"] >= 2
         and all(counts[c]["completed"] >= 1 for c in ("full1", "full2"))
