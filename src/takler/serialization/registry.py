@@ -3,11 +3,25 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from types import FunctionType
 from typing import Callable, Literal, ForwardRef
 
 from pydantic import BaseModel, Field, create_model
 
 from takler.schema.definition import DefinitionError
+
+
+_snapshot_checks = ContextVar("takler_snapshot_checks", default=None)
+
+
+@contextmanager
+def _snapshot_type_checks():
+    """Reuse only unchanged plain Task hooks for one evidence snapshot."""
+    token = _snapshot_checks.set({})
+    try:
+        yield
+    finally:
+        _snapshot_checks.reset(token)
 
 
 @dataclass(frozen=True)
@@ -108,13 +122,43 @@ class TypeRegistry:
     def _check_execution(entry):
         if entry.kind != "task":
             return
-        from takler.core.task_node import ensure_synchronous_task
+        from takler.core.task_node import (
+            Task,
+            _EXECUTION_HOOKS,
+            ensure_synchronous_task,
+        )
         from takler.exceptions import UnsupportedValueError
+
+        checks = _snapshot_checks.get()
+        reusable = checks is not None and entry.python_type is Task
+        previous = checks.get(Task) if reusable else None
+        if previous is not None:
+            validator, hooks = previous
+            if validator is ensure_synchronous_task and all(
+                Task.__dict__.get(name) is hook
+                and hook.__code__ is code
+                # inspect.iscoroutinefunction does not unwrap __wrapped__.
+                and hook.__dict__.keys() <= {"__wrapped__"}
+                for name, hook, code in hooks
+            ):
+                return
 
         try:
             ensure_synchronous_task(entry.python_type)
         except UnsupportedValueError:
             raise DefinitionError("async_task_unsupported") from None
+        if reusable:
+            hooks = [(name, Task.__dict__.get(name)) for name in _EXECUTION_HOOKS]
+            if all(
+                type(hook) is FunctionType and hook.__dict__.keys() <= {"__wrapped__"}
+                for _, hook in hooks
+            ):
+                checks[Task] = (
+                    ensure_synchronous_task,
+                    tuple((name, hook, hook.__code__) for name, hook in hooks),
+                )
+            else:
+                checks.pop(Task, None)
 
     def document_model(self):
         """Create a data-only schema from trusted registration descriptors."""

@@ -6,6 +6,7 @@ from copy import deepcopy
 from takler.exceptions import InvalidNodePathError
 from takler.protocol.commands import BatchItemResult, BatchResponse
 from takler.protocol.error_code import error_code_for_exception, error_name_for_code
+from takler.serialization.registry import _snapshot_type_checks
 
 
 def _snapshot(scheduler):
@@ -13,7 +14,8 @@ def _snapshot(scheduler):
     # An extension may not implement serialization; in that case failures have
     # unknown effects rather than blocking unrelated, valid control targets.
     try:
-        return deepcopy(scheduler.bunch.to_dict())
+        with _snapshot_type_checks():
+            return deepcopy(scheduler.bunch.to_dict())
     except Exception:
         return None
 
