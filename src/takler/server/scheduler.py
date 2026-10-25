@@ -43,6 +43,7 @@ from takler.protocol.commands import (
 )
 from takler.server.connect_config import ExceptionPolicy, DEFAULT_EXCEPTION_POLICY
 from takler.server.batch import batch_targets
+from takler.server.run_effect import initialize as _initialize_run_effect
 from takler.server.zombie import ChildAction, ZombieDetector
 from takler.server.query_changes import QueryChanges
 
@@ -1135,3 +1136,7 @@ class Scheduler:
         return self.server_status_response(message="service running in memory")
 
     # Query -------------------------------------------------
+
+
+# Capture shipped RUN dependencies before extensions can install dynamic hooks.
+_initialize_run_effect(Scheduler)

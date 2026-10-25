@@ -44,6 +44,7 @@ def batch_targets(field):
             had_exception = False
             for index, target in enumerate(targets):
                 before = None
+                evidence = None
                 attempted = False
                 try:
                     # Validate syntax per item, before the operation can mutate.
@@ -66,7 +67,16 @@ def batch_targets(field):
                         raise InvalidNodePathError(
                             "invalid target path", node_path=target
                         )
-                    before = _snapshot(scheduler)
+                    if operation.__name__ == "run_command_run":
+                        from takler.server.run_effect import controlled_run
+
+                        try:
+                            evidence = controlled_run(scheduler, target)
+                        except Exception:
+                            # Qualification, like snapshots, is optional evidence.
+                            evidence = None
+                    if evidence is None:
+                        before = _snapshot(scheduler)
                     single = command.model_copy(
                         update={field: target[1:] if begin else [target]}
                     )
@@ -95,6 +105,8 @@ def batch_targets(field):
                     effect = "unknown"
                     if not attempted:
                         effect = "none"
+                    elif flag != 99 and evidence is not None:
+                        effect = evidence.effect()
                     elif flag != 99 and before is not None:
                         after = _snapshot(scheduler)
                         if after is not None:

@@ -1,6 +1,9 @@
 """Explicit registrations installed by trusted startup code, never by documents."""
 
 from contextlib import contextmanager
+import sys
+
+from takler._run_effect import fingerprint as _run_fingerprint, stamp as _run_stamp
 from contextvars import ContextVar
 from dataclasses import dataclass
 from types import FunctionType
@@ -341,3 +344,18 @@ def export_definition_data(entry, node):
     ).model_dump(mode="json")
     validate_definition_data(data, entry.secret_fields)
     return data
+
+
+_RUN_EFFECT_CLASSES = {
+    cls: _run_fingerprint(cls) for cls in (TypeRegistry, NodeRegistration)
+}
+_RUN_EFFECT_HELPERS = tuple(
+    (sys.modules[__name__], name, _run_stamp(globals()[name]))
+    for name in (
+        "get_registry",
+        "builtin_registry",
+        "_current",
+        "TypeRegistry",
+        "NodeRegistration",
+    )
+)

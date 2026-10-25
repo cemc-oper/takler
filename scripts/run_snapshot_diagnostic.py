@@ -1,7 +1,7 @@
 """RUN snapshot A-only diagnostic entry; G0 uses small fixtures, never B.
 
-The executable defaults to G0 validation and refuses 100k without a separately
-authorized G1 admission record. No server.start, RUN, INIT or profiler is used.
+This repair executable only accepts G0/250 and a live inherited permit.
+G1/100k is always refused. No server.start, RUN, INIT or profiler is used.
 """
 
 import argparse
@@ -473,7 +473,7 @@ def diagnose(directory, config, *, fault=None, admission=None):
         raise FileExistsError("diagnostic_already_attempted")
     from run_snapshot_control import diagnostic_permit, diagnostic_closed
 
-    ticket = diagnostic_permit(directory, config)
+    ticket = diagnostic_permit(directory, config, fault)
     directory.mkdir(parents=True, exist_ok=True)
     small = True
     # Exclusive attempt registration is never removed, even when setup fails.
@@ -635,27 +635,65 @@ def diagnose(directory, config, *, fault=None, admission=None):
     return result
 
 
-if __name__ == "__main__":
+@contextmanager
+def cli_service_fence():
+    from takler.server import TaklerServer
+    from takler.server.grpc_transport import GrpcTransport
+    from takler.server.checkpoint import CheckpointManager
+    from takler.server.scheduler import Scheduler
+
+    owners = (TaklerServer, GrpcTransport, CheckpointManager, Scheduler)
+    originals = [(owner, owner.start) for owner in owners]
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("G0 diagnostic forbids service startup")
+
+    try:
+        for owner in owners:
+            owner.start = forbidden
+        print(json.dumps(dict(event="service_fences_installed",
+                              owners=[owner.__module__+"."+owner.__qualname__ for owner in owners])), flush=True)
+        yield
+    finally:
+        for owner, original in originals:
+            owner.start = original
+
+
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("config", type=Path)
     parser.add_argument("--admission", type=Path)
     arguments = parser.parse_args()
-    outcome = diagnose(
-        arguments.directory,
-        json.loads(arguments.config.read_text()),
-        admission=json.loads(arguments.admission.read_text())
-        if arguments.admission
-        else None,
-    )
-    print(
-        json.dumps(
-            dict(
-                stage=outcome["stage"],
-                success=outcome["success"],
-                validation_complete=outcome["validation_complete"],
-                candidate_selection_allowed=False,
+    try:
+        with cli_service_fence():
+            outcome = diagnose(
+                arguments.directory,
+                json.loads(arguments.config.read_text()),
+                admission=json.loads(arguments.admission.read_text())
+                if arguments.admission
+                else None,
+            )
+        print(
+            json.dumps(
+                dict(
+                    stage=outcome["stage"],
+                    success=outcome["success"],
+                    validation_complete=outcome["validation_complete"],
+                    candidate_selection_allowed=False,
+                )
             )
         )
-    )
-    sys.exit(0 if outcome["success"] else 1)
+        sys.exit(0 if outcome["success"] else 1)
+    finally:
+        import os
+        import run_snapshot_control as control
+
+        key = (os.getpid(), os.environ.get("RUN_SNAPSHOT_AUTH_FD"))
+        client = control._CLIENTS.get(key)
+        if client is not None:
+            client.rpc("channel_closing")
+
+
+if __name__ == "__main__":
+    main()

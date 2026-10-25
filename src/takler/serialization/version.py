@@ -18,6 +18,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Callable, Mapping
 
 from takler.core import Bunch, Task
+from takler.core._run_effect import fingerprint as _run_effect_fingerprint
 from takler.core.state import NodeStatus
 from takler.schema.definition import DefinitionError
 from takler.serialization.checkpoint import (
@@ -977,3 +978,7 @@ class VersionStore:
             raise VersionUnavailable(self.error or "not_ready")
         assert self.current is not None
         return self.current
+
+
+# Preserve the builtin callbacks even when customized before Scheduler import.
+_RUN_EFFECT_BASELINE = _run_effect_fingerprint(VersionStore)

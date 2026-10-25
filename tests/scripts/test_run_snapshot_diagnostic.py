@@ -157,3 +157,69 @@ def test_product_sources_remain_identical(tmp_path):
     assert before == {
         str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob("*.py")
     }
+
+
+CLI_SCOPES = diagnostic.json.loads(
+    (Path(__import__("os").environ["RUN_SNAPSHOT_REPAIR_ROOT"]) / "scope-table.json").read_text()
+)
+
+
+@pytest.fixture
+def cli_owner(tmp_path):
+    import importlib
+    import run_snapshot_control as control
+
+    module = importlib.import_module("tests.scripts.test_run_snapshot_control")
+    context = control.Client.current().rpc("case_context")
+    owner = module.Owner(tmp_path / "owner", context)
+    previous, control._OWNER = control._OWNER, owner
+    try:
+        yield owner
+    finally:
+        result = owner.finish(context["hard_ns"])
+        control._OWNER = previous
+        control.Client.current().rpc(
+            "owner_closed", complete=result["complete"],
+            thread_alive=result["thread_alive"],
+            evidence=str(owner.directory / "independent-owner.json"),
+        )
+        assert result["complete"], result
+
+
+@pytest.mark.parametrize("scope", CLI_SCOPES, ids=[s["id"] for s in CLI_SCOPES])
+def test_cli_scope(tmp_path, scope, cli_owner):
+    import run_snapshot_control as control
+
+    client = control.Client.current()
+    context = client.rpc("case_context")
+    step = context["spec"]["steps"][0]
+    job = dict(
+        stage="G0", start_ns=context["start_ns"],
+        operational_ns=context["operational_ns"], hard_ns=context["hard_ns"],
+        parent_operational_ns=context["parent_operational_ns"],
+        budget=str(Path(client.header["root"]) / "header.json"),
+        batch_directory=client.header["root"],
+        sources=control.read(Path(client.header["root"]) / "manifest.json")["sources"],
+        cwd=step["cwd"], command=step["command"],
+        fault=None, view=None, coordinator_mode="normal", pss=False,
+        owner_fd=cli_owner.child_channel.fileno(),
+    )
+    result = control.run_owned(tmp_path / "entry", job)
+    assert result["parent_sampling_valid"] and result["owner_complete"], result
+    assert result["tail_known"] and not result["hard_breached"], result
+    assert result["cleanup_within_deadline"] and result["evidence_complete"], result
+    assert result["error"] == step["expected"], result
+    text = (tmp_path / "entry/worker.log").read_text()
+    if scope["id"] in {"g1", "g0_100k", "future_boolean", "no_fd"}:
+        assert "service_fences_installed" in text
+    if scope["id"] == "stop":
+        assert result["success"] and "child_domain_stopped" in text
+        assert not (tmp_path / "second/attempt.json").exists()
+    else:
+        assert not result["success"] and scope["message"] in text
+    if scope["id"] not in {"replay", "stop"}:
+        assert not (tmp_path / "diagnostic/attempt.json").exists()
+    else:
+        first = control.read(tmp_path / "diagnostic/result.json")
+        assert not first["candidate_selection_allowed"]
+        assert first["validation_complete"] == (scope["id"] == "replay")

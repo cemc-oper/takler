@@ -82,8 +82,15 @@ def remaining(deadline_ns, maximum=10):
 
 
 def wait_until(target_ns, deadline_ns):
-    while time.monotonic_ns() < target_ns:
-        time.sleep(min(0.02, remaining(min(target_ns, deadline_ns))))
+    while True:
+        now = time.monotonic_ns()
+        if now >= target_ns:
+            return
+        if now >= deadline_ns:
+            raise TimeoutError("absolute deadline exhausted while waiting")
+        # Reaching a scheduled target between two clock reads is normal, not
+        # deadline exhaustion. RPC admission still checks its own live budget.
+        time.sleep(min(0.02, (target_ns - now) / NS, (deadline_ns - now) / NS))
 
 
 def pool_paths(bunch):
@@ -98,13 +105,13 @@ def pool_paths(bunch):
     return sorted(selected)
 
 
-def fixture(size):
+def fixture(size, meter_max=100):
     from query_a_matrix_100k import make_tree
 
     bunch, _ = make_tree(size, False)
     paths = pool_paths(bunch)
     for path in paths:
-        bunch.find_node(path).add_meter("progress", 0, 100)
+        bunch.find_node(path).add_meter("progress", 0, meter_max)
     return bunch, paths
 
 
@@ -190,14 +197,15 @@ async def prepare(scheduler, paths, log, deadline_ns):
     return credentials
 
 
-def root_link(version, paths):
+def root_link(version, paths, scope="/"):
     """Boundary-only projection, linked to the exact streamed fixed root."""
     from takler.server.full_snapshot import _full_node
     from takler.protocol.query_v1 import FULL_DEFAULT_GROUPS
     from takler.protocol.full_snapshot_codec import pack_node, unpack_node
 
     digest = hashlib.sha256()
-    for path in version.index:
+    linked_paths = version.index if scope == "/" else [scope]
+    for path in linked_paths:
         row = unpack_node(
             pack_node(
                 _full_node(version, path, FULL_DEFAULT_GROUPS), FULL_DEFAULT_GROUPS
@@ -207,7 +215,7 @@ def root_link(version, paths):
         digest.update(canonical(row) + b"\n")
     return dict(
         state_version=version.state_version,
-        count=len(version.index),
+        count=len(linked_paths),
         semantic_sha256=digest.hexdigest(),
     )
 
@@ -288,10 +296,17 @@ async def service(directory):
         port=config["port"],
         connect_config=connect,
         checkpoint_file=directory / "state.check",
-        checkpoint_interval=10,
+        checkpoint_interval=config.get("checkpoint_interval_s", 10),
     )
-    server.scheduler.interval_main_loop = 0.05
-    bunch, paths = fixture(config["tasks"])
+    original_failure_category = server.checkpoint_manager._failure_category
+
+    def failure_detail(exc):
+        log("checkpoint_failure_detail", error=f"{type(exc).__name__}: {exc}"[:2000])
+        return original_failure_category(exc)
+
+    server.checkpoint_manager._failure_category = failure_detail
+    server.scheduler.interval_main_loop = config.get("scheduler_interval_s", 0.05)
+    bunch, paths = fixture(config["tasks"], config.get("meter_max", 100))
     for flow in bunch.flows.values():
         server.bunch.add_flow(flow)
     await server.start()
@@ -332,15 +347,17 @@ async def service(directory):
     original_page = full_service.page
     boundary_root = None
     boundary_phase = None
+    boundary_scope = "/"
 
     async def linked_page(request):
-        nonlocal boundary_root, boundary_phase
+        nonlocal boundary_root, boundary_phase, boundary_scope
         reply = await original_page(request)
         if request.full_snapshot_id is None and hasattr(reply, "full_snapshot_id"):
             for phase in ("pre", "post"):
                 if phase not in seen and (directory / f"{phase}-request.json").exists():
                     boundary_root = full_service._leases[reply.full_snapshot_id].version
                     boundary_phase = phase
+                    boundary_scope = request.scope_path
                     seen.add(phase)
                     break
         if getattr(reply, "complete", False) and boundary_root is not None:
@@ -348,7 +365,7 @@ async def service(directory):
             boundary_root = boundary_phase = None
             deadline = read(directory / f"{phase}-request.json")["deadline_ns"]
             remaining(deadline)
-            link = await asyncio.to_thread(root_link, version, paths)
+            link = await asyncio.to_thread(root_link, version, paths, boundary_scope)
             save(directory / f"{phase}-root.json", link)
             states = pool_state(server.bunch, paths)
             with (directory / f"{phase}-pool.jsonl").open("x") as target:
@@ -360,6 +377,15 @@ async def service(directory):
     try:
         while not stop.is_set():
             audit.check()
+            if server.checkpoint_manager.checkpoint_failure_reason:
+                save(
+                    directory / "integrity-failure.json",
+                    dict(
+                        role="checkpoint",
+                        error=server.checkpoint_manager.checkpoint_failure_reason,
+                    ),
+                )
+                raise RuntimeError("checkpoint failure; diagnostic stopped")
             if (directory / "stop-server.json").exists():
                 break
             await asyncio.sleep(0.02)
@@ -613,12 +639,12 @@ class QueryWire:
         finally:
             self.summary_archive = None
 
-    def full(self, output, nodes):
+    def full(self, output, nodes, scope="/"):
         from takler.client.full_snapshot import FullSnapshotComplete
 
         digest, count, completion = hashlib.sha256(), 0, None
         with output.open("xb", buffering=65536) as target:
-            for item in self.client.run_iter_full_snapshot(scope_path="/"):
+            for item in self.client.run_iter_full_snapshot(scope_path=scope):
                 remaining(self.deadline_ns)
                 if isinstance(item, FullSnapshotComplete):
                     completion = item
@@ -1303,7 +1329,10 @@ def collector(directory):
                     in {"collector", "coordinator", "coordinator_supervisor"}
                 ):
                     reasons.append("collector/coordinator RSS above 512 MiB")
-                if evidence_bytes > 4 * GIB or batch_bytes > 12 * GIB:
+                limits = config.get("stop_limits", {})
+                if evidence_bytes > limits.get(
+                    "run_evidence_max", 4 * GIB
+                ) or batch_bytes > limits.get("batch_evidence_max", 12 * GIB):
                     reasons.append("evidence capacity exceeded")
                 if reasons:
                     raise RuntimeError("; ".join(reasons))
@@ -1369,7 +1398,7 @@ def finish_collector(directory, process, server_pid, produced, deadline_ns):
     return observed
 
 
-def freeze(batch, repo, batch_id="MIX100K-01"):
+def freeze(batch, repo, batch_id="MIX100K-01", *, product=False):
     from r3_14_isolated_probe import diagnostic_copy
 
     if (batch / "config.json").exists():
@@ -1432,6 +1461,27 @@ def freeze(batch, repo, batch_id="MIX100K-01"):
             grid="slot may dispatch until following grid tick; expired slots skipped",
         ),
     )
+    if product:
+        config.update(
+            profile="product-20261025",
+            order=["smoke", "D", "D"],
+            scheduler_interval_s=10,
+            boundary_scope="pool_task",
+            checkpoint_interval_s=120,
+            duration=300,
+            slots=30000,
+            meter_max=120,
+            smoke_periodic_tail=True,
+        )
+        config["smoke"].update(duration=150, slots=1500)
+        # The longer user-selected window retains proportionally more full
+        # read evidence. Memory/disk-free protection lines stay unchanged.
+        config["stop_limits"].update(
+            run_evidence_max=8 * GIB, batch_evidence_max=24 * GIB
+        )
+        config["caps"].update(
+            run_s=1200, operational_s=1190, setup_s=600, post_exit_s=300
+        )
     save(batch / "config.json", config)
     (batch / "config.sha256").write_text(
         hashlib.sha256((batch / "config.json").read_bytes()).hexdigest() + "\n"
@@ -1464,6 +1514,19 @@ def budget_open(batch, condition, start_ns):
     history = budget.get("runs", [])
     if len(history) >= 7 or any(r.get("end_ns") is None for r in history):
         raise RuntimeError("service count/tail prohibits launch")
+    config = read(batch / "config.json")
+    if config.get("profile") == "product-20261025":
+        if condition != config["order"][len(history)]:
+            raise ValueError("product diagnostic order violated")
+        if history and (
+            not history[0].get("qualified_smoke")
+            or any(r.get("stop_batch") for r in history)
+        ):
+            raise ValueError("prior product diagnostic failed")
+        history.append(dict(condition=condition, start_ns=start_ns, end_ns=None))
+        budget["runs"] = history
+        save(batch / "budget.json", budget)
+        return len(history)
     order = ["smoke", "D", "B", "C", "A"]
     if len(history) < 5:
         if condition != order[len(history)]:
@@ -1547,8 +1610,8 @@ def run_one(batch, condition):
         condition=condition,
         coordinator_pid=os.getpid(),
         supervisor_pid=int(os.environ.get("MIX100K_SUPERVISOR_PID", os.getppid())),
-        setup_deadline_ns=start_ns + 180 * NS,
-        operational_deadline_ns=start_ns + 470 * NS,
+        setup_deadline_ns=start_ns + base["caps"]["setup_s"] * NS,
+        operational_deadline_ns=start_ns + base["caps"]["operational_s"] * NS,
         socket=f"/tmp/mix100k01-{os.getpid()}-{number}.sock",
     )
     save(directory / "config.json", config)
@@ -1559,7 +1622,7 @@ def run_one(batch, condition):
     (directory / "whitelist").write_text(getpass.getuser() + "\n")
     log = Ledger(directory / "coordinator.jsonl")
     registry = Registry(directory / "registry.json")
-    watchdog = Watchdog(registry, start_ns + 480 * NS)
+    watchdog = Watchdog(registry, start_ns + base["caps"]["run_s"] * NS)
     watchdog.arm()  # Must precede the first business/collector process.
     processes = {}
     env = {
@@ -1636,8 +1699,16 @@ def run_one(batch, condition):
         wire = QueryWire(directory, phase, log)
         wire.begin(phase, min(phase_deadline, time.monotonic_ns() + 60 * NS))
         executor = ThreadPoolExecutor(max_workers=1)
+        scope = (
+            read(directory / "server-ready.json")["paths"][0]
+            if config.get("boundary_scope") == "pool_task"
+            else "/"
+        )
         future = executor.submit(
-            wire.full, directory / f"{phase}-view.jsonl", config["nodes"]
+            wire.full,
+            directory / f"{phase}-view.jsonl",
+            1 if scope != "/" else config["nodes"],
+            scope,
         )
         try:
             while not future.done():
@@ -1706,8 +1777,20 @@ def run_one(batch, condition):
             time.sleep(0.02)
         for role in ("writer", "queries", "full1", "full2"):
             await_file(f"{role}-final.json")
+        if condition == "smoke" and config.get("smoke_periodic_tail"):
+            phase_deadline = min(
+                time.monotonic_ns() + (config["checkpoint_interval_s"] + 10) * NS,
+                config["operational_deadline_ns"],
+            )
+            log(
+                "phase", phase="stopped_write_periodic_tail", deadline_ns=phase_deadline
+            )
+            while not periodic_archive_seen(directory):
+                check()
+                time.sleep(0.1)
         phase_deadline = min(
-            time.monotonic_ns() + 40 * NS, config["operational_deadline_ns"]
+            time.monotonic_ns() + base["caps"]["post_exit_s"] * NS,
+            config["operational_deadline_ns"],
         )
         log("phase", phase="post_and_exit", deadline_ns=phase_deadline)
         boundary("post")
@@ -1751,7 +1834,9 @@ def run_one(batch, condition):
         )
     finally:
         cleanup_start = time.monotonic_ns()
-        cleanup_deadline = min(cleanup_start + 10 * NS, start_ns + 480 * NS)
+        cleanup_deadline = min(
+            cleanup_start + 10 * NS, start_ns + base["caps"]["run_s"] * NS
+        )
         log("phase", phase="cleanup", deadline_ns=cleanup_deadline)
         cleanup = registry.cleanup(cleanup_deadline)
         result["cleanup"] = cleanup
@@ -1761,7 +1846,7 @@ def run_one(batch, condition):
         result["end_ns"] = time.monotonic_ns()
         result["start_ns"] = start_ns
         result["lifecycle_seconds"] = (result["end_ns"] - start_ns) / NS
-        result["stop_batch"] |= result["lifecycle_seconds"] > 480
+        result["stop_batch"] |= result["lifecycle_seconds"] > base["caps"]["run_s"]
         save(directory / "result.json", result)
         budget = read(batch / "budget.json")
         budget["runs"][-1].update(
@@ -1975,6 +2060,20 @@ def verify_query_ledgers(directory, deadline_ns=None):
     verify_summary_archives(directory, deadline_ns)
 
 
+def periodic_archive_seen(directory):
+    """A completed archive proves publication; ignore a concurrent partial line."""
+    path = directory / "server-ledger.jsonl"
+    if not path.exists():
+        return False
+    with path.open("rb") as source:
+        for raw in source:
+            if raw.endswith(b"\n"):
+                row = json.loads(raw)
+                if row["kind"] == "checkpoint_archive" and not row["exit_save"]:
+                    return True
+    return False
+
+
 def qualify_smoke(directory):
     config = read(directory / "config.json")
     counts = {name: 0 for name in ("summary", "full1", "full2")}
@@ -1995,7 +2094,10 @@ def qualify_smoke(directory):
         r["kind"] == "service_event"
         and r["event"]["kind"] == "checkpoint_outcome"
         and r["event"]["values"][1:4] == [1, 1, 0]
-        and window["start_ns"] <= r["event"]["at_ns"] <= window["end_ns"]
+        and (
+            config.get("smoke_periodic_tail")
+            or window["start_ns"] <= r["event"]["at_ns"] <= window["end_ns"]
+        )
         for r in rows(directory / "events.jsonl")
     )
     verified = read(directory / "meter-verification.json")
@@ -2005,13 +2107,22 @@ def qualify_smoke(directory):
         planned=config["slots"],
         completed=counts,
         periodic_links=publishes,
+        target_complete=success == config["slots"],
         measurement_periodic_success=outcomes,
+        periodic_scope="whole_smoke_lifecycle"
+        if config.get("smoke_periodic_tail")
+        else "measurement",
     )
     passed = (
-        success == verified["sent"] == config["slots"]
+        success == verified["sent"]
+        and (
+            success > 0
+            if config.get("smoke_periodic_tail")
+            else success == config["slots"]
+        )
         and counts["summary"] >= 1
         and min(counts["full1"], counts["full2"]) >= 1
-        and outcomes >= 2
+        and outcomes >= (1 if config.get("smoke_periodic_tail") else 2)
     )
     save(directory / "smoke-qualification.json", dict(passed=passed, **result))
     return passed
@@ -2035,11 +2146,21 @@ def main():
     parser.add_argument("--batch", type=Path)
     parser.add_argument("--repo", type=Path)
     parser.add_argument("--batch-id", default="MIX100K-01")
+    parser.add_argument(
+        "--product",
+        action="store_true",
+        help="Use the 2026-10-25 single-product diagnostic profile",
+    )
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--condition", choices=["smoke", "D", "B", "C", "A"])
     options = parser.parse_args()
     if options.action == "freeze":
-        freeze(options.batch.resolve(), options.repo.resolve(), options.batch_id)
+        freeze(
+            options.batch.resolve(),
+            options.repo.resolve(),
+            options.batch_id,
+            product=options.product,
+        )
     elif options.action == "run-one":
         run_one(options.batch.resolve(), options.condition)
     elif options.action == "server":

@@ -3244,6 +3244,7 @@ def test_develop_architecture_core_never_imports_upper_layers():
 
     core_imports = imported_packages(src / "core")
     assert core_imports <= {
+        "_run_effect",  # Pure identity metadata; imports only stdlib types.
         "exceptions",
         "logging",
         "constant",

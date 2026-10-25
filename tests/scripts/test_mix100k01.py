@@ -150,12 +150,14 @@ def test_normal_handler_identity_and_wire_meter(prepared):
     assert len(mix.pool_state(scheduler.bunch, paths)) == 250
 
 
-def test_complete_public_stream_link_and_cancel(prepared, tmp_path):
+@pytest.mark.parametrize("scoped", [False, True])
+def test_complete_public_stream_link_and_cancel(prepared, tmp_path, scoped):
     from takler.client.full_snapshot import FullSnapshotClient, FullSnapshotComplete
     from takler.protocol.query_v1 import FailureReply
 
     scheduler, paths, _, loop, _ = prepared
-    expected = mix.root_link(scheduler.version_store.pin(), paths)
+    scope = paths[0] if scoped else "/"
+    expected = mix.root_link(scheduler.version_store.pin(), paths, scope)
     cancellation = []
 
     class Transport:
@@ -175,7 +177,7 @@ def test_complete_public_stream_link_and_cancel(prepared, tmp_path):
     import hashlib
 
     digest, count, complete = hashlib.sha256(), 0, None
-    for item in FullSnapshotClient(Transport()).iter_full_snapshot(scope_path="/"):
+    for item in FullSnapshotClient(Transport()).iter_full_snapshot(scope_path=scope):
         if isinstance(item, FullSnapshotComplete):
             complete = item
         else:
@@ -264,3 +266,118 @@ def test_summary_quantile_keeps_slow_samples():
 
     assert distribution([1, 2, 3, 100])["p95"] == 100
     assert distribution([])["n"] == 0
+
+
+def test_product_profile_uses_fixed_workload_and_new_caps(tmp_path, monkeypatch):
+    import r3_14_isolated_probe
+
+    monkeypatch.setattr(r3_14_isolated_probe, "diagnostic_copy", lambda *args: None)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "uv.lock").write_text("locked test fixture")
+    batch = tmp_path / "batch"
+    batch.mkdir()
+    mix.freeze(batch, repo, product=True)
+    config = mix.read(batch / "config.json")
+    assert (config["tasks"], config["nodes"], config["pool"]) == (100000, 100101, 250)
+    assert (config["duration"], config["rate"], config["slots"]) == (300, 100, 30000)
+    assert config["caps"]["setup_s"] == 600
+    assert config["caps"]["run_s"] == 1200
+    assert config["order"] == ["smoke", "D", "D"]
+    assert config["scheduler_interval_s"] == 10
+    assert config["boundary_scope"] == "pool_task"
+    assert config["full_readers"] == 2 and config["checkpoint_interval_s"] == 120
+    assert config["smoke_periodic_tail"] is True
+    assert config["meter_max"] == 120
+    assert config["stop_limits"]["run_evidence_max"] == 8 * mix.GIB
+    assert config["stop_limits"]["rss_sum_max"] == 8 * mix.GIB
+    assert (config["smoke"]["duration"], config["smoke"]["slots"]) == (150, 1500)
+
+
+def test_product_budget_requires_smoke_and_retains_prior_failures(tmp_path):
+    mix.save(
+        tmp_path / "config.json",
+        {"profile": "product-20261025", "order": ["smoke", "D", "D"]},
+    )
+    mix.save(tmp_path / "budget.json", {"runs": []})
+    with pytest.raises(ValueError, match="order"):
+        mix.budget_open(tmp_path, "D", 100)
+    assert mix.budget_open(tmp_path, "smoke", 100) == 1
+    budget = mix.read(tmp_path / "budget.json")
+    budget["runs"][0].update(end_ns=200, qualified_smoke=True, stop_batch=False)
+    mix.save(tmp_path / "budget.json", budget)
+    assert mix.budget_open(tmp_path, "D", 300) == 2
+    budget = mix.read(tmp_path / "budget.json")
+    budget["runs"][1].update(end_ns=400, stop_batch=True)
+    mix.save(tmp_path / "budget.json", budget)
+    with pytest.raises(ValueError, match="prior product"):
+        mix.budget_open(tmp_path, "D", 500)
+
+
+def test_wait_until_target_crossing_is_not_deadline_failure(monkeypatch):
+    clock = iter([99, 101])
+    sleeps = []
+    monkeypatch.setattr(mix.time, "monotonic_ns", lambda: next(clock))
+    monkeypatch.setattr(mix.time, "sleep", sleeps.append)
+    mix.wait_until(100, 200)
+    assert sleeps == [1 / mix.NS]
+
+
+def test_wait_until_does_not_sleep_after_earlier_deadline(monkeypatch):
+    monkeypatch.setattr(mix.time, "monotonic_ns", lambda: 100)
+    monkeypatch.setattr(mix.time, "sleep", lambda _: pytest.fail("expired wait slept"))
+    with pytest.raises(TimeoutError, match="deadline"):
+        mix.wait_until(200, 100)
+
+
+def test_periodic_tail_requires_completed_non_exit_archive(tmp_path):
+    path = tmp_path / "server-ledger.jsonl"
+    path.write_bytes(b'{"kind":"checkpoint_archive","exit_save":false}')
+    assert not mix.periodic_archive_seen(tmp_path)
+    path.write_text('{"kind":"checkpoint_archive","exit_save":true}\n')
+    assert not mix.periodic_archive_seen(tmp_path)
+    path.write_text('{"kind":"checkpoint_archive","exit_save":false}\n')
+    assert mix.periodic_archive_seen(tmp_path)
+
+
+def test_two_minute_smoke_accepts_one_periodic_tail_but_not_exit_save(tmp_path):
+    mix.save(tmp_path / "config.json", {"slots": 1, "smoke_periodic_tail": True})
+    mix.save(tmp_path / "window.json", {"start_ns": 100, "end_ns": 200})
+    mix.save(tmp_path / "meter-verification.json", {"sent": 1})
+
+    def ledger(name, records):
+        (tmp_path / name).write_text(
+            "".join(mix.canonical(record).decode() + "\n" for record in records)
+        )
+
+    ledger("writer-requests.jsonl", [{"kind": "returned", "flag": 0}])
+    for role, channel in (("query", "summary"), ("full1", "full1"), ("full2", "full2")):
+        ledger(role + "-requests.jsonl", [{"kind": "completed", "channel": channel}])
+    ledger("server-ledger.jsonl", [{"kind": "checkpoint_link", "exit_save": False}])
+    periodic = {
+        "kind": "service_event",
+        "event": {"kind": "checkpoint_outcome", "values": [1, 1, 1, 0], "at_ns": 300},
+    }
+    exit_save = {
+        "kind": "service_event",
+        "event": {"kind": "checkpoint_outcome", "values": [2, 1, 1, 1], "at_ns": 310},
+    }
+    ledger("events.jsonl", [periodic, exit_save])
+    assert mix.qualify_smoke(tmp_path)
+    assert (
+        mix.read(tmp_path / "smoke-qualification.json")["periodic_scope"]
+        == "whole_smoke_lifecycle"
+    )
+    mix.save(tmp_path / "config.json", {"slots": 2, "smoke_periodic_tail": True})
+    assert mix.qualify_smoke(tmp_path)
+    assert mix.read(tmp_path / "smoke-qualification.json")["target_complete"] is False
+    ledger("events.jsonl", [exit_save])
+    assert not mix.qualify_smoke(tmp_path)
+
+
+def test_extended_window_meter_pool_remains_legal():
+    bunch, paths = mix.fixture(1000, meter_max=120)
+    assert max(i // 250 + 1 for i in range(30000)) == 120
+    assert all(
+        bunch.find_node(path).find_meter("progress").max_value == 120 for path in paths
+    )
