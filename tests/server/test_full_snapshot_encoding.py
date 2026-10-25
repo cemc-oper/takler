@@ -22,13 +22,14 @@ from tests.server.test_full_snapshot import _LocalTransport, _service
 
 def test_encoded_pages_encode_once_and_replay_identical_bytes(monkeypatch):
     encoded = []
+    original = full_snapshot._encode_full_page
 
-    def encode(page):
-        raw = encode_query_document(page)
+    def encode(page, rows):
+        raw = original(page, rows)
         encoded.append(raw)
         return raw
 
-    monkeypatch.setattr(full_snapshot, "encode_query_document", encode)
+    monkeypatch.setattr(full_snapshot, "_encode_full_page", encode)
 
     async def run():
         scheduler, flow = _service(tasks=1000)
@@ -68,7 +69,9 @@ def test_encoded_pages_encode_once_and_replay_identical_bytes(monkeypatch):
                 )
                 raw = await service.page_encoded(continuation)
                 assert raw is encoded[-1] is lease.last_page
-                pages.append(decode_query_document(raw))
+                page = decode_query_document(raw)
+                assert encode_query_document(page) == raw
+                pages.append(page)
             assert len(encoded) == len(pages)
             assert pages[-1].total_nodes == 1002
             assert all(page.state_version == first.state_version for page in pages)
@@ -156,16 +159,17 @@ def test_transports_send_worker_bytes_without_reencoding(transport, monkeypatch)
         scheduler, _ = _service()
         service = scheduler.query_service.full_snapshots
         produced = []
+        original = full_snapshot._encode_full_page
 
-        def encode(page):
-            raw = encode_query_document(page)
+        def encode(page, rows):
+            raw = original(page, rows)
             produced.append(raw)
             return raw
 
         def forbidden(*args, **kwargs):
             raise AssertionError("wire full page must reuse the worker encoding")
 
-        monkeypatch.setattr(full_snapshot, "encode_query_document", encode)
+        monkeypatch.setattr(full_snapshot, "_encode_full_page", encode)
         monkeypatch.setattr(service, "page", forbidden)
         request = FullSnapshotRequest(kind="full_snapshot_request", schema_version=1)
         try:

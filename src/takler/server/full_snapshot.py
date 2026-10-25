@@ -311,7 +311,12 @@ def _pointer_value(value: Any, pointer: str):
 
 
 class _NodeCache:
-    """Optional immutable row bytes; never retain a version or decoded object."""
+    """Optional byte-only LRU; never retain a version or decoded object.
+
+    Keep both keys and values atomic. Per-row metadata/value tuples turn a
+    large warm cache into a long-lived graph that the collector must traverse
+    while full workers and the event loop share the interpreter.
+    """
 
     def __init__(self):
         self.entries = OrderedDict()
@@ -331,39 +336,24 @@ class _NodeCache:
         while self.entries and (
             self.bytes > self.limit or len(self.entries) > MAX_NODE_CACHE_ENTRIES
         ):
-            _, (_, size) = self.entries.popitem(last=False)
-            self.bytes -= size
+            key, raw = self.entries.popitem(last=False)
+            self.bytes -= self._size(key, raw)
+
+    @staticmethod
+    def _size(key, raw):
+        # Include an allowance for the dictionary and linked LRU entry.
+        return sys.getsizeof(key) + sys.getsizeof(raw) + 256
 
     def get(self, key):
         with self.lock:
             entry = self.entries.get(key)
             if entry is not None:
                 self.entries.move_to_end(key)
-                return entry[0]
+                return entry
         return None
 
     def put(self, key, raw):
-        # Charge retained key metadata and an allowance for dictionary entries.
-        # Shared strings/tuples are deliberately overcounted, not omitted.
-        owner, groups, path, parent, children, digest = key
-        size = (
-            sum(
-                sys.getsizeof(value)
-                for value in (
-                    key,
-                    raw,
-                    owner,
-                    groups,
-                    path,
-                    parent,
-                    children,
-                    digest,
-                    *groups,
-                    *children,
-                )
-            )
-            + 256
-        )
+        size = self._size(key, raw)
         with self.lock:
             if (
                 self.closed
@@ -376,9 +366,9 @@ class _NodeCache:
                 self.bytes + size > self.limit
                 or len(self.entries) >= MAX_NODE_CACHE_ENTRIES
             ):
-                _, (_, old_size) = self.entries.popitem(last=False)
-                self.bytes -= old_size
-            self.entries[key] = (raw, size)
+                old_key, old_raw = self.entries.popitem(last=False)
+                self.bytes -= self._size(old_key, old_raw)
+            self.entries[key] = raw
             self.bytes += size
             self.peak_bytes = max(self.peak_bytes, self.bytes)
 
@@ -411,20 +401,56 @@ def _node_cache_key(lease, row):
         or len(row.public) + len(row.definition) + len(row.runtime) > BLOB_THRESHOLD
     ):
         return None
-    digest = hashlib.sha256(
-        struct.pack("!III", len(row.public), len(row.definition), len(row.runtime))
+    # The lease prefix binds owner and ordered field groups once per stream.
+    # Lengths and the parent-presence flag keep all content boundaries distinct.
+    prefix = getattr(lease, "node_cache_prefix", None)
+    if prefix is None:
+        prefix = hashlib.sha256(_canonical([lease.owner, lease.groups])).digest()
+    path = row.path.encode("utf-8")
+    parent = row.parent.encode("utf-8") if row.parent is not None else b""
+    digest = hashlib.sha256(prefix)
+    digest.update(
+        struct.pack(
+            "!BIIIII",
+            row.parent is not None,
+            len(path),
+            len(parent),
+            len(row.public),
+            len(row.definition),
+            len(row.runtime),
+        )
     )
+    digest.update(path)
+    digest.update(parent)
     digest.update(row.public)
     digest.update(row.definition)
     digest.update(row.runtime)
-    return (
-        lease.owner,
-        lease.groups,
-        row.path,
-        row.parent,
-        row.children,
-        digest.digest(),
-    )
+    return digest.digest()
+
+
+def _encode_full_page(page: FullSnapshotPage, rows: list[bytes]) -> bytes:
+    """Join internally encoded rows without decoding their nested containers.
+
+    The page validates the envelope and every row path using lightweight path
+    rows. Actual rows come only from pack_node + _canonical, or the content-keyed
+    immutable cache populated by that same path. Public page() still decodes
+    the complete wire document into an independent, fully populated model.
+    """
+    if len(rows) != len(page.nodes):
+        raise ValueError("full snapshot row count mismatch")
+    values = page.model_dump(mode="json", exclude_unset=True, exclude={"nodes"})
+    parts = []
+    for name in type(page).model_fields:
+        if name == "nodes":
+            value = b"[" + b",".join(rows) + b"]"
+        elif name in values:
+            value = json.dumps(
+                values[name], ensure_ascii=False, separators=(",", ":"), allow_nan=False
+            ).encode("utf-8")
+        else:
+            continue
+        parts.append(json.dumps(name).encode("ascii") + b":" + value)
+    return b"{" + b",".join(parts) + b"}"
 
 
 @dataclass
@@ -451,6 +477,12 @@ class _Lease:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     expiry_handle: asyncio.TimerHandle | None = None
     gc_tuned: bool = False
+    node_cache_prefix: bytes = field(init=False)
+
+    def __post_init__(self):
+        self.node_cache_prefix = hashlib.sha256(
+            _canonical([self.owner, self.groups])
+        ).digest()
 
 
 class FullSnapshotService:
@@ -678,6 +710,7 @@ class FullSnapshotService:
     def _render_page(self, lease: _Lease) -> tuple[FullSnapshotPage, bytes]:
         version = lease.version
         nodes: list[list] = []
+        rows: list[bytes] = []
         page_bytes = 0
         digest = lease.digest.copy()
         total_bytes = lease.total_bytes
@@ -702,7 +735,7 @@ class FullSnapshotService:
             )
             cached = self._node_cache.get(cache_key) if cache_key is not None else None
             if cached is not None:
-                packed, raw = json.loads(cached), cached
+                raw = cached
                 record = {}
                 candidate_context = candidate_service = None
             else:
@@ -744,6 +777,10 @@ class FullSnapshotService:
                 candidate_service = record.pop("service", None)
                 packed = pack_node(record, lease.groups)
                 raw = _canonical(packed)
+            if cached is None and (
+                not isinstance(packed, list) or not packed or packed[0] != path
+            ):
+                raise ValueError(f"invalid compact row: {path}")
             if len(raw) > lease.page_target_bytes - 4096:
                 raise ValueError(f"record exceeds page budget: {path}")
             if (
@@ -767,7 +804,10 @@ class FullSnapshotService:
                 digest.update(b"\n")
                 total_bytes += len(metadata)
                 payload_bytes += len(metadata)
-            nodes.append(packed)
+            # FullSnapshotPage validates the same path/count/envelope rules;
+            # the canonical row bytes already contain the complete JSON value.
+            nodes.append([path])
+            rows.append(raw)
             if candidate_context is not None:
                 context = candidate_context
             if candidate_service is not None:
@@ -807,7 +847,7 @@ class FullSnapshotService:
             total_bytes=total_bytes if complete else None,
             sha256=digest.hexdigest() if complete else None,
         )
-        raw = encode_query_document(page)
+        raw = _encode_full_page(page, rows)
         if len(raw) > MAX_PAGE_BYTES:
             raise ValueError("page exceeds wire budget")
         lease.next_offset = position

@@ -1,7 +1,10 @@
 """Immutable compact-row reuse, fixed reads, context and retention boundaries."""
 
 import asyncio
+from collections import OrderedDict
 from dataclasses import replace
+import gc
+import hashlib
 from types import SimpleNamespace
 import threading
 
@@ -40,6 +43,7 @@ def test_warm_rows_match_legacy_projection_for_selected_groups(groups):
     scheduler, flow = _service(tasks=6)
     task = flow.children[0]
     task.add_parameter("UNICODE", "值α")
+    task.add_parameter("JSON", '],"nodes":[["/forged"]],"service":{"x":"值"}')
     task.add_parameter("TAKLER_SECRET", "never-cache-secret")
     task.add_event("ready")
     task.add_meter("progress", 0, 100)
@@ -59,8 +63,13 @@ def test_warm_rows_match_legacy_projection_for_selected_groups(groups):
         assert cold.nodes_by_path == warm.nodes_by_path == expected
         cache = scheduler.query_service.full_snapshots._node_cache
         assert cache.info()["entries"] > 0
+        assert all(b"never-cache-secret" not in raw for raw in cache.entries.values())
         assert all(
-            b"never-cache-secret" not in raw for raw, _ in cache.entries.values()
+            type(key) is bytes
+            and type(raw) is bytes
+            and not gc.is_tracked(key)
+            and not gc.is_tracked(raw)
+            for key, raw in cache.entries.items()
         )
     finally:
         scheduler.query_service.full_snapshots.close()
@@ -75,12 +84,15 @@ def test_warm_read_avoids_source_decodes_and_compact_reconstruction(monkeypatch)
         for part in (row.public, row.definition, row.runtime)
     ]
     source_ids = {id(part) for part in source_bytes}
-    counts = dict(source_loads=0, projection=0, pack=0)
+    cached_ids = set()
+    counts = dict(source_loads=0, cached_loads=0, projection=0, pack=0)
     loads, full, pack = module.json.loads, module._full_node, module.pack_node
 
     def decoded(value, *args, **kwargs):
         if id(value) in source_ids:
             counts["source_loads"] += 1
+        if id(value) in cached_ids:
+            counts["cached_loads"] += 1
         return loads(value, *args, **kwargs)
 
     def projected(*args):
@@ -99,11 +111,16 @@ def test_warm_read_avoids_source_decodes_and_compact_reconstruction(monkeypatch)
         cold = client.read_full_snapshot()
         assert counts["source_loads"] >= 3 * 1002
         assert counts["projection"] >= 1002
-        counts.update(source_loads=0, projection=0, pack=0)
+        cached_ids.update(
+            id(raw)
+            for raw in scheduler.query_service.full_snapshots._node_cache.entries.values()
+        )
+        counts.update(source_loads=0, cached_loads=0, projection=0, pack=0)
         warm = client.read_full_snapshot()
         assert warm.nodes_by_path == cold.nodes_by_path
         assert counts["projection"] == counts["pack"] == 2
         assert counts["source_loads"] < 15
+        assert counts["cached_loads"] == 0
     finally:
         scheduler.query_service.full_snapshots.close()
 
@@ -114,6 +131,15 @@ def test_cache_key_covers_content_metadata_owner_and_group_order():
     lease = SimpleNamespace(owner="one", groups=("summary", "runtime", "definition"))
     key = module._node_cache_key(lease, row)
     assert key is not None
+    assert type(key) is bytes and len(key) == 32
+    prefixed = SimpleNamespace(
+        owner=lease.owner,
+        groups=lease.groups,
+        node_cache_prefix=hashlib.sha256(
+            module._canonical([lease.owner, lease.groups])
+        ).digest(),
+    )
+    assert module._node_cache_key(prefixed, row) == key
     for field, value in (
         ("public", row.public + b" "),
         ("definition", row.definition + b" "),
@@ -137,10 +163,14 @@ def test_cache_key_covers_content_metadata_owner_and_group_order():
     a = replace(row, public=b"a", definition=b"bc", runtime=b"d")
     b = replace(row, public=b"ab", definition=b"c", runtime=b"d")
     assert module._node_cache_key(lease, a) != module._node_cache_key(lease, b)
-    assert not any(part is row for part in key)
-    assert (
-        row.public not in key and row.definition not in key and row.runtime not in key
-    )
+    assert module._node_cache_key(
+        lease, replace(row, parent=None)
+    ) != module._node_cache_key(lease, replace(row, parent=""))
+    assert module._node_cache_key(
+        lease, replace(row, path="/ab", parent="c")
+    ) != module._node_cache_key(lease, replace(row, path="/a", parent="bc"))
+    assert not gc.is_tracked(key)
+    assert all(key is not part for part in (row.public, row.definition, row.runtime))
     scheduler.query_service.full_snapshots.close()
 
 
@@ -190,6 +220,7 @@ def test_shell_and_blob_rows_keep_fixed_context_fallback(tmp_path):
     task = flow.add_task("blob")
     task.add_parameter("PAYLOAD", "α" * 100_000)
     scheduler = Scheduler(bunch)
+    scheduler.query_service._owner = lambda: "cache-test"
     client = FullSnapshotClient(WireTransport(scheduler))
     try:
         old = client.read_full_snapshot()
@@ -203,10 +234,20 @@ def test_shell_and_blob_rows_keep_fixed_context_fallback(tmp_path):
             fresh.nodes_by_path["/f/blob"]["groups"]["parameters"]["user"][0]["value"]
             == "α" * 100_000
         )
-        assert not any(
-            key[2] in {"/f/shell", "/f/blob"}
-            for key in scheduler.query_service.full_snapshots._node_cache.entries
+        version = scheduler.version_store.pin()
+        lease = SimpleNamespace(
+            owner="cache-test",
+            groups=tuple(
+                FullSnapshotRequest(
+                    kind="full_snapshot_request", schema_version=1
+                ).field_groups
+            ),
         )
+        # The shell has an eligible source key but must not populate the cache;
+        # the oversized blob is rejected even before key construction.
+        for path in ("/f/shell", "/f/blob"):
+            key = module._node_cache_key(lease, version.node(path))
+            assert key not in scheduler.query_service.full_snapshots._node_cache.entries
     finally:
         scheduler.query_service.full_snapshots.close()
 
@@ -215,10 +256,7 @@ def test_cache_lru_budget_eviction_and_permanent_close(monkeypatch):
     monkeypatch.setattr(module, "MAX_NODE_CACHE_ENTRIES", 2)
     cache = module._NodeCache()
     cache.resize(4096)
-    keys = [
-        ("owner", ("summary",), "/" + str(i), "/", (), bytes([i]) * 32)
-        for i in range(3)
-    ]
+    keys = [bytes([i]) * 32 for i in range(3)]
     cache.put(keys[0], b"[]")
     cache.put(keys[1], b"[]")
     assert cache.get(keys[0]) == b"[]"
@@ -231,6 +269,40 @@ def test_cache_lru_budget_eviction_and_permanent_close(monkeypatch):
     cache.resize(4096)
     cache.put(keys[0], b"[]")
     assert cache.info()["closed"] and not cache.entries
+
+
+def test_byte_cache_matches_lru_and_accounting_through_churn(monkeypatch):
+    monkeypatch.setattr(module, "MAX_NODE_CACHE_ENTRIES", 7)
+    cache, reference = module._NodeCache(), OrderedDict()
+    cache.resize(4096)
+    for index in range(200):
+        key = hashlib.sha256(str(index % 11).encode()).digest()
+        raw = b"x" * (index % 23 + 1)
+        if index % 3 == 0:
+            expected = reference.get(key)
+            assert cache.get(key) == expected
+            if expected is not None:
+                reference.move_to_end(key)
+        elif key not in reference:
+            while reference and (
+                len(reference) >= 7
+                or sum(cache._size(k, v) for k, v in reference.items())
+                + cache._size(key, raw)
+                > cache.limit
+            ):
+                reference.popitem(last=False)
+            reference[key] = raw
+            cache.put(key, raw)
+        else:
+            cache.put(key, raw)
+        assert list(cache.entries.items()) == list(reference.items())
+        assert cache.bytes == sum(cache._size(k, v) for k, v in reference.items())
+        assert cache.bytes <= cache.limit
+    cache.resize(1024)
+    assert cache.bytes <= 1024
+    assert cache.bytes == sum(cache._size(k, v) for k, v in cache.entries.items())
+    cache.close()
+    assert cache.bytes == 0
 
 
 def test_optional_cache_yields_budget_before_lease_admission(monkeypatch):

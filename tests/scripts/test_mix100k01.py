@@ -1,6 +1,8 @@
 """MIX100K-01 targeted regressions; never starts a Takler listener."""
 
 import asyncio
+from dataclasses import replace
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -68,6 +70,54 @@ def test_ledger_bounded_record_and_no_silent_oversize(tmp_path):
         log("large", text="x" * 16384)
     log.close()
     assert len(list(mix.rows(tmp_path / "events.jsonl"))) == 1
+
+
+def test_full_view_gzip_retains_every_node_and_semantic_digest(tmp_path):
+    from takler.client.full_snapshot import FullSnapshotComplete
+
+    node = {"path": "/f/t", "value": "值α" * 10_000}
+    raw = mix.canonical(node) + b"\n"
+    complete = FullSnapshotComplete(
+        session_id="s",
+        full_snapshot_id="f",
+        state_version=1,
+        as_of="2026-10-25T00:00:00Z",
+        scope_path="/",
+        total_nodes=1,
+        total_bytes=len(raw),
+        sha256="a" * 64,
+        ancestor_context=[],
+        service=None,
+    )
+    wire = mix.QueryWire.__new__(mix.QueryWire)
+    wire.deadline_ns = time.monotonic_ns() + 10 * mix.NS
+    wire.cancelled, wire.bytes, wire.rpcs = True, 42, 2
+    wire.client = SimpleNamespace(
+        run_iter_full_snapshot=lambda **_: iter([node, complete])
+    )
+    for name in ("view.jsonl", "view.jsonl.gz"):
+        path = tmp_path / name
+        result = wire.full(path, 1)
+        assert list(mix.rows(path)) == [node]
+        assert result["semantic_sha256"] == hashlib.sha256(raw).hexdigest()
+        assert result["view_bytes"] == len(raw)
+        assert result["archive_bytes"] == path.stat().st_size
+        assert result["count"] == 1 and result["cancelled"]
+        assert result["bytes"] == 42 and result["rpcs"] == 2
+        with pytest.raises(FileExistsError):
+            wire.full(path, 1)
+    compressed = tmp_path / "view.jsonl.gz"
+    assert compressed.stat().st_size < len(raw) // 10
+    compressed.write_bytes(compressed.read_bytes()[:-8])
+    with pytest.raises(EOFError):
+        list(mix.rows(compressed))
+    wire.client = SimpleNamespace(
+        run_iter_full_snapshot=lambda **_: iter(
+            [node, replace(complete, total_nodes=2)]
+        )
+    )
+    with pytest.raises(ValueError, match="node count"):
+        wire.full(tmp_path / "bad.jsonl.gz", 1)
 
 
 def test_pool_distribution_100k_and_formula():

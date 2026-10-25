@@ -11,6 +11,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 import gc
+import gzip
 import hashlib
 import importlib.metadata
 import json
@@ -663,16 +664,24 @@ class QueryWire:
         from takler.client.full_snapshot import FullSnapshotComplete
 
         digest, count, completion = hashlib.sha256(), 0, None
-        with output.open("xb", buffering=65536) as target:
+        view_bytes = 0
+        archive = (
+            gzip.open(output, "xb", compresslevel=1)
+            if output.suffix == ".gz"
+            else output.open("xb", buffering=65536)
+        )
+        with archive as target:
             for item in self.client.run_iter_full_snapshot(scope_path=scope):
                 remaining(self.deadline_ns)
                 if isinstance(item, FullSnapshotComplete):
                     completion = item
                 else:
                     raw = canonical(item) + b"\n"
-                    target.write(raw)
+                    if target.write(raw) != len(raw):
+                        raise ValueError("short full view evidence write")
                     digest.update(raw)
                     count += 1
+                    view_bytes += len(raw)
         if completion is None or count != nodes or completion.total_nodes != count:
             raise ValueError("complete stream node count mismatch")
         if not self.cancelled:
@@ -685,6 +694,10 @@ class QueryWire:
             completion=asdict(completion),
             bytes=self.bytes,
             rpcs=self.rpcs,
+            view_file=output.name,
+            view_format="gzip-jsonl-v1" if output.suffix == ".gz" else "jsonl-v1",
+            view_bytes=view_bytes,
+            archive_bytes=output.stat().st_size,
         )
 
     def close(self):
@@ -1042,7 +1055,7 @@ def full_reader(directory, role):
         log("planned", channel=role, request_id=rid, target_ns=started)
         wire.begin(rid, min(started + 60 * NS, window["drain_deadline_ns"]))
         try:
-            result = wire.full(directory / f"{rid}-view.jsonl", config["nodes"])
+            result = wire.full(directory / f"{rid}-view.jsonl.gz", config["nodes"])
             log(
                 "completed",
                 channel=role,
@@ -1425,6 +1438,7 @@ def freeze(batch, repo, batch_id="MIX100K-01", *, product=False):
         raise ValueError("batch already frozen")
     config = dict(
         batch=batch_id,
+        full_view_archive="gzip-level1",
         seed=20261018,
         tasks=100000,
         flows=100,
@@ -1887,7 +1901,10 @@ def run_one(batch, condition):
 
 
 def rows(path):
-    with path.open() as source:
+    archive = (
+        gzip.open(path, "rt", encoding="utf-8") if path.suffix == ".gz" else path.open()
+    )
+    with archive as source:
         for line in source:
             yield json.loads(line)
 
