@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections import OrderedDict
 import gc
 import hashlib
 import hmac
 import json
 import secrets
+import struct
 import sys
 import threading
 import time
@@ -40,6 +42,8 @@ MAX_OWNER_LEASES = 2
 MAX_WORKERS = 2
 MAX_WAITING = 2
 MAX_RETAINED_BYTES = 1536 * 1024 * 1024
+MAX_NODE_CACHE_BYTES = 192 * 1024 * 1024
+MAX_NODE_CACHE_ENTRIES = 131_072
 MAX_ENCODED_BYTES = 512 * 1024 * 1024
 MAX_PAGE_BYTES = 262_144
 PAGE_TARGET_BYTES = 230_000
@@ -306,6 +310,123 @@ def _pointer_value(value: Any, pointer: str):
     return value
 
 
+class _NodeCache:
+    """Optional immutable row bytes; never retain a version or decoded object."""
+
+    def __init__(self):
+        self.entries = OrderedDict()
+        self.bytes = self.peak_bytes = 0
+        self.limit = MAX_NODE_CACHE_BYTES
+        self.closed = False
+        self.lock = threading.Lock()
+
+    def resize(self, available):
+        with self.lock:
+            self.limit = (
+                0 if self.closed else min(MAX_NODE_CACHE_BYTES, max(0, available))
+            )
+            self._trim()
+
+    def _trim(self):
+        while self.entries and (
+            self.bytes > self.limit or len(self.entries) > MAX_NODE_CACHE_ENTRIES
+        ):
+            _, (_, size) = self.entries.popitem(last=False)
+            self.bytes -= size
+
+    def get(self, key):
+        with self.lock:
+            entry = self.entries.get(key)
+            if entry is not None:
+                self.entries.move_to_end(key)
+                return entry[0]
+        return None
+
+    def put(self, key, raw):
+        # Charge retained key metadata and an allowance for dictionary entries.
+        # Shared strings/tuples are deliberately overcounted, not omitted.
+        owner, groups, path, parent, children, digest = key
+        size = (
+            sum(
+                sys.getsizeof(value)
+                for value in (
+                    key,
+                    raw,
+                    owner,
+                    groups,
+                    path,
+                    parent,
+                    children,
+                    digest,
+                    *groups,
+                    *children,
+                )
+            )
+            + 256
+        )
+        with self.lock:
+            if (
+                self.closed
+                or size > self.limit
+                or key in self.entries
+                or MAX_NODE_CACHE_ENTRIES <= 0
+            ):
+                return
+            while self.entries and (
+                self.bytes + size > self.limit
+                or len(self.entries) >= MAX_NODE_CACHE_ENTRIES
+            ):
+                _, (_, old_size) = self.entries.popitem(last=False)
+                self.bytes -= old_size
+            self.entries[key] = (raw, size)
+            self.bytes += size
+            self.peak_bytes = max(self.peak_bytes, self.bytes)
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            self.entries.clear()
+            self.bytes = self.limit = 0
+
+    def info(self):
+        with self.lock:
+            return dict(
+                bytes=self.bytes,
+                peak_bytes=self.peak_bytes,
+                entries=len(self.entries),
+                limit=self.limit,
+                closed=self.closed,
+            )
+
+
+def _node_cache_key(lease, row):
+    if (
+        type(row.public) is not bytes
+        or type(row.definition) is not bytes
+        or type(row.runtime) is not bytes
+        or type(row.path) is not str
+        or (row.parent is not None and type(row.parent) is not str)
+        or type(row.children) is not tuple
+        or row.children
+        or len(row.public) + len(row.definition) + len(row.runtime) > BLOB_THRESHOLD
+    ):
+        return None
+    digest = hashlib.sha256(
+        struct.pack("!III", len(row.public), len(row.definition), len(row.runtime))
+    )
+    digest.update(row.public)
+    digest.update(row.definition)
+    digest.update(row.runtime)
+    return (
+        lease.owner,
+        lease.groups,
+        row.path,
+        row.parent,
+        row.children,
+        digest.digest(),
+    )
+
+
 @dataclass
 class _Lease:
     owner: str
@@ -341,6 +462,14 @@ class FullSnapshotService:
         self._lock = asyncio.Lock()
         self._workers = asyncio.Semaphore(MAX_WORKERS)
         self._waiting = 0
+        self._node_cache = _NodeCache()
+
+    def _cache_budget(self, additional=0):
+        self._node_cache.resize(
+            MAX_RETAINED_BYTES
+            - additional
+            - sum(lease.reserved_bytes for lease in self._leases.values())
+        )
 
     def _purge(self):
         now = time.monotonic()
@@ -360,11 +489,13 @@ class FullSnapshotService:
         if lease is not None and lease.gc_tuned:
             lease.gc_tuned = False
             _release_large_snapshot_gc()
+        self._cache_budget()
 
     def close(self) -> None:
         """Release retained leases and process-wide GC tuning at shutdown."""
         for key in tuple(self._leases):
             self._drop(key)
+        self._node_cache.close()
 
     def _schedule_expiry(self, lease: _Lease) -> None:
         if lease.expiry_handle is not None:
@@ -480,6 +611,7 @@ class FullSnapshotService:
                     > MAX_RETAINED_BYTES
                 ):
                     return _error("resource_exhausted", "full snapshot retention limit")
+                self._cache_budget(reserve)
                 self._leases[lease.snapshot_id] = lease
                 if len(paths) >= GC_TUNE_MIN_PATHS:
                     lease.gc_tuned = _acquire_large_snapshot_gc()
@@ -561,32 +693,46 @@ class FullSnapshotService:
         )
         while position < len(lease.paths) and len(nodes) < 2048:
             path = lease.paths[position]
-            record = _full_node(version, path, lease.groups)
-            if context is not None and position == 0:
-                record["ancestor_context"] = context
-            if service is not None and position == 0:
-                record["service"] = service
             source = version.node(path)
-            needs_blob_scan = (
-                len(source.public or b"") + len(source.definition) + len(source.runtime)
-                > BLOB_THRESHOLD
-                or "ancestor_context" in record
-                or "service" in record
+            cache_key = (
+                _node_cache_key(lease, source)
+                if self._node_cache.limit
+                and not (lease.next_page == 0 and position == 0)
+                else None
             )
-            # The compact row contains every exported group value. If its
-            # entire encoding is below the blob threshold, no group string
-            # can require a chunk. Metadata is separate from that row, so
-            # the first page still checks it below.
-            if not needs_blob_scan:
-                packed = pack_node(record, lease.groups)
-                raw = _canonical(packed)
-                needs_blob_scan = len(raw) > BLOB_THRESHOLD
-            if needs_blob_scan:
-                record = self._blobify(lease, record, BLOB_THRESHOLD)
-                packed = pack_node(record, lease.groups)
-                raw = _canonical(packed)
-            candidate_context = record.pop("ancestor_context", None)
-            candidate_service = record.pop("service", None)
+            cached = self._node_cache.get(cache_key) if cache_key is not None else None
+            if cached is not None:
+                packed, raw = json.loads(cached), cached
+                record = {}
+                candidate_context = candidate_service = None
+            else:
+                record = _full_node(version, path, lease.groups)
+                if context is not None and position == 0:
+                    record["ancestor_context"] = context
+                if service is not None and position == 0:
+                    record["service"] = service
+                needs_blob_scan = (
+                    len(source.public or b"")
+                    + len(source.definition)
+                    + len(source.runtime)
+                    > BLOB_THRESHOLD
+                    or "ancestor_context" in record
+                    or "service" in record
+                )
+                # The compact row contains every exported group value. If its
+                # entire encoding is below the blob threshold, no group string
+                # can require a chunk. Metadata is separate from that row, so
+                # the first page still checks it below.
+                if not needs_blob_scan:
+                    packed = pack_node(record, lease.groups)
+                    raw = _canonical(packed)
+                    needs_blob_scan = len(raw) > BLOB_THRESHOLD
+                if needs_blob_scan:
+                    record = self._blobify(lease, record, BLOB_THRESHOLD)
+                    packed = pack_node(record, lease.groups)
+                    raw = _canonical(packed)
+                candidate_context = record.pop("ancestor_context", None)
+                candidate_service = record.pop("service", None)
             if len(raw) > lease.page_target_bytes - 4096:
                 record = _full_node(version, path, lease.groups)
                 if context is not None and position == 0:
@@ -600,6 +746,14 @@ class FullSnapshotService:
                 raw = _canonical(packed)
             if len(raw) > lease.page_target_bytes - 4096:
                 raise ValueError(f"record exceeds page budget: {path}")
+            if (
+                cache_key is not None
+                and cached is None
+                and len(raw) <= BLOB_THRESHOLD
+                and not record.get("blob_refs")
+                and record["summary"]["type_id"] == "takler.task"
+            ):
+                self._node_cache.put(cache_key, raw)
             if nodes and page_bytes + len(raw) > lease.page_target_bytes - 4096:
                 break
             if lease.next_page == 0 and position == 0:

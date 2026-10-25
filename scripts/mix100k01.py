@@ -439,6 +439,11 @@ async def service(directory):
                 )
         await observation.close()
         final = dict(
+            full_node_cache=(
+                full_service._node_cache.info()
+                if hasattr(full_service, "_node_cache")
+                else None
+            ),
             gc=dict(enabled=gc.isenabled(), threshold=gc.get_threshold()),
             observation=emitter.close(),
             recovered=recovered,
