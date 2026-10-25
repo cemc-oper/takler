@@ -26,6 +26,7 @@ from takler.protocol.query_v1 import (
     FullSnapshotChunkRequest,
     FullSnapshotPage,
     FullSnapshotRequest,
+    decode_query_document,
     encode_query_document,
 )
 from takler.protocol.full_snapshot_codec import pack_node
@@ -324,7 +325,7 @@ class _Lease:
     total_bytes: int = 0
     payload_bytes: int = 0
     digest: Any = field(default_factory=hashlib.sha256)
-    last_page: FullSnapshotPage | None = None
+    last_page: bytes | None = None
     blobs: dict[str, tuple[str, str, int, str]] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     expiry_handle: asyncio.TimerHandle | None = None
@@ -407,6 +408,19 @@ class FullSnapshotService:
                 self._waiting -= 1
 
     async def page(self, request: FullSnapshotRequest):
+        reply = await self._page(request)
+        return (
+            decode_query_document(reply, expected="full_snapshot_page")
+            if isinstance(reply, bytes)
+            else reply
+        )
+
+    async def page_encoded(self, request: FullSnapshotRequest) -> bytes:
+        """Reuse the worker's validated wire page, including cursor replays."""
+        reply = await self._page(request)
+        return reply if isinstance(reply, bytes) else encode_query_document(reply)
+
+    async def _page(self, request: FullSnapshotRequest):
         if set(request.field_groups) - GROUPS:
             return _error("unsupported_capability", "unknown full snapshot field group")
         owner = self.parent._owner()
@@ -492,7 +506,7 @@ class FullSnapshotService:
                         return lease.last_page
                     return _error("invalid_request", "full snapshot cursor mismatch")
             try:
-                page = await self._bounded(self._render_page, lease)
+                page, raw = await self._bounded(self._render_page, lease)
             except asyncio.CancelledError:
                 async with self._lock:
                     self._drop(lease.snapshot_id)
@@ -521,15 +535,15 @@ class FullSnapshotService:
             async with self._lock:
                 if self._leases.get(lease.snapshot_id) is not lease:
                     return _error("snapshot_expired", "full snapshot cancelled")
-                lease.last_page = page
+                lease.last_page = raw
                 lease.used = time.monotonic()
                 if page.complete and lease.gc_tuned:
                     lease.gc_tuned = False
                     _release_large_snapshot_gc()
                 self._schedule_expiry(lease)
-                return page
+                return raw
 
-    def _render_page(self, lease: _Lease) -> FullSnapshotPage:
+    def _render_page(self, lease: _Lease) -> tuple[FullSnapshotPage, bytes]:
         version = lease.version
         nodes: list[list] = []
         page_bytes = 0
@@ -639,7 +653,8 @@ class FullSnapshotService:
             total_bytes=total_bytes if complete else None,
             sha256=digest.hexdigest() if complete else None,
         )
-        if len(encode_query_document(page)) > MAX_PAGE_BYTES:
+        raw = encode_query_document(page)
+        if len(raw) > MAX_PAGE_BYTES:
             raise ValueError("page exceeds wire budget")
         lease.next_offset = position
         lease.next_page += 1
@@ -651,7 +666,7 @@ class FullSnapshotService:
         # loop while preserving normal GC for the rest of the process.
         if gc.isenabled():
             gc.collect(0)
-        return page
+        return page, raw
 
     def _blobify(self, lease: _Lease, record: dict, threshold: int) -> dict:
         refs = []

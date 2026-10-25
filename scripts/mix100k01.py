@@ -344,14 +344,29 @@ async def service(directory):
         loop.add_signal_handler(sig, stop.set)
     seen = set()
     full_service = server.scheduler.query_service.full_snapshots
-    original_page = full_service.page
+    # Observe the common page state machine, including an encoded wire entry.
+    page_method = "_page" if hasattr(full_service, "_page") else "page"
+    original_page = getattr(full_service, page_method)
     boundary_root = None
     boundary_phase = None
     boundary_scope = "/"
 
     async def linked_page(request):
         nonlocal boundary_root, boundary_phase, boundary_scope
-        reply = await original_page(request)
+        wire_reply = reply = await original_page(request)
+        if isinstance(reply, bytes):
+            # Decode only pre/post boundary proofs, never steady full pages.
+            if boundary_root is None and (
+                request.full_snapshot_id is not None
+                or all(
+                    phase in seen or not (directory / f"{phase}-request.json").exists()
+                    for phase in ("pre", "post")
+                )
+            ):
+                return wire_reply
+            from takler.protocol.query_v1 import decode_query_document
+
+            reply = decode_query_document(reply, expected="full_snapshot_page")
         if request.full_snapshot_id is None and hasattr(reply, "full_snapshot_id"):
             for phase in ("pre", "post"):
                 if phase not in seen and (directory / f"{phase}-request.json").exists():
@@ -371,9 +386,9 @@ async def service(directory):
             with (directory / f"{phase}-pool.jsonl").open("x") as target:
                 for row in states:
                     target.write(json.dumps(row) + "\n")
-        return reply
+        return wire_reply
 
-    full_service.page = linked_page
+    setattr(full_service, page_method, linked_page)
     try:
         while not stop.is_set():
             audit.check()

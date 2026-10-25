@@ -325,7 +325,7 @@ def create_app(
                 elif method == "ReadSince":
                     reply = await handlers.scheduler.query_service.since(document)
                 elif method == "ReadFullSnapshot":
-                    reply = await handlers.scheduler.query_service.full_snapshots.page(
+                    reply = await handlers.scheduler.query_service.full_snapshots.page_encoded(
                         document
                     )
                 elif method == "ReadFullSnapshotChunk":

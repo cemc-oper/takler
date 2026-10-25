@@ -215,7 +215,7 @@ class GrpcTransport(
         elif expected == "since_request":
             reply = await service.since(document)
         elif expected == "full_snapshot_request":
-            reply = await service.full_snapshots.page(document)
+            reply = await service.full_snapshots.page_encoded(document)
         elif expected == "full_snapshot_chunk_request":
             reply = await service.full_snapshots.chunk(document)
         elif expected == "cancel_full_snapshot_request":
