@@ -123,7 +123,7 @@ class FrozenNode:
     summary: bytes | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class StateVersion:
     state_version: int
     as_of: str

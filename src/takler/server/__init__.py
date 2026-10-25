@@ -667,7 +667,7 @@ class TaklerServer:
         if self.http_transport is not None:
             await self.http_transport.stop()
         await self.scheduler.stop()
-        self.scheduler.query_service.full_snapshots.close()
+        self.scheduler.query_service.close()
         # Cancels the periodic task and reports the final write outcome.
         self.shutdown_checkpoint_ok = await self.checkpoint_manager.stop() is not False
         logger.info("stop server...done")

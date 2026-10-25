@@ -13,6 +13,7 @@ import json
 import re
 import secrets
 import time
+import weakref
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -148,6 +149,13 @@ class _Snapshot:
     pages: tuple[bytes, ...]
     expires: float
     size: int
+    source: weakref.ReferenceType
+
+
+@dataclass
+class _Capture:
+    task: asyncio.Task | None = None
+    readers: int = 0
 
 
 @dataclass(frozen=True)
@@ -197,6 +205,10 @@ class QueryService:
         self._lock = asyncio.Lock()
         self._reserved = 0
         self._owner_reserved: dict[str, int] = {}
+        self._captures: dict[tuple[str, int, int], _Capture] = {}
+        self._capture_readers = 0
+        self._snapshot_expiry: asyncio.TimerHandle | None = None
+        self._closed = False
         self._capture_slots = asyncio.Semaphore(MAX_CAPTURE_WORKERS)
         self._delta_waiting = 0
         from takler.server.full_snapshot import FullSnapshotService
@@ -269,6 +281,36 @@ class QueryService:
         for key, batch in list(self._delta_batches.items()):
             if batch.expires <= now:
                 del self._delta_batches[key]
+        if not self._snapshots and self._snapshot_expiry is not None:
+            self._snapshot_expiry.cancel()
+            self._snapshot_expiry = None
+
+    def _schedule_snapshot_expiry(self) -> None:
+        if self._snapshot_expiry is not None:
+            self._snapshot_expiry.cancel()
+            self._snapshot_expiry = None
+        if self._snapshots and not self._closed:
+            delay = min(row.expires for row in self._snapshots.values()) - _monotonic()
+            self._snapshot_expiry = asyncio.get_running_loop().call_later(
+                max(0.001, delay), self._expire_snapshots
+            )
+
+    def _expire_snapshots(self) -> None:
+        self._snapshot_expiry = None
+        self._purge()
+        self._schedule_snapshot_expiry()
+
+    def close(self) -> None:
+        """Release query data and prevent late captures from retaining pages."""
+        self._closed = True
+        if self._snapshot_expiry is not None:
+            self._snapshot_expiry.cancel()
+            self._snapshot_expiry = None
+        self._snapshots.clear()
+        self._query_leases.clear()
+        self._blobs.clear()
+        self._delta_batches.clear()
+        self.full_snapshots.close()
 
     def _retained_size(self) -> int:
         return (
@@ -435,6 +477,8 @@ class QueryService:
         query_id = self._query_id(request, owner)
         async with self._lock:
             self._purge()
+            if self._closed:
+                return _error("snapshot_expired", "query service closed")
             if request.cursor is not None:
                 parsed = self._parse_cursor(request.cursor, owner)
                 if parsed is None:
@@ -448,26 +492,111 @@ class QueryService:
                 if index < 1 or index >= len(snapshot.pages):
                     return _error("invalid_request", "cursor index out of range")
                 return snapshot.pages[index]
-            replacement = self._replaceable_snapshot(owner)
-            if (
-                self._owner_reserved.get(owner, 0) >= MAX_OWNER_SNAPSHOTS
-                or self._reserved >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
-            ) or (
-                len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
-                and replacement is None
-            ):
-                return _error("resource_exhausted", "snapshot count limit")
-            budget = MAX_RETAINED_BYTES - self._retained_size()
-            self._reserved += 1
-            self._owner_reserved[owner] = self._owner_reserved.get(owner, 0) + 1
-        snapshot_id = secrets.token_urlsafe(24)
-        try:
-            captured_at = _monotonic()
             try:
                 version = self.scheduler.version_store.pin()
             except VersionUnavailable as exc:
                 return _error("resource_exhausted", str(exc))
             base_revision = self.scheduler.query_changes.revision
+            # Exact immutable root identity proves reuse; a revision hint alone
+            # does not. Weak references never retain an old full state root.
+            for snapshot in self._snapshots.values():
+                if (
+                    snapshot.owner == owner
+                    and snapshot.query_id == query_id
+                    and snapshot.base_revision == base_revision
+                    and snapshot.source() is version
+                    # Leave at least half the original lifetime for a complete
+                    # new read; do not hand a fresh reader nearly expired pages.
+                    and snapshot.expires - _monotonic() >= SNAPSHOT_SECONDS / 2
+                ):
+                    self._renew_lease(query_id, owner, snapshot.scope, snapshot.depth)
+                    self._schedule_snapshot_expiry()
+                    return snapshot.pages[0]
+            key = (query_id, id(version), base_revision)
+            capture = self._captures.get(key)
+            if capture is not None:
+                if self._reserved + self._capture_readers >= (
+                    MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
+                ):
+                    return _error("resource_exhausted", "snapshot count limit")
+                self._capture_readers += 1
+                shared = True
+            else:
+                replacement = self._replaceable_snapshot(owner)
+                if (
+                    self._owner_reserved.get(owner, 0) >= MAX_OWNER_SNAPSHOTS
+                    or self._reserved + self._capture_readers
+                    >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
+                ) or (
+                    len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
+                    and replacement is None
+                ):
+                    return _error("resource_exhausted", "snapshot count limit")
+                budget = MAX_RETAINED_BYTES - self._retained_size()
+                self._reserved += 1
+                self._owner_reserved[owner] = self._owner_reserved.get(owner, 0) + 1
+                capture = _Capture()
+                self._captures[key] = capture
+                capture.task = asyncio.create_task(
+                    self._capture_snapshot(
+                        request,
+                        owner,
+                        query_id,
+                        version,
+                        base_revision,
+                        budget,
+                        key,
+                        capture,
+                    )
+                )
+                capture.task.add_done_callback(
+                    lambda task: task.exception() if not task.cancelled() else None
+                )
+                shared = False
+            capture.readers += 1
+        cancelled = False
+        try:
+            reply = await asyncio.shield(capture.task)
+            return reply if isinstance(reply, bytes) else reply.model_copy(deep=True)
+        except asyncio.CancelledError:
+            cancelled = True
+            capture.readers -= 1
+            # A caller cannot cancel another reader's shared capture. Keep its
+            # reservation until the actual worker stops, even with no readers.
+            try:
+                await asyncio.shield(capture.task)
+            except Exception:
+                pass
+            raise
+        finally:
+            # These counters belong to the event loop. No await is needed to
+            # release a reader, including repeated cancellation during cleanup.
+            if not cancelled:
+                capture.readers -= 1
+            if shared:
+                self._capture_readers -= 1
+
+    async def _capture_snapshot(
+        self, request, owner, query_id, version, base_revision, budget, key, capture
+    ):
+        try:
+            return await self._build_snapshot(
+                request, owner, query_id, version, base_revision, budget, capture
+            )
+        finally:
+            async with self._lock:
+                self._captures.pop(key, None)
+                self._reserved -= 1
+                self._owner_reserved[owner] -= 1
+                if not self._owner_reserved[owner]:
+                    del self._owner_reserved[owner]
+
+    async def _build_snapshot(
+        self, request, owner, query_id, version, base_revision, budget, capture
+    ):
+        snapshot_id = secrets.token_urlsafe(24)
+        captured_at = _monotonic()
+        try:
             try:
                 async with self._capture_slots:
                     work = asyncio.create_task(
@@ -497,14 +626,12 @@ class QueryService:
             return _error("field_too_large", "summary exceeds page limit")
         except MemoryError:
             return _error("resource_exhausted", "snapshot memory limit")
-        finally:
-            async with self._lock:
-                self._reserved -= 1
-                self._owner_reserved[owner] -= 1
-                if not self._owner_reserved[owner]:
-                    del self._owner_reserved[owner]
         async with self._lock:
             self._purge()
+            if self._closed or not capture.readers:
+                return _error("snapshot_expired", "summary capture abandoned")
+            if captured_at + SNAPSHOT_SECONDS <= _monotonic():
+                return _error("snapshot_expired", "summary capture expired")
             if self.scheduler.query_changes.since(base_revision) is None:
                 return _error("resource_exhausted", "query change window expired")
             replacement = self._replaceable_snapshot(owner)
@@ -525,8 +652,10 @@ class QueryService:
                 pages,
                 captured_at + SNAPSHOT_SECONDS,
                 size,
+                weakref.ref(version),
             )
             self._renew_lease(query_id, owner, scope, request.depth)
+            self._schedule_snapshot_expiry()
         return pages[0]
 
     @staticmethod

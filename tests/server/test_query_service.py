@@ -91,7 +91,9 @@ def test_owner_replacement_expires_old_cursor():
         service = Scheduler(bunch).query_service
         first = await service.page(page_request())
         assert first.next_cursor
+        flow.add_task("new1")
         await service.page(page_request())
+        flow.add_task("new2")
         newest = await service.page(page_request())
         assert newest.kind == "page"
         assert (
@@ -628,8 +630,10 @@ async def _snapshot_and_blob_budgets_and_expiry():
     task.add_parameter("PAYLOAD", "x" * (12 * 1024 * 1024))
     service = Scheduler(bunch).query_service
     first = await service.page(page_request())
+    flow.add_task("second")
     second = await service.page(page_request())
     assert first.kind == second.kind == "page"
+    flow.add_task("third")
     third = await service.page(page_request())
     assert third.kind == "page"
     assert first.snapshot_id not in service._snapshots
