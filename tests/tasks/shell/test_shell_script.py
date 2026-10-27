@@ -1,4 +1,5 @@
 from pathlib import Path
+import shlex
 import sys
 
 import pytest
@@ -54,3 +55,22 @@ def test_script_with_include_render(
 
     shell_script = ShellRender(node=task1)
     shell_script.render_script(script_path=task1_script_path)
+
+
+def test_render_command_shquote_preserves_single_shell_arguments():
+    home = "/tmp/jobs $' with spaces"
+    task = ShellScriptTask("task1", "unused")
+    task.add_parameter("TAKLER_HOME", home)
+    task.update_generated_parameters()
+    job_path = f"{home}/task1.job0"
+    shell_script = ShellRender(node=task)
+
+    command = shell_script.render_command(
+        "orvix submit {{ TAKLER_JOB | shquote }}"
+    )
+    kill_command = shell_script.render_command(
+        'orvix kill {{ (TAKLER_JOB ~ ".info.yaml") | shquote }}'
+    )
+
+    assert shlex.split(command) == ["orvix", "submit", job_path]
+    assert shlex.split(kill_command) == ["orvix", "kill", job_path + ".info.yaml"]

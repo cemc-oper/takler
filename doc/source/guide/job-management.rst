@@ -133,6 +133,10 @@ try_no 与作业口令
         "{{TAKLER_JOB}} 1>> {{TAKLER_JOBOUT}} 2> {{TAKLER_JOBOUT}}.err",
     )
 
+路径等需要作为**单个 shell 参数**插入命令的值应使用 ``shquote``
+过滤器，例如 ``orvix submit --scheduler local {{ TAKLER_JOB | shquote }}`` 。
+它按 POSIX shell 规则引用空格、引号和特殊字符，不应再手工添加一层双引号。
+
 查找沿父链进行（
 :py:meth:`Node.find_parent_parameter <takler.core.node.Node.find_parent_parameter>`
 ），离任务近的定义优先。
