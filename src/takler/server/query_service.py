@@ -49,7 +49,11 @@ from takler.serialization.query_projection import (
     project_query_detail,
 )
 from takler.server.auth import get_call_credentials
-from takler.serialization.version import VersionUnavailable
+from takler.serialization.version import (
+    FrozenNode,
+    VersionUnavailable,
+    _SummaryEncoding,
+)
 
 
 SNAPSHOT_SECONDS = 120
@@ -83,13 +87,25 @@ def _error(code: str, message: str) -> FailureReply:
 
 
 def _fixed_summary(
-    version, path: str, generations: dict[str, str | None] | None = None
-) -> tuple[SummaryNode, str | None]:
+    version,
+    path: str,
+    generations: dict[str, str | None] | None = None,
+    *,
+    encoded: bool = False,
+) -> tuple[SummaryNode | _SummaryEncoding, str | None]:
     row = version.node(path)
     if row.public is None:
         raise VersionUnavailable("unsupported_plugin_detail")
     source = None
-    if row.summary is not None:
+    proof = row.summary_encoding if type(row) is FrozenNode else None
+    if (
+        encoded
+        and type(proof) is _SummaryEncoding
+        and proof.data is row.summary
+        and proof.path == row.path == path
+    ):
+        summary = proof
+    elif row.summary is not None:
         summary = SummaryNode.model_validate_json(row.summary)
     else:
         source = json.loads(row.public)
@@ -126,13 +142,15 @@ def _fixed_summary(
     return summary, generation
 
 
-def _iter_fixed_summaries(version, scope: str, depth: int | None):
+def _iter_fixed_summaries(
+    version, scope: str, depth: int | None, *, encoded: bool = False
+):
     version.node(scope)
     generations: dict[str, str | None] = {}
     pending = [(scope, 0)]
     while pending:
         path, level = pending.pop()
-        yield _fixed_summary(version, path, generations)
+        yield _fixed_summary(version, path, generations, encoded=encoded)
         if depth is None or level < depth:
             pending.extend(
                 (child, level + 1) for child in reversed(version.node(path).children)
@@ -388,7 +406,7 @@ class QueryService:
 
         def flush(complete: bool):
             nonlocal nodes, generations, estimated, total_size, page_index
-            reply = PageReply(
+            fields = dict(
                 kind="page",
                 schema_version=1,
                 session_id=self.session_id,
@@ -405,9 +423,24 @@ class QueryService:
                 else self._cursor(snapshot_id, page_index + 1, owner),
                 root_name=root_name,
                 flow_generations=generations,
-                nodes=nodes,
             )
-            raw = encode_query_document(reply)
+            if version is None:
+                raw = encode_query_document(PageReply(**fields, nodes=nodes))
+            else:
+                # Each row is either canonical, validated version data bound
+                # to its exact bytes/path, or encoded from the legacy model.
+                # Decode/validate the complete page once, without serializing
+                # all its nodes again. No unchecked page is retained.
+                header = json.dumps(
+                    dict(**fields, nodes=[]),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                ).encode("utf-8")
+                raw = header[:-2] + b",".join(nodes) + b"]}"
+                if len(raw) > MAX_PAGE_BYTES:
+                    raise WireError("query document too large")
+                PageReply.model_validate_json(raw)
             total_size += len(raw)
             if total_size > budget:
                 raise MemoryError("snapshot budget exceeded")
@@ -416,7 +449,7 @@ class QueryService:
             page_index += 1
 
         source = (
-            _iter_fixed_summaries(version, scope, request.depth)
+            _iter_fixed_summaries(version, scope, request.depth, encoded=True)
             if version is not None
             else iter_query_summaries(
                 self.scheduler.bunch, scope_path=scope, depth=request.depth
@@ -446,7 +479,19 @@ class QueryService:
                 flush(False)
             if node_size + generation_size + 1200 > MAX_PAGE_BYTES:
                 raise OverflowError("summary node exceeds page budget")
-            nodes.append(node)
+            if version is None:
+                nodes.append(node)
+            elif type(node) is _SummaryEncoding:
+                nodes.append(node.data)
+            else:
+                nodes.append(
+                    json.dumps(
+                        node.model_dump(mode="json", exclude_unset=True),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ).encode("utf-8")
+                )
             estimated += node_size + generation_size
             if flow_path:
                 if not generation:

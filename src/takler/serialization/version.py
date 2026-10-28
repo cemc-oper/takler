@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Callable, Mapping
 from takler.core import Bunch, Task
 from takler.core._run_effect import fingerprint as _run_effect_fingerprint
 from takler.core.state import NodeStatus
+from takler.protocol.query_v1 import SummaryNode
 from takler.schema.definition import DefinitionError
 from takler.serialization.checkpoint import (
     CheckpointDocument,
@@ -106,9 +107,25 @@ def _row_bytes(row: FrozenNode, secret: bytes | None) -> int:
         + len(row.runtime)
         + len(row.public or b"")
         + len(row.summary or b"")
+        + (64 if row.summary_encoding is not None else 0)
         + len(secret or b"")
         + 160
     )
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class _SummaryEncoding:
+    """Canonical bytes bound to the validated summary that produced them."""
+
+    path: str
+    data: bytes
+
+    def __init__(self, fields):
+        node = SummaryNode.model_validate(fields)
+        object.__setattr__(self, "path", node.path)
+        object.__setattr__(
+            self, "data", _encode(node.model_dump(mode="json", exclude_unset=True))
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +138,7 @@ class FrozenNode:
     runtime: bytes
     public: bytes | None
     summary: bytes | None = None
+    summary_encoding: _SummaryEncoding | None = None
 
 
 @dataclass(frozen=True, slots=True, weakref_slot=True)
@@ -670,6 +688,29 @@ class VersionStore:
             if value.get("submission_unknown_reason") is not None:
                 summary_fields["submission_unknown"] = True
         summary = _encode(summary_fields)
+        previous = (
+            self.current.node(path)
+            if self.current is not None and path in self.current.index
+            else None
+        )
+        proof = previous.summary_encoding if type(previous) is FrozenNode else None
+        if (
+            type(proof) is _SummaryEncoding
+            and proof.data is previous.summary
+            and proof.path == path
+            and proof.data == summary
+        ):
+            # METER-only updates need no new summary validation or allocation.
+            summary_encoding = proof
+            summary = proof.data
+        else:
+            try:
+                summary_encoding = _SummaryEncoding(summary_fields)
+                summary = summary_encoding.data
+            except ValueError:
+                # Keep unsupported/custom projections available to their
+                # existing consumers; queries retain their legacy validation.
+                summary_encoding = None
         secret = None
         if isinstance(node, Task) and node.state.node_status in _IN_FLIGHT:
             if not node.attempt_id or not node.job_password:
@@ -698,6 +739,7 @@ class VersionStore:
                 runtime,
                 public,
                 summary,
+                summary_encoding,
             ),
             secret,
         )
