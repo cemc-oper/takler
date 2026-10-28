@@ -108,11 +108,24 @@ def test_actual_runner_delivers_old_failure_after_requeue(monkeypatch):
 
     async def scenario():
         gates = [asyncio.Event(), asyncio.Event()]
+        started = [asyncio.Event(), asyncio.Event()]
+        delivered = [asyncio.Event(), asyncio.Event()]
         attempts = []
 
-        async def process(*args):
+        original_done = shell_runner.ShellRunner._on_job_done
+
+        def on_done(runner, job):
+            original_done(runner, job)
+            delivered[len(delivered_jobs)].set()
+            delivered_jobs.append(job)
+
+        delivered_jobs = []
+        monkeypatch.setattr(shell_runner.ShellRunner, "_on_job_done", on_done)
+
+        async def process(*args, **kwargs):
             index = len(attempts)
             attempts.append(asyncio.current_task())
+            started[index].set()
             await gates[index].wait()
             raise RuntimeError(f"attempt {index} failed")
 
@@ -123,20 +136,20 @@ def test_actual_runner_delivers_old_failure_after_requeue(monkeypatch):
         monkeypatch.setattr(task, "create_job_script", lambda: "submit")
         flow.begin()
         task.run()
-        await asyncio.sleep(0)
+        await asyncio.wait_for(started[0].wait(), 1)
         task.requeue()
         task.run()
-        await asyncio.sleep(0)
+        await asyncio.wait_for(started[1].wait(), 1)
         assert task.try_no == 1
         gates[0].set()
         with pytest.raises(RuntimeError):
             await attempts[0]
-        await asyncio.sleep(0)
+        await asyncio.wait_for(delivered[0].wait(), 1)
         assert task.state.node_status is NodeStatus.submitted
         gates[1].set()
         with pytest.raises(RuntimeError):
             await attempts[1]
-        await asyncio.sleep(0)
+        await asyncio.wait_for(delivered[1].wait(), 1)
         assert task.state.node_status is NodeStatus.aborted
         assert task.aborted_reason == "RuntimeError: attempt 1 failed"
 

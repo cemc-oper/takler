@@ -65,6 +65,20 @@ def ensure_synchronous_tasks(root) -> None:
 
 
 class Task(Node):
+    def __setattr__(self, name, value):
+        if name not in ("job_path", "jobout_path", "orvix_info_path"):
+            super().__setattr__(name, value)
+            return
+        previous = self.__dict__.get(name)
+        if previous != value and self.parent is not None:
+            flow = self.get_flow()
+            bunch = None if flow is None else flow.bunch
+            if bunch is not None and bunch.find_flow(flow.name) is flow:
+                index = getattr(bunch, "_artifact_path_index", None)
+                if index is not None:
+                    index.update(self, name, value, previous)
+        super().__setattr__(name, value)
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         ensure_synchronous_task(cls)
@@ -75,6 +89,9 @@ class Task(Node):
         self.task_id: Optional[str] = None
 
         self.aborted_reason: Optional[str] = None
+        # A submit command may have reached the external scheduler even when
+        # its wrapper reports failure. Keep this attempt and its reservation.
+        self.submission_unknown_reason: Optional[str] = None
 
         self.try_no: int = 0
         self.definition_generation: Optional[str] = None
@@ -116,6 +133,8 @@ class Task(Node):
                 try_no=self.try_no,
             )
         )
+        if self.submission_unknown_reason is not None:
+            result["submission_unknown_reason"] = self.submission_unknown_reason
         for field in (
             "definition_generation",
             "attempt_id",
@@ -145,6 +164,7 @@ class Task(Node):
         if method == SerializationType.Status:
             node.task_id = d["task_id"]
             node.aborted_reason = d["aborted_reason"]
+            node.submission_unknown_reason = d.get("submission_unknown_reason")
             node.try_no = d["try_no"]
             for field in (
                 "definition_generation",
@@ -181,6 +201,20 @@ class Task(Node):
 
     def sink_status_change(self, node_status: NodeStatus):
         self.set_node_status(node_status)
+
+    def set_node_status_only(self, node_status: NodeStatus):
+        if node_status not in (NodeStatus.submitted, NodeStatus.active):
+            if self.submission_unknown_reason is not None:
+                self.submission_unknown_reason = None
+                self.notify_query_change("summary", "runtime")
+        super().set_node_status_only(node_status)
+
+    def mark_submission_unknown(self, reason: str):
+        if self.state.node_status is not NodeStatus.submitted or not self.attempt_id:
+            raise FlowStateError("unknown submission requires a submitted attempt")
+        if self.submission_unknown_reason is None:
+            self.submission_unknown_reason = reason
+            self.notify_query_change("summary", "runtime")
 
     def handle_status_change(self):
         self.update_limits()
@@ -309,6 +343,10 @@ class Task(Node):
         """
         ensure_synchronous_task(self)
         self._require_running()
+        if self.submission_unknown_reason is not None:
+            raise FlowStateError(
+                "unknown external submission requires operator verification"
+            )
 
         def require_limit_capacity():
             if self.unresolved_limits_up():
@@ -327,6 +365,7 @@ class Task(Node):
                 "attempt_id",
                 "task_id",
                 "aborted_reason",
+                "submission_unknown_reason",
                 "job_password",
                 "submitted_at",
                 "started_at",
@@ -368,6 +407,10 @@ class Task(Node):
             raise
 
     def requeue(self, reset_repeat: bool = True):
+        if self.submission_unknown_reason is not None:
+            raise FlowStateError(
+                "unknown external submission requires operator verification"
+            )
         if self.try_no:
             self.notify_query_change("runtime")
         self.try_no = 0
@@ -385,17 +428,20 @@ class Task(Node):
                 "attempt_id",
                 "task_id",
                 "aborted_reason",
+                "submission_unknown_reason",
                 "submitted_at",
                 "started_at",
                 "ended_at",
                 "job_path",
                 "jobout_path",
                 "orvix_info_path",
+                "job_password",
             )
         ):
             self.notify_query_change("summary", "runtime", "artifacts")
         self.task_id = None
         self.aborted_reason = None
+        self.submission_unknown_reason = None
         self.job_password = None
         self.attempt_id = None
         self.submitted_at = None
@@ -413,6 +459,7 @@ class Task(Node):
     #   in order to notify task's status change to takler server.
 
     def init(self, task_id: str = ""):
+        self.submission_unknown_reason = None
         self.task_id = task_id
         self.notify_query_change("runtime", "artifacts")
         if self.attempt_id is not None and self.started_at is None:
@@ -422,6 +469,7 @@ class Task(Node):
         self.handle_status_change()
 
     def complete(self):
+        self.submission_unknown_reason = None
         self.notify_query_change("runtime")
         if self.attempt_id is not None:
             self.ended_at = datetime.now(timezone.utc).isoformat()
@@ -430,6 +478,7 @@ class Task(Node):
         self.handle_status_change()
 
     def abort(self, reason: str = ""):
+        self.submission_unknown_reason = None
         self.notify_query_change("runtime")
         if self.attempt_id is not None:
             self.ended_at = datetime.now(timezone.utc).isoformat()
@@ -451,6 +500,7 @@ class Task(Node):
         self.attempt_id = str(uuid4())
         self.task_id = None
         self.aborted_reason = None
+        self.submission_unknown_reason = None
         self.submitted_at = None
         self.started_at = None
         self.ended_at = None

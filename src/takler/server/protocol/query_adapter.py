@@ -8,8 +8,9 @@ from takler.protocol.query_v1 import (
 from takler.server.protocol import takler_pb2
 
 
-def query_to_pb2(document: QueryModel) -> takler_pb2.QueryDocumentPayload:
-    return takler_pb2.QueryDocumentPayload(json=encode_query_document(document))
+def query_to_pb2(document: QueryModel | bytes) -> takler_pb2.QueryDocumentPayload:
+    raw = document if isinstance(document, bytes) else encode_query_document(document)
+    return takler_pb2.QueryDocumentPayload(json=raw)
 
 
 def query_from_pb2(

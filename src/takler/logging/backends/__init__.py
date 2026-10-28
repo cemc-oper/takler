@@ -31,6 +31,9 @@ before those modules exist or when ``loguru`` is not installed.
 from __future__ import annotations
 
 import abc
+import sys
+
+from takler._run_effect import fingerprint as _run_fingerprint, stamp as _run_stamp
 from typing import TYPE_CHECKING, Iterable, Optional, Set, Union
 
 from takler.logging.errors import ApplyResult
@@ -280,3 +283,9 @@ def reset_backend() -> None:
     """
     global _BACKEND
     _BACKEND = None
+
+
+# Preserve shipped boundaries before callers install logging extensions.
+_RUN_EFFECT_CLASSES = {NamedLogger: _run_fingerprint(NamedLogger)}
+_RUN_MAP_LEVEL = _run_stamp(map_level)
+_RUN_EFFECT_HELPERS = ((sys.modules[__name__], "LogLevel", _run_stamp(LogLevel)),)

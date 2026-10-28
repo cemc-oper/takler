@@ -916,6 +916,21 @@ class TaklerQueryStub:
                 request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
                 response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
                 _registered_method=True)
+        self.ReadFullSnapshot = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/ReadFullSnapshot',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
+        self.ReadFullSnapshotChunk = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/ReadFullSnapshotChunk',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
+        self.CancelFullSnapshot = channel.unary_unary(
+                '/takler_protocol.TaklerQuery/CancelFullSnapshot',
+                request_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+                response_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                _registered_method=True)
 
 
 class TaklerQueryServicer:
@@ -951,6 +966,24 @@ class TaklerQueryServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ReadFullSnapshot(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadFullSnapshotChunk(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CancelFullSnapshot(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_TaklerQueryServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -976,6 +1009,21 @@ def add_TaklerQueryServicer_to_server(servicer, server):
             ),
             'ReadSince': grpc.unary_unary_rpc_method_handler(
                     servicer.ReadSince,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+            'ReadFullSnapshot': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadFullSnapshot,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+            'ReadFullSnapshotChunk': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadFullSnapshotChunk,
+                    request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+                    response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            ),
+            'CancelFullSnapshot': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelFullSnapshot,
                     request_deserializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
                     response_serializer=takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
             ),
@@ -1113,6 +1161,87 @@ class TaklerQuery:
             request,
             target,
             '/takler_protocol.TaklerQuery/ReadSince',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadFullSnapshot(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/ReadFullSnapshot',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadFullSnapshotChunk(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/ReadFullSnapshotChunk',
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
+            takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CancelFullSnapshot(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/takler_protocol.TaklerQuery/CancelFullSnapshot',
             takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.SerializeToString,
             takler_dot_server_dot_protocol_dot_takler__pb2.QueryDocumentPayload.FromString,
             options,

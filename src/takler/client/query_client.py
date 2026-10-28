@@ -45,6 +45,7 @@ class QueryNode:
     status: str
     suspended: bool
     attempt_id: str | None
+    submission_unknown: bool | None = None
 
     @classmethod
     def from_wire(cls, node: SummaryNode) -> "QueryNode":
@@ -55,6 +56,7 @@ class QueryNode:
             node.status,
             node.suspended,
             node.attempt_id,
+            node.submission_unknown,
         )
 
 
@@ -117,6 +119,15 @@ class QueryClient:
     def __init__(self, transport):
         self.transport = transport
         self.current: QuerySnapshot | None = None
+        from takler.client.full_snapshot import FullSnapshotClient
+
+        self.full_snapshots = FullSnapshotClient(transport)
+
+    def read_full_snapshot(self, **selection):
+        return self.full_snapshots.read_full_snapshot(**selection)
+
+    def iter_full_snapshot(self, **selection):
+        return self.full_snapshots.iter_full_snapshot(**selection)
 
     def capabilities(self) -> CapabilitiesReply:
         reply = self.transport.query(
@@ -528,6 +539,8 @@ class QueryClient:
             field_groups=field_groups,
         )
         reply = self.transport.query(request)
+        if isinstance(reply, FailureReply) and reply.code == "snapshot_expired":
+            self._mark_stale(snapshot, snapshot.scope_path)
         self._failure(reply)
         if not isinstance(reply, DetailReply):
             raise ServerResponseError("invalid query detail response")
@@ -678,6 +691,8 @@ def print_query_show(
         )
         prefix = "  " * max(0, relative - base)
         state = f"suspend ({node.status})" if node.suspended else node.status
+        if node.submission_unknown:
+            state += "; submission unknown"
         stream.write(f"{prefix}|- {path.rsplit('/', 1)[-1]} [{state}]\n")
         if not requested:
             continue
@@ -689,6 +704,8 @@ def print_query_show(
 
         definition = detail.groups.definition
         runtime = detail.groups.runtime
+        if runtime is not None and runtime.submission_unknown_reason:
+            line(f"submission unknown: {runtime.submission_unknown_reason}")
         if definition is not None:
             if definition.repeat is not None:
                 repeat = definition.repeat

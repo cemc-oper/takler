@@ -92,6 +92,8 @@ class StatusBar(Horizontal):
         else:
             text.append(state_block(node.state, suspended=node.suspended))
             text.append(node.path)
+            if node.submission_unknown:
+                text.append(" [submission unknown]", style="bold red")
         self._left.update(text)
 
     def set_service(self, service: Optional[ServiceInfo]) -> None:

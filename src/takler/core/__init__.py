@@ -34,3 +34,6 @@ __all__ = [
     "TimeAttribute",
     "SerializationType",
 ]
+
+# Freeze shipped hooks before callers can customize exported core classes.
+from . import _run_effect as _run_effect

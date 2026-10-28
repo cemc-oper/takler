@@ -19,7 +19,7 @@ from .registry import (
 )
 
 
-def _project(node, path, *, checkpoint_root=False):
+def _project(node, path, *, checkpoint_root=False, recurse=True):
     entry = get_registry().by_type(type(node))
     type_id = entry.type_id
     require_codec(entry, "definition_schema", "export_definition")
@@ -51,20 +51,28 @@ def _project(node, path, *, checkpoint_root=False):
             )
         ):
             raise DefinitionError("unsupported_root_attribute", path)
-        result["flows"] = [
-            _project(flow, f"{path}.flows[{i}]")
-            for i, flow in enumerate(node.flows.values())
-        ]
+        result["flows"] = (
+            [
+                _project(flow, f"{path}.flows[{i}]")
+                for i, flow in enumerate(node.flows.values())
+            ]
+            if recurse
+            else []
+        )
         return result
     for time in node.times:
         if time.time.second or time.time.microsecond or time.time.tzinfo is not None:
             raise DefinitionError("invalid_field", f"{path}.times")
     result.update(
         default_node_status=node.default_node_status.name,
-        children=[
-            _project(child, f"{path}.children[{i}]")
-            for i, child in enumerate(node.children)
-        ],
+        children=(
+            [
+                _project(child, f"{path}.children[{i}]")
+                for i, child in enumerate(node.children)
+            ]
+            if recurse
+            else []
+        ),
         trigger=None
         if node.trigger_expression is None
         else node.trigger_expression.expression_str,

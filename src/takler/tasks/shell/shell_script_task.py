@@ -10,6 +10,7 @@ from takler.core import (
     Parameter,
     Flow,
     NodeStatus,
+    ServerStatus,
     SerializationType,
 )
 from takler.core.node import Node
@@ -21,7 +22,7 @@ from takler.visitor import pre_order_travel, NodeVisitor
 
 from .constant import TAKLER_SCRIPT, TAKLER_JOB, TAKLER_JOBOUT, JOB_SCRIPT_EXTENSION
 from .shell_render import ShellRender
-from .shell_runner import ShellRunner, redact_job_password
+from .shell_runner import ShellRunner, redact_job_password, skip_pending_commands
 
 
 logger = get_logger("tasks.shell")
@@ -161,24 +162,59 @@ class ShellScriptTask(Task):
         self._require_running()
         token = self._submission_token = object()
         flow, bunch, node_path = self.get_flow(), self.get_bunch(), self.node_path
+        if bunch is not None:
+            bunch._skip_pending_commands = skip_pending_commands
         attempt_id, generation = self.attempt_id, self.definition_generation
         external_submit = self._uses_orvix()
 
-        def on_failure(exc: BaseException) -> None:
-            # All checks and abort run synchronously on the same event loop.
-            # A detached flow can still retain its old bunch back-reference.
+        def is_current_submission() -> bool:
             current = self._submission_token is token
             current = current and self.attempt_id == attempt_id
             current = current and self.definition_generation == generation
             current = current and self.get_flow() is flow and self.get_bunch() is bunch
+            if current and flow is not None:
+                current = flow.definition_generation == generation
             if current and bunch is not None:
                 current = bunch.find_node(node_path) is self
             elif current and flow is not None:
                 current = flow.find_node(node_path) is self
+            return current
+
+        def before_start() -> bool:
+            current = is_current_submission()
+            current = current and self.state.node_status is NodeStatus.submitted
+            current = current and (flow is None or flow.begun)
+            if current and bunch is not None:
+                current = (
+                    bunch.server_state.status is ServerStatus.running
+                    and not bunch._service_stopping
+                )
             if not current:
+                logger.info(f"skip stale job start: {node_path}")
+            return current
+
+        def on_failure(exc: BaseException) -> None:
+            # All checks and abort run synchronously on the same event loop.
+            # A detached flow can still retain its old bunch back-reference.
+            if not is_current_submission():
                 logger.info(f"skip stale job failure: {node_path}")
                 return
-            self.on_job_failure(exc, result_unknown=external_submit)
+            # A saturated pre-start queue has a definite non-start result.
+            # A process timeout may have reached the external scheduler.
+            self.on_job_failure(
+                exc,
+                result_unknown=external_submit
+                and not isinstance(exc, JobSubmissionError),
+            )
+
+        def on_skipped() -> None:
+            # A valid current submission skipped before run_process has a
+            # definite non-start result. Old work must not abort a new attempt.
+            if (
+                is_current_submission()
+                and self.state.node_status is NodeStatus.submitted
+            ):
+                self.abort("submission skipped before process start")
 
         run_command = self.create_job_script()
         self._require_running()
@@ -187,7 +223,8 @@ class ShellScriptTask(Task):
             command=run_command,
             node_path=node_path,
             on_failure=on_failure,
-            before_start=self._require_running,
+            before_start=before_start,
+            on_skipped=on_skipped,
         )
         return True
 
@@ -223,14 +260,13 @@ class ShellScriptTask(Task):
             raise ValueError("job artifact paths conflict")
         bunch = self.get_bunch()
         if bunch is not None:
-            from takler.serialization.builder import walk
+            from takler.serialization.artifact_path_index import ArtifactPathIndex
 
-            for other in walk(bunch):
-                if other is self or not isinstance(other, Task):
-                    continue
-                for value in (other.job_path, other.jobout_path, other.orvix_info_path):
-                    if value is not None and Path(value).resolve() in paths:
-                        raise ValueError("job artifact path conflicts with current run")
+            index = bunch._artifact_path_index
+            if index is None:
+                index = bunch._artifact_path_index = ArtifactPathIndex(bunch)
+            if index.conflicts(self, paths):
+                raise ValueError("job artifact path conflicts with current run")
         return job, jobout, info
 
     def _artifact_override(self, name: str) -> Optional[Parameter]:
@@ -255,11 +291,12 @@ class ShellScriptTask(Task):
 
     def on_job_failure(self, exc: BaseException, result_unknown: bool = False) -> None:
         """
-        Set the task to aborted after ``ShellRunner`` has logged the job failure.
+        Handle a failed wrapper after ``ShellRunner`` logs the failure.
 
-        The task is only aborted when it is still ``submitted`` or ``active``:
-        a task which has already reported ``complete`` / ``aborted`` with a
-        child command must not be overwritten by the job wrapper's exit code.
+        A recognized external submit that failed after process start keeps a
+        submitted attempt and its reservation. An already active child proves
+        submission and is never aborted by the wrapper. A local failure is
+        aborted. Terminal child reports are not overwritten.
 
         Parameters
         ----------
@@ -275,9 +312,16 @@ class ShellScriptTask(Task):
 
         reason = redact_job_password(f"{type(exc).__name__}: {exc}", self.job_password)
         if result_unknown:
-            reason = (
-                f"external submission result unknown; verify before rerun: {reason}"
+            if self.state.node_status is NodeStatus.active:
+                logger.info(
+                    f"external submit already confirmed by child: {self.node_path}"
+                )
+                return
+            self.mark_submission_unknown(reason)
+            logger.error(
+                f"external submission result unknown: {self.node_path}: {reason}"
             )
+            return
         self.abort(reason)
 
     def create_job_script(self) -> str:

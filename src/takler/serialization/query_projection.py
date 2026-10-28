@@ -74,6 +74,8 @@ def iter_query_summaries(
         )
         if isinstance(node, Task) and node.attempt_id is not None:
             summary_fields["attempt_id"] = node.attempt_id
+            if node.submission_unknown_reason is not None:
+                summary_fields["submission_unknown"] = True
         yield SummaryNode(**summary_fields), current_generation
         if depth is not None and level >= depth:
             continue
@@ -222,6 +224,11 @@ def _runtime(node: Node, hidden) -> dict:
                 node.aborted_reason.replace(node.job_password, REDACTED)
                 if node.aborted_reason and node.job_password
                 else node.aborted_reason
+            ),
+            submission_unknown_reason=(
+                node.submission_unknown_reason.replace(node.job_password, REDACTED)
+                if node.submission_unknown_reason and node.job_password
+                else node.submission_unknown_reason
             ),
         )
     return result

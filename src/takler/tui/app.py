@@ -217,7 +217,7 @@ class TaklerTuiApp(App):
 
     # -- Refresh / tree ---------------------------------------------
 
-    def action_refresh(self) -> None:
+    def action_refresh(self, *, force_snapshot: bool = False) -> None:
         """Kick off a background refresh.
 
         QueryDocument pagination and compact-view construction run on a worker
@@ -229,14 +229,17 @@ class TaklerTuiApp(App):
         """
         self._toolbar.reset_countdown()
         self._refresh_seq += 1
-        self._refresh_worker(self._refresh_seq, self._scope_path)
+        self._refresh_worker(self._refresh_seq, self._scope_path, force_snapshot)
 
     @work(thread=True, exclusive=True, group="refresh")
-    def _refresh_worker(self, sequence: int, scope_path: str) -> None:
+    def _refresh_worker(
+        self, sequence: int, scope_path: str, force_snapshot: bool = False
+    ) -> None:
         try:
             current = self._snapshot
             if (
-                isinstance(current, QueryTuiView)
+                not force_snapshot
+                and isinstance(current, QueryTuiView)
                 and current.query.scope_path == scope_path
                 and current.query.revision is not None
             ):
@@ -401,10 +404,29 @@ class TaklerTuiApp(App):
             )
             if reply is None:
                 return
+        except QueryResponseError as exc:
+            if exc.code == "snapshot_expired":
+                self.call_from_thread(self._detail_lease_expired, view, path, sequence)
+            else:
+                self.call_from_thread(
+                    self._detail_failed, view, path, sequence, str(exc)
+                )
+            return
         except Exception as exc:  # pragma: no cover - network errors
             self.call_from_thread(self._detail_failed, view, path, sequence, str(exc))
             return
         self.call_from_thread(self._apply_detail, view, path, sequence, reply)
+
+    def _detail_lease_expired(
+        self, view: QueryTuiView, path: str, sequence: int
+    ) -> None:
+        if (
+            view is self._snapshot
+            and path == self._selected_path
+            and sequence == self._detail_seq
+        ):
+            self._status_bar.set_stale(True)
+            self.action_refresh(force_snapshot=True)
 
     def _detail_failed(
         self, view: QueryTuiView, path: str, sequence: int, message: str

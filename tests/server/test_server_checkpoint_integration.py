@@ -52,6 +52,10 @@ def _mock_services(server: TaklerServer, calls: List[str]) -> None:
     server.scheduler = mock.AsyncMock()
     server.scheduler.start.side_effect = lambda: calls.append("scheduler.start")
     server.scheduler.stop.side_effect = lambda: calls.append("scheduler.stop")
+    server.scheduler.begin_shutdown = mock.MagicMock()
+    server.scheduler.query_service.full_snapshots.close = mock.MagicMock(
+        side_effect=lambda: calls.append("snapshots.close")
+    )
 
     server.grpc_transport = mock.AsyncMock()
     server.grpc_transport.start.side_effect = lambda: calls.append("network.start")
@@ -170,7 +174,12 @@ def test_shutdown_stops_the_checkpoint_manager_last(tmp_path: Path) -> None:
 
     asyncio.run(server.stop())
 
-    assert calls == ["network.stop", "scheduler.stop", "checkpoint.stop"]
+    assert calls == [
+        "network.stop",
+        "scheduler.stop",
+        "snapshots.close",
+        "checkpoint.stop",
+    ]
 
 
 def test_shutdown_writes_a_final_snapshot_of_the_quiesced_bunch(
@@ -212,3 +221,31 @@ def test_shutdown_runs_at_most_once(tmp_path: Path) -> None:
     server.checkpoint_manager.stop.assert_awaited_once()
     server.grpc_transport.stop.assert_awaited_once()
     server.scheduler.stop.assert_awaited_once()
+
+
+def test_concurrent_shutdown_waits_for_final_checkpoint(tmp_path: Path) -> None:
+    server = _make_server(tmp_path)
+    _mock_services(server, [])
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def checkpoint_stop():
+        entered.set()
+        await release.wait()
+        return True
+
+    server.checkpoint_manager.stop = mock.AsyncMock(side_effect=checkpoint_stop)
+
+    async def stop_concurrently():
+        first = asyncio.create_task(server.stop())
+        await entered.wait()
+        second = asyncio.create_task(server._shutdown())
+        await asyncio.sleep(0)
+        assert not first.done() and not second.done()
+        release.set()
+        await asyncio.gather(first, second)
+
+    asyncio.run(stop_concurrently())
+
+    server.checkpoint_manager.stop.assert_awaited_once()
+    assert server.shutdown_checkpoint_ok

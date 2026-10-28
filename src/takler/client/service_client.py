@@ -628,6 +628,22 @@ class TaklerServiceClient:
             cancelled=cancelled,
         )
 
+    def read_full_snapshot(self, **selection):
+        return self._guarded(lambda: self.query_client.read_full_snapshot(**selection))
+
+    def iter_full_snapshot(self, **selection):
+        self.start()
+        try:
+            yield from self.query_client.iter_full_snapshot(**selection)
+        finally:
+            self.close_channel()
+
+    def run_read_full_snapshot(self, **selection):
+        return self.query_client.read_full_snapshot(**selection)
+
+    def run_iter_full_snapshot(self, **selection):
+        return self.query_client.iter_full_snapshot(**selection)
+
     def query_since(self, snapshot: QuerySnapshot) -> QuerySnapshot:
         return self._guarded(lambda: self.run_query_since(snapshot))
 

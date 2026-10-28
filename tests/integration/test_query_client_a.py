@@ -29,7 +29,8 @@ def test_query_snapshot_detail_blob_and_show(
     )
     flow = runner.server.bunch.add_flow("flow")
     task = flow.add_task("task")
-    task.attempt_id = "test-attempt"
+    task.try_no = 1
+    task.attempt_id = "11111111-1111-4111-8111-111111111111"
     task.add_parameter("WIDE", "x" * 300000)
     client = runner.make_client(transport_name=transport)
     if transport == "http":
@@ -53,7 +54,7 @@ def test_query_snapshot_detail_blob_and_show(
         assert since_reply.reason == "structure_changed"
         assert snapshot.ordered_paths == ("/flow", "/flow/task")
         assert snapshot.flow_generations["/flow"]
-        assert snapshot.get("/flow/task").attempt_id == "test-attempt"
+        assert snapshot.get("/flow/task").attempt_id == task.attempt_id
         detail = client.run_query_detail(snapshot, "/flow/task", ["parameters"])
         assert detail.groups.parameters.user[0].value == "x" * 300000
         assert detail.blob_refs == []

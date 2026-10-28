@@ -988,6 +988,9 @@ QUERY_PRIVILEGE_BY_METHOD: Dict[str, PrivilegeLevel] = {
         "ReadDetail",
         "ReadDetailChunk",
         "ReadSince",
+        "ReadFullSnapshot",
+        "ReadFullSnapshotChunk",
+        "CancelFullSnapshot",
     )
 }
 

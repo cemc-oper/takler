@@ -15,6 +15,7 @@ from takler.server.connect_config import Address, ConnectConfig, HttpSettings, S
 from query_a_matrix_100k import (
     GO_BINARY,
     child_environment,
+    install_tree,
     make_tree,
     summary_digest,
 )
@@ -42,11 +43,10 @@ def run_matrix():
         )
         runner.start()
         try:
-            for flow in bunch.flows.values():
-                runner.server.bunch.add_flow(flow)
+            install_tree(runner, bunch)
             runner.server.scheduler.run_command_server_halt(ServerHaltCommand())
             service = runner.server.scheduler.query_service
-            original_page, original_since = service.page, service.since
+            original_page, original_since = service.page_encoded, service.since
             page_calls = since_calls = 0
             inject = changed = False
 
@@ -63,7 +63,7 @@ def run_matrix():
                     changed = True
                 return await original_since(request)
 
-            service.page = counted_page
+            service.page_encoded = counted_page
             service.since = changed_since
             for scenario in ("unchanged", "sparse"):
                 for transport in ("grpc", "http"):

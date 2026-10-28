@@ -21,6 +21,8 @@ def _state_text(node: NodeInfo) -> Text:
         text.append(f"suspend ({node.state})", style=f"italic {style}")
     else:
         text.append(node.state, style=style)
+    if node.submission_unknown:
+        text.append("; submission unknown", style="bold red")
     return text
 
 
@@ -94,6 +96,7 @@ class InfoTab(VerticalScroll):
                 ("Started", node.started_at),
                 ("Ended", node.ended_at),
                 ("Failure reason", node.aborted_reason),
+                ("Submission result", node.submission_unknown_reason),
                 ("Job script", node.job_path),
                 ("Job output", node.jobout_path),
                 ("orvix info", node.orvix_info_path),

@@ -13,10 +13,12 @@ import json
 import re
 import secrets
 import time
+import weakref
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from takler.core import Task
+from takler.core.state import NodeStatus
 from takler.protocol.query_v1 import (
     MAX_PAGE_BYTES,
     MAX_PAGE_NODES,
@@ -35,6 +37,7 @@ from takler.protocol.query_v1 import (
     ResetReply,
     SinceReply,
     SinceRequest,
+    SummaryNode,
     UpsertSummary,
     encode_query_document,
     decode_query_document,
@@ -46,11 +49,16 @@ from takler.serialization.query_projection import (
     project_query_detail,
 )
 from takler.server.auth import get_call_credentials
+from takler.serialization.version import VersionUnavailable
 
 
 SNAPSHOT_SECONDS = 120
+QUERY_LEASE_SECONDS = 120
+_monotonic = time.monotonic
 MAX_SNAPSHOTS = 8
 MAX_OWNER_SNAPSHOTS = 2
+MAX_QUERY_LEASES = 32
+MAX_OWNER_QUERY_LEASES = 8
 MAX_QUERY_BYTES = 128 * 1024 * 1024
 # Reserve 32 MiB of the total for page models, encoding buffers, and indexes.
 MAX_RETAINED_BYTES = 96 * 1024 * 1024
@@ -62,6 +70,8 @@ PAGE_TARGET_BYTES = 230_000
 MAX_DELTA_BATCHES = 8
 MAX_DELTA_BATCH_BYTES = 8 * 1024 * 1024
 MAX_DELTA_RETAINED_BYTES = 32 * 1024 * 1024
+MAX_CAPTURE_WORKERS = 2
+MAX_CAPTURE_WAITING = 2
 
 
 def _utc(value: datetime) -> str:
@@ -70,6 +80,63 @@ def _utc(value: datetime) -> str:
 
 def _error(code: str, message: str) -> FailureReply:
     return FailureReply(kind="error", schema_version=1, code=code, message=message)
+
+
+def _fixed_summary(
+    version, path: str, generations: dict[str, str | None] | None = None
+) -> tuple[SummaryNode, str | None]:
+    row = version.node(path)
+    if row.public is None:
+        raise VersionUnavailable("unsupported_plugin_detail")
+    source = None
+    if row.summary is not None:
+        summary = SummaryNode.model_validate_json(row.summary)
+    else:
+        source = json.loads(row.public)
+        fields = dict(
+            path=path,
+            node_kind=source["node_kind"],
+            type_id=source["type_id"],
+            status=NodeStatus(source["state"]["status"]).name,
+            suspended=source["state"]["suspended"],
+        )
+        if source["node_kind"] == "task" and source.get("attempt_id") is not None:
+            fields["attempt_id"] = source["attempt_id"]
+            if source.get("submission_unknown_reason") is not None:
+                fields["submission_unknown"] = True
+        summary = SummaryNode(**fields)
+    generation = None
+    if path != "/":
+        flow_path = "/" + path.split("/", 2)[1]
+        if generations is not None and flow_path in generations:
+            generation = generations[flow_path]
+        elif flow_path == path:
+            if source is None:
+                source = json.loads(row.public)
+            generation = source.get("definition_generation")
+            if generations is not None:
+                generations[flow_path] = generation
+        else:
+            flow = version.node(flow_path)
+            if flow.public is None:
+                raise VersionUnavailable("unsupported_plugin_detail")
+            generation = json.loads(flow.public).get("definition_generation")
+            if generations is not None:
+                generations[flow_path] = generation
+    return summary, generation
+
+
+def _iter_fixed_summaries(version, scope: str, depth: int | None):
+    version.node(scope)
+    generations: dict[str, str | None] = {}
+    pending = [(scope, 0)]
+    while pending:
+        path, level = pending.pop()
+        yield _fixed_summary(version, path, generations)
+        if depth is None or level < depth:
+            pending.extend(
+                (child, level + 1) for child in reversed(version.node(path).children)
+            )
 
 
 @dataclass(frozen=True)
@@ -82,6 +149,21 @@ class _Snapshot:
     pages: tuple[bytes, ...]
     expires: float
     size: int
+    source: weakref.ReferenceType
+
+
+@dataclass
+class _Capture:
+    task: asyncio.Task | None = None
+    readers: int = 0
+
+
+@dataclass(frozen=True)
+class _QueryLease:
+    owner: str
+    scope: str
+    depth: int | None
+    expires: float
 
 
 @dataclass(frozen=True)
@@ -115,10 +197,23 @@ class QueryService:
         self.session_id = secrets.token_urlsafe(24)
         self._key = secrets.token_bytes(32)
         self._snapshots: dict[str, _Snapshot] = {}
+        # Small authorization records outlive page bytes while since keeps a
+        # scope active. Neither pages nor live node values are retained here.
+        self._query_leases: dict[str, _QueryLease] = {}
         self._blobs: dict[str, _Blob] = {}
         self._delta_batches: dict[str, _DeltaBatch] = {}
         self._lock = asyncio.Lock()
         self._reserved = 0
+        self._owner_reserved: dict[str, int] = {}
+        self._captures: dict[tuple[str, int, int], _Capture] = {}
+        self._capture_readers = 0
+        self._snapshot_expiry: asyncio.TimerHandle | None = None
+        self._closed = False
+        self._capture_slots = asyncio.Semaphore(MAX_CAPTURE_WORKERS)
+        self._delta_waiting = 0
+        from takler.server.full_snapshot import FullSnapshotService
+
+        self.full_snapshots = FullSnapshotService(self)
 
     def _owner(self) -> str:
         credentials = get_call_credentials()
@@ -173,7 +268,10 @@ class QueryService:
             return None
 
     def _purge(self) -> None:
-        now = time.monotonic()
+        now = _monotonic()
+        for key, lease in list(self._query_leases.items()):
+            if lease.expires <= now:
+                del self._query_leases[key]
         for key, snapshot in list(self._snapshots.items()):
             if snapshot.expires <= now:
                 del self._snapshots[key]
@@ -183,6 +281,36 @@ class QueryService:
         for key, batch in list(self._delta_batches.items()):
             if batch.expires <= now:
                 del self._delta_batches[key]
+        if not self._snapshots and self._snapshot_expiry is not None:
+            self._snapshot_expiry.cancel()
+            self._snapshot_expiry = None
+
+    def _schedule_snapshot_expiry(self) -> None:
+        if self._snapshot_expiry is not None:
+            self._snapshot_expiry.cancel()
+            self._snapshot_expiry = None
+        if self._snapshots and not self._closed:
+            delay = min(row.expires for row in self._snapshots.values()) - _monotonic()
+            self._snapshot_expiry = asyncio.get_running_loop().call_later(
+                max(0.001, delay), self._expire_snapshots
+            )
+
+    def _expire_snapshots(self) -> None:
+        self._snapshot_expiry = None
+        self._purge()
+        self._schedule_snapshot_expiry()
+
+    def close(self) -> None:
+        """Release query data and prevent late captures from retaining pages."""
+        self._closed = True
+        if self._snapshot_expiry is not None:
+            self._snapshot_expiry.cancel()
+            self._snapshot_expiry = None
+        self._snapshots.clear()
+        self._query_leases.clear()
+        self._blobs.clear()
+        self._delta_batches.clear()
+        self.full_snapshots.close()
 
     def _retained_size(self) -> int:
         return (
@@ -197,6 +325,22 @@ class QueryService:
         owned = [key for key, value in self._snapshots.items() if value.owner == owner]
         return owned[0] if len(owned) >= MAX_OWNER_SNAPSHOTS else None
 
+    def _renew_lease(
+        self, query_id: str, owner: str, scope: str, depth: int | None
+    ) -> None:
+        """Keep an active scope without extending retained page or blob bytes."""
+        self._query_leases.pop(query_id, None)
+        owned = [
+            key for key, value in self._query_leases.items() if value.owner == owner
+        ]
+        if len(owned) >= MAX_OWNER_QUERY_LEASES:
+            del self._query_leases[owned[0]]
+        if len(self._query_leases) >= MAX_QUERY_LEASES:
+            del self._query_leases[next(iter(self._query_leases))]
+        self._query_leases[query_id] = _QueryLease(
+            owner, scope, depth, _monotonic() + QUERY_LEASE_SECONDS
+        )
+
     def capabilities(self) -> CapabilitiesReply:
         return CapabilitiesReply(
             kind="capabilities",
@@ -207,6 +351,7 @@ class QueryService:
             max_page_nodes=MAX_PAGE_NODES,
             max_decoded_page_bytes=MAX_PAGE_BYTES,
             max_chunk_bytes=65536,
+            full_snapshot_v1=True,
         )
 
     def _capture(
@@ -217,20 +362,29 @@ class QueryService:
         snapshot_id: str,
         base_revision: int,
         budget: int,
+        version=None,
     ):
         scope = request.scope_path or (
             "/" + request.flow_name if request.flow_name else "/"
         )
         observed = datetime.now(timezone.utc)
         expires_at = _utc(observed + timedelta(seconds=SNAPSHOT_SECONDS))
-        as_of = _utc(observed)
+        as_of = (
+            _utc(datetime.fromisoformat(version.as_of).astimezone(timezone.utc))
+            if version is not None
+            else _utc(observed)
+        )
         pages = []
         nodes = []
         generations = {}
         estimated = 1200
         total_size = 0
         page_index = 0
-        root_name = self.scheduler.bunch.name
+        root_name = (
+            json.loads(version.node("/").public)["name"]
+            if version is not None
+            else self.scheduler.bunch.name
+        )
 
         def flush(complete: bool):
             nonlocal nodes, generations, estimated, total_size, page_index
@@ -261,19 +415,24 @@ class QueryService:
             nodes, generations, estimated = [], {}, 1200
             page_index += 1
 
-        for node, generation in iter_query_summaries(
-            self.scheduler.bunch, scope_path=scope, depth=request.depth
-        ):
-            node_size = (
-                len(
-                    json.dumps(
-                        node.model_dump(exclude_unset=True),
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    ).encode()
-                )
-                + 2
+        source = (
+            _iter_fixed_summaries(version, scope, request.depth)
+            if version is not None
+            else iter_query_summaries(
+                self.scheduler.bunch, scope_path=scope, depth=request.depth
             )
+        )
+        for index, (node, generation) in enumerate(source):
+            if version is not None and index and index % 256 == 0:
+                # A 100k capture runs on a worker thread. Release the GIL at
+                # predictable intervals so child calls keep making progress.
+                time.sleep(0.0005)
+            fixed_row = version.node(node.path) if version is not None else None
+            node_size = (
+                len(fixed_row.summary)
+                if fixed_row is not None and fixed_row.summary is not None
+                else len(node.model_dump_json(exclude_unset=True).encode())
+            ) + 2
             flow_path = "/" + node.path.split("/", 2)[1] if node.path != "/" else None
             generation_size = 0
             if flow_path and flow_path not in generations:
@@ -297,6 +456,19 @@ class QueryService:
         return scope, tuple(pages), total_size
 
     async def page(self, request: PageRequest) -> QueryModel:
+        reply = await self._page(request)
+        return (
+            decode_query_document(reply, expected="page")
+            if isinstance(reply, bytes)
+            else reply
+        )
+
+    async def page_encoded(self, request: PageRequest) -> bytes:
+        """Return the validated snapshot page without decoding its cached JSON."""
+        reply = await self._page(request)
+        return reply if isinstance(reply, bytes) else encode_query_document(reply)
+
+    async def _page(self, request: PageRequest) -> bytes | QueryModel:
         if request.field_groups != ["summary"]:
             return _error(
                 "unsupported_capability", "initial pages support summary only"
@@ -305,6 +477,8 @@ class QueryService:
         query_id = self._query_id(request, owner)
         async with self._lock:
             self._purge()
+            if self._closed:
+                return _error("snapshot_expired", "query service closed")
             if request.cursor is not None:
                 parsed = self._parse_cursor(request.cursor, owner)
                 if parsed is None:
@@ -317,43 +491,133 @@ class QueryService:
                     return _error("permission_denied", "query identity changed")
                 if index < 1 or index >= len(snapshot.pages):
                     return _error("invalid_request", "cursor index out of range")
-                return decode_query_document(snapshot.pages[index], expected="page")
-            replacement = self._replaceable_snapshot(owner)
-            if self._reserved or (
-                len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
-                and replacement is None
-            ):
-                return _error("resource_exhausted", "snapshot count limit")
-            budget = MAX_RETAINED_BYTES - self._retained_size()
-            self._reserved += 1
-        snapshot_id = secrets.token_urlsafe(24)
-        try:
-            captured_at = time.monotonic()
-            capture_guard = self.scheduler.query_revision
-            base_revision = self.scheduler.query_changes.revision
-            if capture_guard % 2:
-                return _error("resource_exhausted", "query state is changing")
+                return snapshot.pages[index]
             try:
-                scope, pages, size = await asyncio.to_thread(
-                    self._capture,
-                    request,
-                    owner,
-                    query_id,
-                    snapshot_id,
-                    base_revision,
-                    budget,
+                version = self.scheduler.version_store.pin()
+            except VersionUnavailable as exc:
+                return _error("resource_exhausted", str(exc))
+            base_revision = self.scheduler.query_changes.revision
+            # Exact immutable root identity proves reuse; a revision hint alone
+            # does not. Weak references never retain an old full state root.
+            for snapshot in self._snapshots.values():
+                if (
+                    snapshot.owner == owner
+                    and snapshot.query_id == query_id
+                    and snapshot.base_revision == base_revision
+                    and snapshot.source() is version
+                    # Leave at least half the original lifetime for a complete
+                    # new read; do not hand a fresh reader nearly expired pages.
+                    and snapshot.expires - _monotonic() >= SNAPSHOT_SECONDS / 2
+                ):
+                    self._renew_lease(query_id, owner, snapshot.scope, snapshot.depth)
+                    self._schedule_snapshot_expiry()
+                    return snapshot.pages[0]
+            key = (query_id, id(version), base_revision)
+            capture = self._captures.get(key)
+            if capture is not None:
+                if self._reserved + self._capture_readers >= (
+                    MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
+                ):
+                    return _error("resource_exhausted", "snapshot count limit")
+                self._capture_readers += 1
+                shared = True
+            else:
+                replacement = self._replaceable_snapshot(owner)
+                if (
+                    self._owner_reserved.get(owner, 0) >= MAX_OWNER_SNAPSHOTS
+                    or self._reserved + self._capture_readers
+                    >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
+                ) or (
+                    len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
+                    and replacement is None
+                ):
+                    return _error("resource_exhausted", "snapshot count limit")
+                budget = MAX_RETAINED_BYTES - self._retained_size()
+                self._reserved += 1
+                self._owner_reserved[owner] = self._owner_reserved.get(owner, 0) + 1
+                capture = _Capture()
+                self._captures[key] = capture
+                capture.task = asyncio.create_task(
+                    self._capture_snapshot(
+                        request,
+                        owner,
+                        query_id,
+                        version,
+                        base_revision,
+                        budget,
+                        key,
+                        capture,
+                    )
                 )
+                capture.task.add_done_callback(
+                    lambda task: task.exception() if not task.cancelled() else None
+                )
+                shared = False
+            capture.readers += 1
+        cancelled = False
+        try:
+            reply = await asyncio.shield(capture.task)
+            return reply if isinstance(reply, bytes) else reply.model_copy(deep=True)
+        except asyncio.CancelledError:
+            cancelled = True
+            capture.readers -= 1
+            # A caller cannot cancel another reader's shared capture. Keep its
+            # reservation until the actual worker stops, even with no readers.
+            try:
+                await asyncio.shield(capture.task)
+            except Exception:
+                pass
+            raise
+        finally:
+            # These counters belong to the event loop. No await is needed to
+            # release a reader, including repeated cancellation during cleanup.
+            if not cancelled:
+                capture.readers -= 1
+            if shared:
+                self._capture_readers -= 1
+
+    async def _capture_snapshot(
+        self, request, owner, query_id, version, base_revision, budget, key, capture
+    ):
+        try:
+            return await self._build_snapshot(
+                request, owner, query_id, version, base_revision, budget, capture
+            )
+        finally:
+            async with self._lock:
+                self._captures.pop(key, None)
+                self._reserved -= 1
+                self._owner_reserved[owner] -= 1
+                if not self._owner_reserved[owner]:
+                    del self._owner_reserved[owner]
+
+    async def _build_snapshot(
+        self, request, owner, query_id, version, base_revision, budget, capture
+    ):
+        snapshot_id = secrets.token_urlsafe(24)
+        captured_at = _monotonic()
+        try:
+            try:
+                async with self._capture_slots:
+                    work = asyncio.create_task(
+                        asyncio.to_thread(
+                            self._capture,
+                            request,
+                            owner,
+                            query_id,
+                            snapshot_id,
+                            base_revision,
+                            budget,
+                            version,
+                        )
+                    )
+                    try:
+                        scope, pages, size = await asyncio.shield(work)
+                    except asyncio.CancelledError:
+                        await work
+                        raise
             except (RuntimeError, KeyError, IndexError):
-                return _error(
-                    "resource_exhausted", "query state changed during capture"
-                )
-            if (
-                self.scheduler.query_revision != capture_guard
-                or self.scheduler.query_changes.revision != base_revision
-            ):
-                return _error(
-                    "resource_exhausted", "query state changed during capture"
-                )
+                return _error("resource_exhausted", "fixed query version unavailable")
         except WireError:
             return _error("field_too_large", "summary exceeds page limit")
         except ValueError:
@@ -362,11 +626,12 @@ class QueryService:
             return _error("field_too_large", "summary exceeds page limit")
         except MemoryError:
             return _error("resource_exhausted", "snapshot memory limit")
-        finally:
-            async with self._lock:
-                self._reserved -= 1
         async with self._lock:
             self._purge()
+            if self._closed or not capture.readers:
+                return _error("snapshot_expired", "summary capture abandoned")
+            if captured_at + SNAPSHOT_SECONDS <= _monotonic():
+                return _error("snapshot_expired", "summary capture expired")
             if self.scheduler.query_changes.since(base_revision) is None:
                 return _error("resource_exhausted", "query change window expired")
             replacement = self._replaceable_snapshot(owner)
@@ -387,8 +652,11 @@ class QueryService:
                 pages,
                 captured_at + SNAPSHOT_SECONDS,
                 size,
+                weakref.ref(version),
             )
-        return decode_query_document(pages[0], expected="page")
+            self._renew_lease(query_id, owner, scope, request.depth)
+            self._schedule_snapshot_expiry()
+        return pages[0]
 
     @staticmethod
     def _scope(request: PageRequest) -> str:
@@ -448,7 +716,7 @@ class QueryService:
         return visible_paths, set(reduced)
 
     def _project_delta(
-        self, paths: set[str], invalidations: set[str]
+        self, paths: set[str], invalidations: set[str], version=None
     ) -> list[UpsertSummary | InvalidateScope]:
         operations: list[UpsertSummary | InvalidateScope] = [
             InvalidateScope(
@@ -457,8 +725,12 @@ class QueryService:
             for path in sorted(invalidations)
         ]
         for path in sorted(paths):
-            node, generation = next(
-                iter_query_summaries(self.scheduler.bunch, scope_path=path, depth=0)
+            node, generation = (
+                _fixed_summary(version, path)
+                if version is not None
+                else next(
+                    iter_query_summaries(self.scheduler.bunch, scope_path=path, depth=0)
+                )
             )
             operations.append(
                 UpsertSummary(
@@ -478,7 +750,7 @@ class QueryService:
         target_revision: int,
         operations: list[UpsertSummary | InvalidateScope],
     ) -> tuple[tuple[bytes, ...], float]:
-        captured_at = time.monotonic()
+        captured_at = _monotonic()
         observed = datetime.now(timezone.utc)
         as_of = _utc(observed)
         expires_at = _utc(observed + timedelta(seconds=SNAPSHOT_SECONDS))
@@ -546,13 +818,14 @@ class QueryService:
         target: int,
         paths: set[str],
         invalidations: set[str],
+        version=None,
     ) -> tuple[tuple[bytes, ...], float]:
         return self._delta_pages(
             request,
             owner,
             batch_id,
             target,
-            self._project_delta(paths, invalidations),
+            self._project_delta(paths, invalidations, version),
         )
 
     async def since(self, request: SinceRequest) -> QueryModel:
@@ -566,6 +839,16 @@ class QueryService:
         if request.query_id != self._query_id(request, owner):
             return self._reset(request, "scope_changed")
         scope = self._scope(request)
+        async with self._lock:
+            self._purge()
+            lease = self._query_leases.get(request.query_id)
+            if (
+                lease is None
+                or lease.owner != owner
+                or lease.scope != scope
+                or lease.depth != request.depth
+            ):
+                return self._reset(request, "history_expired")
         if request.cursor is not None:
             parsed = self._parse_cursor(request.cursor, owner)
             if parsed is None:
@@ -584,11 +867,13 @@ class QueryService:
                     return self._reset(request, "identity_changed")
                 if index < 1 or index >= len(batch.pages):
                     return _error("invalid_request", "cursor index out of range")
+                self._renew_lease(request.query_id, owner, scope, request.depth)
                 return decode_query_document(batch.pages[index], expected="since")
 
-        guard = self.scheduler.query_revision
-        if guard % 2:
-            return _error("resource_exhausted", "query state is changing")
+        try:
+            version = self.scheduler.version_store.pin()
+        except VersionUnavailable as exc:
+            return _error("resource_exhausted", str(exc))
         tracker = self.scheduler.query_changes
         target = tracker.revision
         if request.since_revision > target:
@@ -602,29 +887,50 @@ class QueryService:
         paths, invalidations = selection
         batch_id = secrets.token_urlsafe(24)
         try:
-            pages, expires = (
-                await asyncio.to_thread(
-                    self._build_delta_pages,
-                    request,
-                    owner,
-                    batch_id,
-                    target,
-                    paths,
-                    invalidations,
-                )
-                if paths or invalidations
-                else self._delta_pages(request, owner, batch_id, target, [])
-            )
+            if paths or invalidations:
+                async with self._lock:
+                    if self._delta_waiting >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING:
+                        return _error("resource_exhausted", "delta worker queue full")
+                    self._delta_waiting += 1
+                try:
+                    async with self._capture_slots:
+                        work = asyncio.create_task(
+                            asyncio.to_thread(
+                                self._build_delta_pages,
+                                request,
+                                owner,
+                                batch_id,
+                                target,
+                                paths,
+                                invalidations,
+                                version,
+                            )
+                        )
+                        try:
+                            pages, expires = await asyncio.shield(work)
+                        except asyncio.CancelledError:
+                            await work
+                            raise
+                finally:
+                    async with self._lock:
+                        self._delta_waiting -= 1
+            else:
+                pages, expires = self._delta_pages(request, owner, batch_id, target, [])
         except (ValueError, KeyError, RuntimeError, StopIteration):
             return self._reset(request, "structure_changed")
         except (WireError, OverflowError, MemoryError):
             return self._reset(request, "budget_exceeded")
-        if self.scheduler.query_revision != guard or tracker.revision != target:
-            return _error("resource_exhausted", "query state changed during delta")
         if len(pages) == 1:
+            async with self._lock:
+                self._purge()
+                if request.query_id not in self._query_leases:
+                    return self._reset(request, "history_expired")
+                self._renew_lease(request.query_id, owner, scope, request.depth)
             return decode_query_document(pages[0], expected="since")
         async with self._lock:
             self._purge()
+            if request.query_id not in self._query_leases:
+                return self._reset(request, "history_expired")
             size = sum(map(len, pages))
             if (
                 len(self._delta_batches) >= MAX_DELTA_BATCHES
@@ -641,6 +947,7 @@ class QueryService:
                 expires,
                 size,
             )
+            self._renew_lease(request.query_id, owner, scope, request.depth)
         return decode_query_document(pages[0], expected="since")
 
     async def detail(self, request: DetailRequest) -> QueryModel:
@@ -649,26 +956,21 @@ class QueryService:
             self._purge()
             if request.session_id != self.session_id:
                 return _error("snapshot_expired", "session changed")
-            matching = [
-                s
-                for s in self._snapshots.values()
-                if s.query_id == request.query_id and s.owner == owner
-            ]
-            if not matching:
+            lease = self._query_leases.get(request.query_id)
+            if lease is None or lease.owner != owner:
                 return _error("snapshot_expired", "query unavailable")
-            snapshot = matching[0]
         path = request.path
         if (
-            snapshot.scope != "/"
-            and path != snapshot.scope
-            and not path.startswith(snapshot.scope + "/")
+            lease.scope != "/"
+            and path != lease.scope
+            and not path.startswith(lease.scope + "/")
         ):
             return _error("permission_denied", "path outside query scope")
         if (
-            snapshot.depth is not None
+            lease.depth is not None
             and (path.count("/") if path != "/" else 0)
-            - (snapshot.scope.count("/") if snapshot.scope != "/" else 0)
-            > snapshot.depth
+            - (lease.scope.count("/") if lease.scope != "/" else 0)
+            > lease.depth
         ):
             return _error("permission_denied", "path outside query depth")
         async with self.scheduler.query_state_lock:
@@ -710,9 +1012,23 @@ class QueryService:
                     groups=groups,
                 )
                 encode_query_document(reply)
+                async with self._lock:
+                    self._purge()
+                    if request.query_id not in self._query_leases:
+                        return _error("snapshot_expired", "query unavailable")
+                    self._renew_lease(request.query_id, owner, lease.scope, lease.depth)
                 return reply
             except WireError:
-                return await self._chunked_detail(reply, owner)
+                result = await self._chunked_detail(reply, owner)
+                if isinstance(result, DetailReply):
+                    async with self._lock:
+                        self._purge()
+                        if request.query_id not in self._query_leases:
+                            return _error("snapshot_expired", "query unavailable")
+                        self._renew_lease(
+                            request.query_id, owner, lease.scope, lease.depth
+                        )
+                return result
             except ValueError:
                 return _error("invalid_request", "detail group unavailable")
 
@@ -818,7 +1134,7 @@ class QueryService:
                         or self._retained_size() + incoming > MAX_RETAINED_BYTES
                     ):
                         return _error("resource_exhausted", "blob budget exceeded")
-                    expires = time.monotonic() + 60
+                    expires = _monotonic() + 60
                     for bid, item_pointer, data, digest in pending:
                         self._blobs[bid] = _Blob(
                             owner,

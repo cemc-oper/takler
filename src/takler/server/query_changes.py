@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 import time
+from typing import Callable
 
 
 MAX_CHANGE_BATCHES = 1024
@@ -49,6 +50,8 @@ class QueryChanges:
         self._retained_bytes = 0
         self._depth = 0
         self._pending: dict[str, QueryChange] = {}
+        self.on_commit: Callable[[ChangeBatch], None] | None = None
+        self.on_mark: Callable[[str, bool], None] | None = None
 
     def begin(self) -> None:
         self._depth += 1
@@ -72,6 +75,8 @@ class QueryChanges:
             raise ValueError("query change needs a field group or invalidation")
         if set(groups) - FIELD_GROUPS:
             raise ValueError("unknown query change field group")
+        if self.on_mark is not None:
+            self.on_mark(path, invalidate)
         if len(path.encode("utf-8")) > MAX_CHANGE_PATH_BYTES:
             path, groups, invalidate = "/", (), True
         if len(self._pending) >= MAX_CHANGES_PER_BATCH and path not in self._pending:
@@ -100,6 +105,8 @@ class QueryChanges:
         self._retained_bytes += size
         self._pending.clear()
         self._expire()
+        if self.on_commit is not None:
+            self.on_commit(batch)
 
     def _expire(self) -> None:
         cutoff = time.monotonic() - MAX_CHANGE_SECONDS

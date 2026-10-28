@@ -9,6 +9,7 @@ from types import MappingProxyType, SimpleNamespace
 import pytest
 
 from takler.client.query_client import QueryNode, QuerySnapshot
+from takler.core import Bunch, Flow
 from takler.exceptions import QueryResponseError
 from takler.serialization.query_projection import (
     iter_query_summaries,
@@ -16,7 +17,7 @@ from takler.serialization.query_projection import (
 )
 from takler.tui.app import TaklerTuiApp
 from takler.tui.query_view import QueryTuiView
-from takler.tui.widgets.node_tree import NodeTree
+from takler.tui.widgets.node_tree import NodeTree, _label_for
 from textual.widgets import Static
 
 from .conftest import FakeTuiService, text_of, wait_until
@@ -47,6 +48,25 @@ def compact_snapshot(bunch, scope_path="/", depth=None) -> QuerySnapshot:
         ),
         estimated_bytes=1024 + 512 * len(rows),
     )
+
+
+def test_unknown_submission_visible_in_lazy_tui_view():
+    bunch = Bunch()
+    flow = bunch.add_flow(Flow("f"))
+    task = flow.add_task("t")
+    flow.begin()
+    task.run()
+    task.mark_submission_unknown("submit reply lost")
+    view = QueryTuiView(compact_snapshot(bunch))
+    node = view.get("/f/t")
+    assert node.submission_unknown
+    assert node.display_state == "submitted; submission unknown"
+    assert "submission unknown" in _label_for(node).plain
+    view.apply_detail(
+        "/f/t",
+        SimpleNamespace(groups=project_query_detail(bunch, "/f/t", ["runtime"])),
+    )
+    assert node.submission_unknown_reason == "submit reply lost"
 
 
 class QueryFakeService(FakeTuiService):
@@ -437,6 +457,55 @@ async def test_query_tui_reset_and_disconnect_rebuild(rich_bunch) -> None:
         await wait_until(lambda: app._snapshot is not second, pilot)
         assert service.snapshot_calls == 3
         assert "stale" not in text_of(app._status_bar.query_one("#status-left", Static))
+
+
+@pytest.mark.anyio
+async def test_query_tui_expired_detail_rebuilds_selected_scope(rich_bunch) -> None:
+    class ExpiringService(DeltaQueryFakeService):
+        expire_once = True
+
+        def read_detail(self, snapshot, path, groups, current=None):
+            if path == "/flow1/task3" and self.expire_once:
+                self.expire_once = False
+                raise QueryResponseError("snapshot_expired", "query unavailable")
+            return super().read_detail(snapshot, path, groups, current)
+
+    service = ExpiringService(rich_bunch)
+    app = TaklerTuiApp(service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await wait_until(lambda: isinstance(app._snapshot, QueryTuiView), pilot)
+        first = app._snapshot
+        app._selected_path = "/flow1/task3"
+        app._request_detail("/flow1/task3")
+        await wait_until(lambda: app._snapshot is not first, pilot)
+        assert service.snapshot_calls == 2
+        assert service.since_calls == 0
+        assert app._selected_path == "/flow1/task3"
+        await wait_until(
+            lambda: any(path == "/flow1/task3" for path, _ in service.detail_calls),
+            pilot,
+        )
+
+
+@pytest.mark.anyio
+async def test_query_tui_unchanged_polls_preserve_detail_access(rich_bunch) -> None:
+    service = DeltaQueryFakeService(rich_bunch)
+    app = TaklerTuiApp(service)
+    async with app.run_test(size=(120, 40)) as pilot:
+        await wait_until(lambda: isinstance(app._snapshot, QueryTuiView), pilot)
+        first = app._snapshot
+        # The fixture's page expiry is already more than two TTLs in the past.
+        for count in range(1, 4):
+            app.action_refresh()
+            await wait_until(lambda: service.since_calls == count, pilot)
+        assert app._snapshot is first
+        assert service.snapshot_calls == 1
+        app._selected_path = "/flow1/task3"
+        app._request_detail("/flow1/task3")
+        await wait_until(
+            lambda: any(path == "/flow1/task3" for path, _ in service.detail_calls),
+            pilot,
+        )
 
 
 @pytest.mark.anyio

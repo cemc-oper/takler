@@ -5,6 +5,7 @@ from typing import Union, List, Optional, Dict, TYPE_CHECKING, Set, Literal
 from pathlib import PurePosixPath
 from collections import defaultdict
 from abc import ABC
+from itertools import count
 
 from takler.exceptions import (
     InvalidRequestError,
@@ -51,6 +52,9 @@ if TYPE_CHECKING:
 #     state = compute_most_significant_state(node.children, immediate)
 #
 #     return state
+
+
+_VERSION_IDENTITIES = count(1)
 
 
 def compute_most_significant_status(nodes: List[Node], immediate: bool) -> NodeStatus:
@@ -114,6 +118,9 @@ class Node(ABC):
 
     def __init__(self, name: str):
         self.name: str = name
+        # Process-local identity for COW structure replacement. Unlike id(),
+        # this is never reused after an old node has been collected.
+        self._version_identity = next(_VERSION_IDENTITIES)
 
         # 状态
         self.state: State = State()
@@ -335,7 +342,14 @@ class Node(ABC):
 
         child_node.parent = self
         self.children.append(child_node)
+        if hasattr(self, "_status_counts"):
+            self._status_counts = None
+        bunch = self.get_root().get_bunch()
+        if bunch is not None:
+            bunch._artifact_path_index = None
         flow = self.get_flow()
+        if flow is not None:
+            flow._calendar_nodes = None
         if flow is not None and flow.bunch is not None:
             flow.ensure_definition_generation(child_node)
         self.notify_query_change(invalidate=True)
@@ -366,8 +380,17 @@ class Node(ABC):
             )
 
         old_child = self.children[child_index]
+        flow = self.get_flow()
+        if flow is not None:
+            flow._calendar_nodes = None
         new_child_node.parent = self
         self.children[child_index] = new_child_node
+        if hasattr(self, "_status_counts"):
+            self._status_counts = None
+        old_child.parent = None
+        bunch = self.get_root().get_bunch()
+        if bunch is not None:
+            bunch._artifact_path_index = None
         self.notify_query_change(invalidate=True)
         return old_child
 
@@ -379,16 +402,34 @@ class Node(ABC):
                 node_path=f"{self.node_path}/{child if isinstance(child, str) else child.name}",
             )
         child_node = self.children.pop(child_node_index)
+        flow = self.get_flow()
+        if flow is not None:
+            flow._calendar_nodes = None
+        if hasattr(self, "_status_counts"):
+            self._status_counts = None
+        bunch = self.get_root().get_bunch()
+        if bunch is not None:
+            bunch._artifact_path_index = None
         child_node.delete_children()
+        child_node.parent = None
         self.notify_query_change(invalidate=True)
         return child_node
 
     def delete_children(self):
+        flow = self.get_flow()
+        if flow is not None:
+            flow._calendar_nodes = None
+        if hasattr(self, "_status_counts"):
+            self._status_counts = None
         if self.children:
+            bunch = self.get_root().get_bunch()
+            if bunch is not None:
+                bunch._artifact_path_index = None
             self.notify_query_change(invalidate=True)
         while len(self.children) > 0:
             node = self.children.pop(0)
             node.delete_children()
+            node.parent = None
             del node
         self.children = list()
 
@@ -568,6 +609,8 @@ class Node(ABC):
             return
 
         self.state.node_status = node_status
+        if self.parent is not None and hasattr(self.parent, "_child_status_changed"):
+            self.parent._child_status_changed(old_state, node_status)
         self.notify_query_change("summary")
 
     def set_node_status(self, node_status: NodeStatus):
@@ -609,6 +652,7 @@ class Node(ABC):
                 value=getattr(node_status, "value", str(node_status)),
             )
         self.default_node_status = node_status
+        self.notify_query_change("definition", "runtime")
 
     def sink_status_change_only(self, node_status: NodeStatus):
         """
@@ -796,7 +840,9 @@ class Node(ABC):
         # check complete
         # TODO: check complete before or after check time?
         if self.evaluate_complete_trigger():
-            self.is_complete_triggered = True
+            if not self.is_complete_triggered:
+                self.is_complete_triggered = True
+                self.notify_query_change("runtime")
             self.set_node_status(NodeStatus.complete)
             return False
 
@@ -1382,6 +1428,9 @@ class Node(ABC):
         """
         time_attr = TimeAttribute(time)
         self.times.append(time_attr)
+        flow = self.get_flow()
+        if flow is not None:
+            flow._calendar_nodes = None
         self.notify_query_change("definition")
         return time_attr
 
@@ -1405,6 +1454,9 @@ class Node(ABC):
             The ``time_attr`` passed in.
         """
         self.times.append(time_attr)
+        flow = self.get_flow()
+        if flow is not None:
+            flow._calendar_nodes = None
         self.notify_query_change("definition")
         return time_attr
 
@@ -1439,8 +1491,11 @@ class Node(ABC):
         calendar
             The calendar of a Flow.
         """
+        before = tuple(item.free for item in self.times)
         for time_attr in self.times:
             time_attr.calendar_changed(calendar)
+        if before != tuple(item.free for item in self.times):
+            self.notify_query_change("runtime")
 
     # Node Operations ------------------------------------------------
 
@@ -1450,17 +1505,19 @@ class Node(ABC):
 
         Requeue operation sets node's status to ``self.default_node_status`` (``NodeStatus.queued`` by default)
         """
-        if (
+        changed = (
             any(event.value != event.initial_value for event in self.events)
             or any(meter.value != meter.min_value for meter in self.meters)
+            or self.is_complete_triggered
+            or any(item.free for item in self.times)
+            or bool(self.trigger_expression and self.trigger_expression.free)
             or (
                 reset_repeat
                 and self.repeat is not None
                 and self.repeat.r is not None
                 and self.repeat.value() != self.repeat.start()
             )
-        ):
-            self.notify_query_change("runtime")
+        )
         self.set_node_status_only(self.default_node_status)
 
         # reset complete trigger
@@ -1486,6 +1543,8 @@ class Node(ABC):
         # reset trigger
         if self.trigger_expression is not None:
             self.trigger_expression.reset()
+        if changed:
+            self.notify_query_change("runtime")
 
     def suspend(self):
         """
@@ -1540,6 +1599,10 @@ class Node(ABC):
         if dep_type == "all" or dep_type == "trigger":
             free_trigger = True
 
+        before = (
+            tuple(item.free for item in self.times),
+            bool(self.trigger_expression and self.trigger_expression.free),
+        )
         if free_time:
             for time_attr in self.times:
                 time_attr.set_free()
@@ -1548,5 +1611,11 @@ class Node(ABC):
             # Freeing the trigger of a node without a trigger is a no-op.
             if self.trigger_expression is not None:
                 self.trigger_expression.set_free()
+
+        if before != (
+            tuple(item.free for item in self.times),
+            bool(self.trigger_expression and self.trigger_expression.free),
+        ):
+            self.notify_query_change("runtime")
 
         return

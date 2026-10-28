@@ -6,6 +6,7 @@ from copy import deepcopy
 from takler.exceptions import InvalidNodePathError
 from takler.protocol.commands import BatchItemResult, BatchResponse
 from takler.protocol.error_code import error_code_for_exception, error_name_for_code
+from takler.serialization.registry import _snapshot_type_checks
 
 
 def _snapshot(scheduler):
@@ -13,7 +14,8 @@ def _snapshot(scheduler):
     # An extension may not implement serialization; in that case failures have
     # unknown effects rather than blocking unrelated, valid control targets.
     try:
-        return deepcopy(scheduler.bunch.to_dict())
+        with _snapshot_type_checks():
+            return deepcopy(scheduler.bunch.to_dict())
     except Exception:
         return None
 
@@ -42,6 +44,7 @@ def batch_targets(field):
             had_exception = False
             for index, target in enumerate(targets):
                 before = None
+                evidence = None
                 attempted = False
                 try:
                     # Validate syntax per item, before the operation can mutate.
@@ -64,21 +67,31 @@ def batch_targets(field):
                         raise InvalidNodePathError(
                             "invalid target path", node_path=target
                         )
-                    before = _snapshot(scheduler)
+                    if operation.__name__ == "run_command_run":
+                        from takler.server.run_effect import controlled_run
+
+                        try:
+                            evidence = controlled_run(scheduler, target)
+                        except Exception:
+                            # Qualification, like snapshots, is optional evidence.
+                            evidence = None
+                    if evidence is None:
+                        before = _snapshot(scheduler)
                     single = command.model_copy(
                         update={field: target[1:] if begin else [target]}
                     )
                     attempted = True
                     operation(scheduler, single)
-                    effect = (
-                        "none"
-                        if before is not None and _snapshot(scheduler) == before
-                        else "applied"
-                    )
                     # Successful run represents acceptance even when a custom
                     # synchronous implementation leaves no serialized changes.
                     if operation.__name__ == "run_command_run":
                         effect = "applied"
+                    else:
+                        effect = (
+                            "none"
+                            if before is not None and _snapshot(scheduler) == before
+                            else "applied"
+                        )
                     item = BatchItemResult(
                         index=index,
                         target=target,
@@ -92,6 +105,8 @@ def batch_targets(field):
                     effect = "unknown"
                     if not attempted:
                         effect = "none"
+                    elif flag != 99 and evidence is not None:
+                        effect = evidence.effect()
                     elif flag != 99 and before is not None:
                         after = _snapshot(scheduler)
                         if after is not None:

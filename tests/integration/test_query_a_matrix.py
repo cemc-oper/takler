@@ -1,11 +1,14 @@
 """R2-12A paired initial-query matrix over real HTTP and gRPC sockets."""
 
 from dataclasses import replace
+import json
 import os
 from pathlib import Path
+import runpy
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -23,6 +26,45 @@ from takler.server.connect_config import (
     SecuritySettings,
     Server,
 )
+
+FIRST_ATTEMPT = "11111111-1111-4111-8111-111111111111"
+SECOND_ATTEMPT = "22222222-2222-4222-8222-222222222222"
+
+
+def test_benchmark_tree_install_uses_server_writer_transaction(
+    takler_server, monkeypatch
+):
+    from takler.core import Bunch, Flow
+    from takler.serialization.version import VersionUnavailable
+
+    fixture = Bunch()
+    for index in range(3):
+        fixture.add_flow(Flow(f"f{index}")).add_task("t")
+    scheduler = takler_server.server.scheduler
+    live = takler_server.server.bunch
+    original_add = live.add_flow
+    writer_threads = []
+
+    def checked_add(flow):
+        writer_threads.append(threading.current_thread())
+        assert scheduler.query_changes._depth == 1
+        with pytest.raises(VersionUnavailable, match="state_changing"):
+            scheduler.version_store.pin()
+        return original_add(flow)
+
+    monkeypatch.setattr(live, "add_flow", checked_add)
+    script = Path(__file__).resolve().parents[2] / "scripts/query_a_matrix_100k.py"
+    runpy.run_path(str(script))["install_tree"](takler_server, fixture)
+    assert writer_threads == [takler_server._thread] * 3
+    assert set(scheduler.version_store.current.index) == {
+        "/",
+        "/f0",
+        "/f0/t",
+        "/f1",
+        "/f1/t",
+        "/f2",
+        "/f2/t",
+    }
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +113,9 @@ def query_a_server(server_runner_factory, free_port_fixture):
     for index in range(2300):
         flow.add_task(f"task{index:04d}")
     selected = flow.children[0]
-    selected.attempt_id = "first-attempt"
+    selected.try_no = 1
+    selected.attempt_id = FIRST_ATTEMPT
+    selected.task_id = "rid"
     selected.add_parameter("PAYLOAD", "x" * 300_000)
     selected.add_parameter("CLEARED", "before")
     return runner, grpc_port, http_port, flow, selected
@@ -99,6 +143,75 @@ def _executable(language, request):
     if language == "python":
         return [sys.executable, "-m", "takler.client"]
     return [str(request.getfixturevalue("go_query_binary"))]
+
+
+@pytest.mark.parametrize("language", ["python", "go"])
+@pytest.mark.parametrize("transport", ["grpc", "http"])
+def test_full_snapshot_cli_streams_fixed_details_and_completion(
+    language, transport, query_a_server, request
+):
+    _, grpc_port, http_port, flow, selected = query_a_server
+    for index in range(2300, 4100):
+        flow.add_task(f"task{index:04d}")
+    port = http_port if transport == "http" else grpc_port
+    result = subprocess.run(
+        [
+            *_executable(language, request),
+            "snapshot",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--scope",
+            "/flow",
+            "--stream",
+        ],
+        env=_environment(transport, port),
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "never-print-this-secret" not in result.stdout
+    lines = [json.loads(line) for line in result.stdout.splitlines()]
+    assert len(lines) == 4102
+    assert lines[0]["node"]["path"] == "/flow"
+    assert lines[-1]["complete"]["total_nodes"] == 4101
+    assert lines[1]["node"]["groups"]["parameters"]["user"][0]["value"] == "x" * 300_000
+
+
+@pytest.mark.parametrize("language", ["python", "go"])
+@pytest.mark.parametrize("transport", ["grpc", "http"])
+def test_full_snapshot_cli_assembles_selected_root(
+    language, transport, query_a_server, request
+):
+    _, grpc_port, http_port, _, selected = query_a_server
+    port = http_port if transport == "http" else grpc_port
+    result = subprocess.run(
+        [
+            *_executable(language, request),
+            "snapshot",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--scope",
+            "/",
+            "--depth",
+            "0",
+            "--fields",
+            "summary,service",
+        ],
+        env=_environment(transport, port),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    value = json.loads(result.stdout)
+    assert value["completion"]["total_nodes"] == 1
+    assert list(value["nodes_by_path"]) == ["/"]
+    assert value["completion"]["service"]["status"] == "running"
 
 
 @pytest.mark.parametrize("language", ["python", "go"])
@@ -159,15 +272,17 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         str(port),
     ]
     service = runner.server.scheduler.query_service
-    original_page, original_detail = service.page, service.detail
+    original_page, original_detail = service.page_encoded, service.detail
 
     async def expired_second_page(request):
         if request.cursor:
-            return FailureReply(
-                kind="error",
-                schema_version=1,
-                code="snapshot_expired",
-                message="injected continuation expiry",
+            return encode_query_document(
+                FailureReply(
+                    kind="error",
+                    schema_version=1,
+                    code="snapshot_expired",
+                    message="injected continuation expiry",
+                )
             )
         return await original_page(request)
 
@@ -178,7 +293,7 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         return response
 
     try:
-        service.page = expired_second_page
+        service.page_encoded = expired_second_page
         page_failure = subprocess.run(
             command,
             env=_environment(transport, port),
@@ -188,7 +303,7 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         )
         assert page_failure.returncode != 0
         assert "|- " not in page_failure.stdout
-        service.page = original_page
+        service.page_encoded = original_page
         service.detail = wrong_detail_identity
         detail_failure = subprocess.run(
             command + ["--scope", "/flow/task0000", "--show-parameter"],
@@ -201,7 +316,7 @@ def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
         assert "|- " not in detail_failure.stdout
         assert "PAYLOAD" not in detail_failure.stdout
     finally:
-        service.page, service.detail = original_page, original_detail
+        service.page_encoded, service.detail = original_page, original_detail
 
 
 @pytest.mark.parametrize("language", ["python", "go"])
@@ -268,7 +383,7 @@ def test_wire_snapshot_replay_live_detail_and_expiry(transport, query_a_server):
             query_id=first.query_id,
             path="/flow/task0000",
             flow_generation=flow.definition_generation,
-            attempt_id="first-attempt",
+            attempt_id=FIRST_ATTEMPT,
             field_groups=["parameters"],
         )
         detail = client.transport.query(detail_request)
@@ -300,7 +415,7 @@ def test_wire_snapshot_replay_live_detail_and_expiry(transport, query_a_server):
         flow.definition_generation = "replacement-generation"
         assert client.transport.query(detail_request).code == "stale_identity"
         flow.definition_generation = detail_request.flow_generation
-        selected.attempt_id = "second-attempt"
+        selected.attempt_id = SECOND_ATTEMPT
         assert client.transport.query(detail_request).code == "stale_identity"
         outside = client.transport.query(
             detail_request.model_copy(update={"path": "/other/task"})
@@ -314,6 +429,12 @@ def test_wire_snapshot_replay_live_detail_and_expiry(transport, query_a_server):
             request.model_copy(update={"cursor": first.next_cursor})
         )
         assert expired.code == "snapshot_expired"
+        assert client.transport.query(detail_request).code == "stale_identity"
+        selected.attempt_id = FIRST_ATTEMPT
+        assert client.transport.query(detail_request).kind == "detail"
+        service._query_leases[first.query_id] = replace(
+            service._query_leases[first.query_id], expires=time.monotonic() - 1
+        )
         assert client.transport.query(detail_request).code == "snapshot_expired"
     finally:
         client.close_channel()

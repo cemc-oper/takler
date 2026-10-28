@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..exceptions import FlowStateError
 from .node_container import NodeContainer
+from .node import Node
 from .task_node import Task
 from .calendar import Calendar
 from .parameter import Parameter, DATE, TIME
@@ -24,6 +25,9 @@ class Flow(NodeContainer):
         self.definition_generation: Optional[str] = None
         self.calendar: Calendar = Calendar()
         self.begun: bool = False
+        # Built-in calendar propagation only touches nodes with time attributes.
+        # Structure/time edits invalidate this process-local index.
+        self._calendar_nodes: Optional[list[Node]] = None
 
         self.generated_parameters: FlowGeneratedParameters = FlowGeneratedParameters(
             flow=self
@@ -83,6 +87,7 @@ class Flow(NodeContainer):
         """Give a newly attached definition one identity, shared by its tasks."""
         if self.definition_generation is None:
             self.definition_generation = str(uuid4())
+            self.notify_query_change("runtime")
         pending = [subtree] if subtree is not None else list(self.children)
         while pending:
             node = pending.pop()
@@ -90,6 +95,8 @@ class Flow(NodeContainer):
                 subtree is not None or node.definition_generation is None
             ):
                 node.definition_generation = self.definition_generation
+                if subtree is None:
+                    node.notify_query_change("runtime")
             pending.extend(node.children)
 
     # Node access --------------------------------------
@@ -115,8 +122,11 @@ class Flow(NodeContainer):
         """
         Requeue calendar with current time.
         """
+        before = self.calendar.to_dict()
         suite_time = datetime.datetime.now()
         self.calendar.begin(suite_time)
+        if self.calendar.to_dict() != before:
+            self.notify_query_change("runtime")
 
     def update_calendar(self, time: datetime.datetime):
         """
@@ -128,12 +138,33 @@ class Flow(NodeContainer):
         ----------
         time
         """
-        previous = self.calendar.flow_time
+        previous = self.calendar.to_dict()
         self.calendar.update(time)
-        if self.calendar.flow_time != previous:
+        if self.calendar.to_dict() != previous:
             self.notify_query_change("runtime")
         self.update_generated_parameters()
-        self.calendar_changed(self.calendar)
+        if type(self) is not Flow:
+            self.calendar_changed(self.calendar)
+            return
+        if self._calendar_nodes is None:
+            timed_nodes = []
+            pending = [self]
+            while pending:
+                node = pending.pop()
+                if type(node).calendar_changed not in (
+                    Node.calendar_changed,
+                    NodeContainer.calendar_changed,
+                ):
+                    # Extension callbacks retain the original traversal and
+                    # synchronous execution contract.
+                    self.calendar_changed(self.calendar)
+                    return
+                if node.times:
+                    timed_nodes.append(node)
+                pending.extend(node.children)
+            self._calendar_nodes = timed_nodes
+        for node in self._calendar_nodes:
+            Node.calendar_changed(node, self.calendar)
 
     # Parameter ---------------------------------------------------
 
@@ -176,6 +207,17 @@ class Flow(NodeContainer):
         if self.begun and not force:
             raise FlowStateError(
                 f"flow is already begun: {self.name}", flow_name=self.name
+            )
+
+        from takler.serialization.builder import walk
+
+        if any(
+            isinstance(node, Task) and node.submission_unknown_reason is not None
+            for node in walk(self)
+        ):
+            raise FlowStateError(
+                "unknown external submission requires operator verification",
+                flow_name=self.name,
             )
 
         self.requeue_calendar()

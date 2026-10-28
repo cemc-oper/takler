@@ -9,6 +9,7 @@ from takler.core.bunch import ServerState
 from takler.exceptions import FlowStateError
 from takler.tasks.shell import ShellScriptTask
 from takler.tasks.shell.shell_runner import ShellRunner
+from takler.tasks.shell.shell_render import ShellRender
 
 
 @pytest.fixture
@@ -41,6 +42,24 @@ def test_requeue_with_same_try_number_keeps_old_files(shell_flow):
     assert first_path.read_text() == first_content
     assert task.attempt_id in Path(task.job_path).read_text()
     assert task.jobout_path.endswith(task.attempt_id)
+
+
+def test_failed_command_render_keeps_written_reference_until_requeue(
+    shell_flow, monkeypatch
+):
+    bunch, _, task, calls = shell_flow
+
+    def fail_command(_):
+        raise RuntimeError("command render failed")
+
+    monkeypatch.setattr(ShellRender, "render_job_command", fail_command)
+    assert task.run() is False
+    assert calls == []
+    path = Path(task.job_path)
+    assert path.exists()
+    assert bunch._artifact_path_index.by_path[path.resolve()] == (task, "job_path")
+    task.requeue()
+    assert path.resolve() not in bunch._artifact_path_index.by_path
 
 
 @pytest.mark.parametrize("template", ["output", "{attempt_id}/{attempt_id}", 3])
@@ -106,8 +125,9 @@ def test_orvix_sidecar_and_uncertain_submit_no_resubmission(shell_flow):
     assert task.orvix_info_path == task.job_path + ".info.yaml"
     assert len(calls) == 1
     calls[0]["on_failure"](RuntimeError("submit returned nonzero"))
-    assert task.state.node_status is NodeStatus.aborted
-    assert "result unknown" in task.aborted_reason
+    assert task.state.node_status is NodeStatus.submitted
+    assert task.aborted_reason is None
+    assert "submit returned nonzero" in task.submission_unknown_reason
     assert len(calls) == 1
 
 
@@ -143,7 +163,7 @@ def test_halt_before_deferred_process_start_prevents_submit(tmp_path, monkeypatc
         flow.begin()
         called = []
 
-        async def process(*args):
+        async def process(*args, **kwargs):
             called.append(args)
 
         monkeypatch.setattr(shell_runner, "run_process", process)

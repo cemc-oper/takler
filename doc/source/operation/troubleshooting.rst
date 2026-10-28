@@ -81,6 +81,13 @@ invalid_credential`` / ``not_in_whitelist`` 时，问题在凭据：
 渲染失败与进程创建失败不会让任务停在 submitted ——它们直接使任务
 ``aborted``。卡在 submitted 时外部提交结果可能未知，须先核对调度系统：
 
+直接使用 ``orvix submit`` 时，若提交进程报错且无法证明外部没有接收，
+查询摘要会显示 ``submitted; submission unknown``，详情的 ``runtime``
+组提供 ``submission_unknown_reason``。此时当前 ``attempt_id``、作业文件
+引用和 limit 占用保留在 checkpoint 中；恢复服务后仍保留。``requeue``、
+``run --force``、重新 ``begin --force`` 和批量 ``force`` 不能清除它。
+``server-halt`` / ``server-resume`` 只改变服务调度门控，不解除隔离。
+
 #. **看本轮文件引用。** ``show --show-all`` 会给出本轮
    ``attempt_id`` 和允许展示的 job/jobout/orvix 路径。默认文件名包含
    UUID： ``{TAKLER_HOME}{节点路径}.job{attempt_id}`` 与
@@ -93,6 +100,17 @@ invalid_credential`` / ``not_in_whitelist`` 时，问题在凭据：
 #. **检查执行权限。** 服务只给作业文件加**所有者**执行位，其余权限
    位来自服务进程的 umask ；以其他账户提交时可能无权执行。
 #. **作业跑了但 ``init`` 没回来** → 见下一条。
+
+解除 ``submission unknown`` 前，按 ``attempt_id``、作业文件和 orvix
+``.info.yaml`` 路径核对外部调度系统及其作业记录；单独的命令退出码、
+文件缺失或超时不足以证明未提交。若同一 attempt 的合法 child ``init``
+到达，状态转为 ``active`` 并保留 limit；child ``complete`` / ``abort``
+正常释放。若外部明确证明未接收或已终结，操作员记录核实证据后，可对
+单个任务执行非递归 ``force aborted`` 或 ``force complete``；该控制
+命令进入审计记录。Python CLI 使用 ``--no-recursive``，Go CLI 使用
+``--recursive=false``。终态后才可按需 ``requeue``。确认作业仍在运行时，
+保持当前 attempt；不要使用终态 force。自定义包装命令的外部结果分类
+须单独核查，目前自动隔离识别直接配置的 ``orvix submit``。
 
 作业在跑但状态不动
 ------------------

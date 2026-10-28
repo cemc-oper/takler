@@ -368,6 +368,7 @@ class CommandHandlers:
             finally:
                 if mutates:
                     self.scheduler.query_changes.end()
+                    self.scheduler.version_store.flush()
                     self.scheduler.query_revision += 1
 
     async def handle(

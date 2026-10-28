@@ -114,6 +114,8 @@ def _label_for(node: NodeInfo) -> Text:
     """Build a tree label like ``██ producer`` with the leading block coloured by state."""
     label = state_block(node.state, suspended=node.suspended)
     label.append(node.name)
+    if node.submission_unknown:
+        label.append(" [submission unknown]", style="bold red")
     return label
 
 

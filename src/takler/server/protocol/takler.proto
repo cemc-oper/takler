@@ -231,4 +231,7 @@ service TaklerQuery {
   rpc ReadDetail(QueryDocumentPayload) returns (QueryDocumentPayload) {}
   rpc ReadDetailChunk(QueryDocumentPayload) returns (QueryDocumentPayload) {}
   rpc ReadSince(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+  rpc ReadFullSnapshot(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+  rpc ReadFullSnapshotChunk(QueryDocumentPayload) returns (QueryDocumentPayload) {}
+  rpc CancelFullSnapshot(QueryDocumentPayload) returns (QueryDocumentPayload) {}
 }

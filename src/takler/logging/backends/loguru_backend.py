@@ -59,7 +59,13 @@ from typing import TYPE_CHECKING, List, Mapping, Optional, Union
 
 from loguru import logger as _loguru_logger
 
-from takler.logging.backends import LoggingBackend, NamedLogger, map_level
+from takler._run_effect import fingerprint as _run_fingerprint, stamp as _run_stamp
+from takler.logging.backends import (
+    LoggingBackend,
+    NamedLogger,
+    _RUN_MAP_LEVEL,
+    map_level,
+)
 from takler.logging.config import AUDIT_COMPONENT
 from takler.logging.errors import ApplyResult, SettingFailure
 from takler.logging.levels import LEVEL_ORDER, LogLevel
@@ -414,3 +420,18 @@ class LoguruBackend(LoggingBackend):
         file sink is skipped (Requirements 5.5, 5.6).
         """
         self._logger.bind(takler_name=_ROOT_COMPONENT).warning(reason)
+
+
+_RUN_EFFECT_CLASSES = {
+    cls: _run_fingerprint(cls)
+    for cls in (
+        LoguruNamedLogger,
+        LoguruBackend,
+        type(_loguru_logger),
+        type(_loguru_logger._core),
+    )
+}
+_RUN_EFFECT_HELPERS = (
+    (sys.modules[__name__], "map_level", _RUN_MAP_LEVEL),
+    (sys.modules[__name__], "_SUPPORTED_LEVELS", _run_stamp(_SUPPORTED_LEVELS)),
+)

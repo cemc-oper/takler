@@ -466,6 +466,9 @@ class HttpTransport(ClientTransport):
             "detail_request": "details",
             "chunk_request": "chunks",
             "since_request": "since",
+            "full_snapshot_request": "full-snapshots",
+            "full_snapshot_chunk_request": "full-snapshot-chunks",
+            "cancel_full_snapshot_request": "full-snapshot-cancel",
         }.get(document.kind)
         if route is None:
             raise InvalidRequestError("unsupported query request kind")

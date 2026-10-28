@@ -2,6 +2,428 @@
   "title": "QueryDocument v1",
   "version": 1,
   "kinds": {
+    "full_snapshot_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "full_snapshot_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "scope_path": {
+          "default": "/",
+          "title": "Scope Path",
+          "type": "string"
+        },
+        "depth": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth"
+        },
+        "field_groups": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Field Groups",
+          "type": "array"
+        },
+        "full_snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Full Snapshot Id"
+        },
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version"
+      ],
+      "title": "FullSnapshotRequest",
+      "type": "object"
+    },
+    "full_snapshot_page": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "full_snapshot_page",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "full_snapshot_id": {
+          "title": "Full Snapshot Id",
+          "type": "string"
+        },
+        "state_version": {
+          "minimum": 1,
+          "title": "State Version",
+          "type": "integer"
+        },
+        "as_of": {
+          "title": "As Of",
+          "type": "string"
+        },
+        "scope_path": {
+          "title": "Scope Path",
+          "type": "string"
+        },
+        "depth": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Depth"
+        },
+        "field_groups": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Field Groups",
+          "type": "array"
+        },
+        "selection_hash": {
+          "title": "Selection Hash",
+          "type": "string"
+        },
+        "encoding": {
+          "const": "compact_v1",
+          "title": "Encoding",
+          "type": "string"
+        },
+        "page_index": {
+          "minimum": 0,
+          "title": "Page Index",
+          "type": "integer"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Cursor"
+        },
+        "nodes": {
+          "items": {
+            "items": {},
+            "type": "array"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "ancestor_context": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ancestor Context"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service"
+        },
+        "total_nodes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Nodes"
+        },
+        "total_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Bytes"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "full_snapshot_id",
+        "state_version",
+        "as_of",
+        "scope_path",
+        "depth",
+        "field_groups",
+        "selection_hash",
+        "encoding",
+        "page_index",
+        "complete",
+        "next_cursor",
+        "nodes"
+      ],
+      "title": "FullSnapshotPage",
+      "type": "object"
+    },
+    "full_snapshot_chunk_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "full_snapshot_chunk_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "full_snapshot_id": {
+          "title": "Full Snapshot Id",
+          "type": "string"
+        },
+        "blob_id": {
+          "title": "Blob Id",
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "full_snapshot_id",
+        "blob_id",
+        "offset"
+      ],
+      "title": "FullSnapshotChunkRequest",
+      "type": "object"
+    },
+    "full_snapshot_chunk": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "full_snapshot_chunk",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "full_snapshot_id": {
+          "title": "Full Snapshot Id",
+          "type": "string"
+        },
+        "state_version": {
+          "minimum": 1,
+          "title": "State Version",
+          "type": "integer"
+        },
+        "as_of": {
+          "title": "As Of",
+          "type": "string"
+        },
+        "blob_id": {
+          "title": "Blob Id",
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "total_bytes": {
+          "maximum": 16777216,
+          "minimum": 0,
+          "title": "Total Bytes",
+          "type": "integer"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "data_base64": {
+          "title": "Data Base64",
+          "type": "string"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "full_snapshot_id",
+        "state_version",
+        "as_of",
+        "blob_id",
+        "offset",
+        "total_bytes",
+        "sha256",
+        "data_base64",
+        "complete"
+      ],
+      "title": "FullSnapshotChunk",
+      "type": "object"
+    },
+    "cancel_full_snapshot_request": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cancel_full_snapshot_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "full_snapshot_id": {
+          "title": "Full Snapshot Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "session_id",
+        "full_snapshot_id"
+      ],
+      "title": "CancelFullSnapshotRequest",
+      "type": "object"
+    },
+    "cancel_full_snapshot_reply": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cancel_full_snapshot_reply",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "cancelled": {
+          "title": "Cancelled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "cancelled"
+      ],
+      "title": "CancelFullSnapshotReply",
+      "type": "object"
+    },
     "capabilities_request": {
       "additionalProperties": false,
       "properties": {
@@ -64,6 +486,11 @@
           "const": 65536,
           "title": "Max Chunk Bytes",
           "type": "integer"
+        },
+        "full_snapshot_v1": {
+          "default": false,
+          "title": "Full Snapshot V1",
+          "type": "boolean"
         }
       },
       "required": [
@@ -193,6 +620,18 @@
               ],
               "default": null,
               "title": "Attempt Id"
+            },
+            "submission_unknown": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Submission Unknown"
             }
           },
           "required": [
@@ -851,6 +1290,18 @@
               ],
               "default": null,
               "title": "Aborted Reason"
+            },
+            "submission_unknown_reason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Submission Unknown Reason"
             },
             "events": {
               "items": {
@@ -1538,6 +1989,18 @@
               ],
               "default": null,
               "title": "Attempt Id"
+            },
+            "submission_unknown": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Submission Unknown"
             }
           },
           "required": [

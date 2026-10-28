@@ -209,11 +209,17 @@ class GrpcTransport(
         if expected == "capabilities_request":
             reply = service.capabilities()
         elif expected == "page_request":
-            reply = await service.page(document)
+            reply = await service.page_encoded(document)
         elif expected == "detail_request":
             reply = await service.detail(document)
         elif expected == "since_request":
             reply = await service.since(document)
+        elif expected == "full_snapshot_request":
+            reply = await service.full_snapshots.page_encoded(document)
+        elif expected == "full_snapshot_chunk_request":
+            reply = await service.full_snapshots.chunk(document)
+        elif expected == "cancel_full_snapshot_request":
+            reply = await service.full_snapshots.cancel(document)
         else:
             reply = await service.chunk(document)
         return query_to_pb2(reply)
@@ -232,6 +238,15 @@ class GrpcTransport(
 
     async def ReadSince(self, request, context):
         return await self._query(request, "since_request")
+
+    async def ReadFullSnapshot(self, request, context):
+        return await self._query(request, "full_snapshot_request")
+
+    async def ReadFullSnapshotChunk(self, request, context):
+        return await self._query(request, "full_snapshot_chunk_request")
+
+    async def CancelFullSnapshot(self, request, context):
+        return await self._query(request, "cancel_full_snapshot_request")
 
     #
     # Every method is the same one-liner: parse the pb2 request into the

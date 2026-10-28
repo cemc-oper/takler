@@ -314,6 +314,26 @@ parameter 缺省不显示；显式启用时对所选节点实时读取详情，
 TUI 的定时和手动刷新使用同一增量语义；连接失败时保留旧视图并标记陈旧，
 恢复后继续同步或重建。
 
+``snapshot``
+~~~~~~~~~~~~
+
+**Python 与 Go 客户端均提供。**
+
+::
+
+    takler-client-py snapshot [--scope PATH] [--depth N]
+                              [--fields GROUPS] [--stream]
+    takler_client snapshot [--scope PATH] [--depth N]
+                           [--fields GROUPS] [--stream]
+
+读取同一固定状态版本的公开摘要和所选详情组。``--scope`` 默认为根 ``/``；
+``--depth`` 是相对范围根的深度。``--fields`` 是逗号分隔的字段组，默认
+``summary,definition,parameters,runtime,artifacts,service``。默认输出一个按
+路径索引的结构化 JSON；``--stream`` 逐行输出节点和最终完成证明，适用于
+超出组装内存预算的树。只有出现最后的 ``complete`` 记录且摘要校验通过，
+结果才完整。大字段以同版本分块传输并由客户端校验。此接口只包含公开查询
+数据和文件引用，不能用作 checkpoint 恢复输入；实时 ``show`` 详情仍独立采样。
+
 ``ping``
 ~~~~~~~~
 

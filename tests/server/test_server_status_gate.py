@@ -211,7 +211,7 @@ def test_already_started_shell_process_continues_while_halted(tmp_path, monkeypa
         finish = asyncio.Event()
         ended = asyncio.Event()
 
-        async def process(*_):
+        async def process(*_, **kwargs):
             started.set()
             await finish.wait()
             ended.set()

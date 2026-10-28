@@ -396,6 +396,9 @@ class GrpcTransport(ClientTransport):
             "detail_request": "ReadDetail",
             "chunk_request": "ReadDetailChunk",
             "since_request": "ReadSince",
+            "full_snapshot_request": "ReadFullSnapshot",
+            "full_snapshot_chunk_request": "ReadFullSnapshotChunk",
+            "cancel_full_snapshot_request": "CancelFullSnapshot",
         }.get(document.kind)
         if method is None:
             raise InvalidRequestError("unsupported query request kind")

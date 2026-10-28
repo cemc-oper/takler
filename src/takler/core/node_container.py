@@ -5,21 +5,46 @@ from typing import Union
 from .node import Node, compute_most_significant_status
 from .state import NodeStatus
 from .task_node import Task
+from takler.exceptions import FlowStateError
 from .calendar import Calendar
 
 
 class NodeContainer(Node):
     def __init__(self, name: str):
         super(NodeContainer, self).__init__(name)
+        self._status_counts = None
+        self._status_child_count = 0
 
     # State management ----------------------------------------------------
 
     def computed_status(self, immediate: bool) -> NodeStatus:
         if len(self.children) == 0:
             return self.state.node_status
+        if not immediate:
+            return compute_most_significant_status(self.children, immediate)
+        if self._status_counts is None or self._status_child_count != len(
+            self.children
+        ):
+            counts = {status: 0 for status in NodeStatus}
+            for child in self.children:
+                counts[child.state.node_status] += 1
+            self._status_counts = counts
+            self._status_child_count = len(self.children)
+        for status in (
+            NodeStatus.aborted,
+            NodeStatus.active,
+            NodeStatus.submitted,
+            NodeStatus.queued,
+            NodeStatus.complete,
+        ):
+            if self._status_counts[status]:
+                return status
+        return NodeStatus.unknown
 
-        c_state = compute_most_significant_status(self.children, immediate)
-        return c_state
+    def _child_status_changed(self, old: NodeStatus, new: NodeStatus) -> None:
+        if self._status_counts is not None:
+            self._status_counts[old] -= 1
+            self._status_counts[new] += 1
 
     def sink_status_change_only(self, node_status: NodeStatus):
         """
@@ -135,6 +160,14 @@ class NodeContainer(Node):
         -------
 
         """
+        pending = list(self.children)
+        while pending:
+            node = pending.pop()
+            if isinstance(node, Task) and node.submission_unknown_reason is not None:
+                raise FlowStateError(
+                    "unknown external submission requires operator verification"
+                )
+            pending.extend(node.children)
         super(NodeContainer, self).requeue(reset_repeat=reset_repeat)
 
         for child in self.children:

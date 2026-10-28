@@ -91,6 +91,7 @@ class CapabilitiesReply(QueryModel):
     max_page_nodes: Literal[2048]
     max_decoded_page_bytes: Literal[262144]
     max_chunk_bytes: Literal[65536]
+    full_snapshot_v1: StrictBool = False
 
 
 class PageRequest(QueryModel):
@@ -131,6 +132,7 @@ class SummaryNode(QueryModel):
     status: StrictStr
     suspended: StrictBool
     attempt_id: StrictStr | None = None
+    submission_unknown: StrictBool | None = None
 
     @model_validator(mode="after")
     def validate_node(self):
@@ -142,6 +144,15 @@ class SummaryNode(QueryModel):
             or (
                 self.attempt_id is not None
                 and (self.node_kind != "task" or not self.attempt_id)
+            )
+            or (
+                self.submission_unknown is not None
+                and (
+                    self.submission_unknown is not True
+                    or self.node_kind != "task"
+                    or self.status != "submitted"
+                    or self.attempt_id is None
+                )
             )
         ):
             raise ValueError("invalid summary node")
@@ -284,6 +295,7 @@ class RuntimeGroup(QueryModel):
     started_at: StrictStr | None = None
     ended_at: StrictStr | None = None
     aborted_reason: StrictStr | None = None
+    submission_unknown_reason: StrictStr | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
     meters: list[dict[str, Any]] = Field(default_factory=list)
     repeat: dict[str, Any] | None = None
@@ -713,7 +725,153 @@ class ResetReply(QueryModel):
         return self
 
 
+FULL_DEFAULT_GROUPS = [
+    "summary",
+    "definition",
+    "parameters",
+    "runtime",
+    "artifacts",
+    "service",
+]
+
+
+class FullSnapshotRequest(QueryModel):
+    kind: Literal["full_snapshot_request"]
+    schema_version: Literal[1]
+    scope_path: StrictStr = "/"
+    depth: StrictInt | None = Field(default=None, ge=0)
+    field_groups: list[StrictStr] = Field(
+        default_factory=lambda: list(FULL_DEFAULT_GROUPS)
+    )
+    full_snapshot_id: StrictStr | None = None
+    cursor: StrictStr | None = None
+
+    @model_validator(mode="after")
+    def validate_selection(self):
+        valid_path(self.scope_path)
+        if (
+            not self.field_groups
+            or self.field_groups[0] != "summary"
+            or len(self.field_groups) != len(set(self.field_groups))
+            or (self.cursor is None) != (self.full_snapshot_id is None)
+            or self.cursor == ""
+            or self.full_snapshot_id == ""
+        ):
+            raise ValueError("invalid full snapshot selection")
+        return self
+
+
+class FullSnapshotPage(QueryModel):
+    kind: Literal["full_snapshot_page"]
+    schema_version: Literal[1]
+    session_id: StrictStr
+    full_snapshot_id: StrictStr
+    state_version: StrictInt = Field(ge=1)
+    as_of: StrictStr
+    scope_path: StrictStr
+    depth: StrictInt | None = Field(ge=0)
+    field_groups: list[StrictStr]
+    selection_hash: StrictStr
+    encoding: Literal["compact_v1"]
+    page_index: StrictInt = Field(ge=0)
+    complete: StrictBool
+    next_cursor: StrictStr | None
+    nodes: list[list[Any]]
+    ancestor_context: list[dict[str, Any]] | None = None
+    service: dict[str, Any] | None = None
+    total_nodes: StrictInt | None = Field(default=None, ge=0)
+    total_bytes: StrictInt | None = Field(default=None, ge=0)
+    sha256: StrictStr | None = None
+
+    @model_validator(mode="after")
+    def validate_page(self):
+        valid_utc(self.as_of)
+        valid_path(self.scope_path)
+        if (
+            not self.session_id
+            or not self.full_snapshot_id
+            or not re.fullmatch(r"[0-9a-f]{64}", self.selection_hash)
+            or not self.field_groups
+            or self.field_groups[0] != "summary"
+            or len(set(self.field_groups)) != len(self.field_groups)
+            or set(self.field_groups) - GROUPS
+            or len(self.nodes) > MAX_PAGE_NODES
+            or self.complete != (self.next_cursor is None)
+            or (not self.complete and (not self.next_cursor or not self.nodes))
+            or (
+                self.complete
+                and (
+                    self.total_nodes is None
+                    or self.total_bytes is None
+                    or self.sha256 is None
+                )
+            )
+            or (
+                not self.complete
+                and (
+                    self.total_nodes is not None
+                    or self.total_bytes is not None
+                    or self.sha256 is not None
+                )
+            )
+            or (
+                self.sha256 is not None
+                and not re.fullmatch(r"[0-9a-f]{64}", self.sha256)
+            )
+        ):
+            raise ValueError("invalid full snapshot page")
+        for node in self.nodes:
+            path = node[0] if node else None
+            if not isinstance(path, str):
+                raise ValueError("invalid full snapshot node path")
+            valid_path(path)
+        return self
+
+
+class FullSnapshotChunkRequest(QueryModel):
+    kind: Literal["full_snapshot_chunk_request"]
+    schema_version: Literal[1]
+    session_id: StrictStr
+    full_snapshot_id: StrictStr
+    blob_id: StrictStr
+    offset: StrictInt = Field(ge=0)
+
+
+class FullSnapshotChunk(QueryModel):
+    kind: Literal["full_snapshot_chunk"]
+    schema_version: Literal[1]
+    session_id: StrictStr
+    full_snapshot_id: StrictStr
+    state_version: StrictInt = Field(ge=1)
+    as_of: StrictStr
+    blob_id: StrictStr
+    offset: StrictInt = Field(ge=0)
+    total_bytes: StrictInt = Field(ge=0, le=16 * 1024 * 1024)
+    sha256: StrictStr
+    data_base64: StrictStr
+    complete: StrictBool
+
+
+class CancelFullSnapshotRequest(QueryModel):
+    kind: Literal["cancel_full_snapshot_request"]
+    schema_version: Literal[1]
+    session_id: StrictStr
+    full_snapshot_id: StrictStr
+
+
+class CancelFullSnapshotReply(QueryModel):
+    kind: Literal["cancel_full_snapshot_reply"]
+    schema_version: Literal[1]
+    cancelled: StrictBool
+
+
 MODEL_BY_KIND = {
+    "full_snapshot_request": FullSnapshotRequest,
+    "full_snapshot_page": FullSnapshotPage,
+    "full_snapshot_chunk_request": FullSnapshotChunkRequest,
+    "full_snapshot_chunk": FullSnapshotChunk,
+    "cancel_full_snapshot_request": CancelFullSnapshotRequest,
+    "cancel_full_snapshot_reply": CancelFullSnapshotReply,
     "capabilities_request": CapabilitiesRequest,
     "capabilities": CapabilitiesReply,
     "page_request": PageRequest,

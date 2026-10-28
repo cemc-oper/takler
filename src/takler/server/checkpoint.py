@@ -1,9 +1,9 @@
 """Checkpoint snapshot writing and restoring for the Takler server.
 
-The :class:`CheckpointManager` owns everything about the Checkpoint_File: where
-it lives, how often it is written, how a snapshot is built from the in-memory
-:class:`~takler.core.bunch.Bunch`, and how the server recovers from it at
-startup.
+The :class:`CheckpointManager` owns the Checkpoint_File: configuration,
+ordered publication, periodic writes, and startup recovery. A running server
+pins a state version before background validation and writing; standalone
+managers retain the original live capture path for compatibility.
 
 It deliberately depends only on ``takler.core`` and
 :mod:`takler.server.connect_config`, never on ``Scheduler`` or the gRPC
@@ -21,14 +21,18 @@ Requirements: 5.x, 6.x, 7.2, 7.3, 7.4, 7.5, 7.6, 12.5.
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 import errno
+import multiprocessing
 import os
 import shutil
+import stat
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
+from uuid import uuid4
 
 import takler
 from takler.core.bunch import Bunch, ServerState
@@ -40,6 +44,11 @@ from takler.serialization.checkpoint import (
     CheckpointDocument,
     capture_checkpoint,
     restore_checkpoint,
+)
+from takler.serialization.version import (
+    CheckpointTransfer,
+    StateVersion,
+    VersionUnavailable,
 )
 from takler.schema.definition import DefinitionError, _decode_json
 from takler.logging import get_logger
@@ -65,6 +74,50 @@ logger = get_logger("server.checkpoint")
 
 class CheckpointRestoreError(RuntimeError):
     """A snapshot exists, but neither primary nor backup is usable."""
+
+
+class CheckpointResourceError(RuntimeError):
+    """A fixed snapshot exceeds the bounded background work budget."""
+
+
+MAX_BACKGROUND_WRITES = 3  # one worker and at most two waiting versions
+MAX_BACKGROUND_BYTES = 1536 * 1024 * 1024
+MAX_CHECKPOINT_OUTPUT_BYTES = 768 * 1024 * 1024
+MAX_BACKGROUND_SECONDS = 120
+
+
+def _prepare_fixed_version(
+    version: StateVersion,
+    saved_at: str,
+    path: str,
+    registry=None,
+) -> str:
+    """Validate and fsync a private temporary file from fixed records only."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, CHECKPOINT_FILE_MODE)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), CHECKPOINT_FILE_MODE)
+            written = 0
+
+            def bounded_write(chunk: str) -> None:
+                nonlocal written
+                encoded = chunk.encode("utf-8")
+                written += len(encoded)
+                if written > MAX_CHECKPOINT_OUTPUT_BYTES:
+                    raise CheckpointResourceError("checkpoint output limit")
+                stream.write(encoded)
+
+            version.checkpoint_stream(
+                bounded_write, saved_at=saved_at, registry=registry
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
+    return path
 
 
 def _snapshot_path_present(path: Path) -> bool:
@@ -258,10 +311,9 @@ def _resolve_path(
 class CheckpointManager:
     """Owns the Checkpoint_File of one server process.
 
-    The manager keeps a reference to the live :class:`~takler.core.bunch.Bunch`
-    instead of a copy of its state, and it never replaces that object:
-    ``Scheduler`` and ``GrpcTransport`` already hold the same reference, so
-    swapping it out would leave them pointing at a stale bunch.
+    The manager retains the live :class:`~takler.core.bunch.Bunch` for restore
+    and service outcomes. Production writes pin the scheduler's immutable
+    version root; the Bunch itself is never sent to a background worker.
 
     Attributes:
         bunch: The live bunch that snapshots are built from and restored into.
@@ -316,9 +368,16 @@ class CheckpointManager:
         self._next_sequence = 0
         self._last_attempted_sequence = 0
         self._last_attempt_succeeded = False
+        self._can_link_backup = False
         self._last_outcome_sequence = 0
         self._last_success_sequence = 0
         self._write_error_kind: Optional[str] = None
+        self._newer_failed_sequence = 0
+        self._background_pool: ProcessPoolExecutor | None = None
+        self._background_slots: asyncio.Semaphore | None = None
+        self._background_writes: set[asyncio.Task] = set()
+        self._background_reserved = 0
+        self._stopping = False
 
         # Set once the periodic snapshot task is running, and cancelled on
         # stop; ``None`` means "no periodic task in flight".
@@ -347,18 +406,14 @@ class CheckpointManager:
     # Snapshot writing ------------------------------------
 
     def build_payload(self) -> str:
-        """Build one snapshot and serialize it to a JSON string.
+        """Build one standalone snapshot and serialize it to JSON.
 
-        This must run on the event loop thread. takler is a single event loop,
-        lock-free model, so building the dictionary there is what guarantees the
-        snapshot cannot observe a node tree that an RPC handler is halfway
-        through mutating. Serializing here too (rather than handing the
-        dictionary to the worker thread) means the value the thread writes can
-        no longer change underneath it.
+        A server-linked manager uses the fixed version path instead. This
+        compatibility path runs on its caller's thread and is only suitable
+        for standalone/quiescent use.
 
         Format v3 stores one trusted definition, path-keyed runtime, and
-        attempt-bound credentials in separate ``secrets``. All three are
-        captured from the same in-memory state on the event-loop thread.
+        attempt-bound credentials in separate ``secrets``.
 
         Returns:
             The snapshot as a JSON string.
@@ -391,9 +446,41 @@ class CheckpointManager:
             saved_at = self._captured_at or datetime.now().astimezone().isoformat()
             return sequence, payload, saved_at, None
 
+    def _pin_fixed_for_write(self) -> tuple[int, StateVersion | None, str]:
+        """Reserve publication order and pin a complete root on the writer."""
+        with self._capture_lock:
+            self._next_sequence += 1
+            sequence = self._next_sequence
+        scheduler = self.query_scheduler
+        try:
+            version = scheduler.version_store.pin()
+        except VersionUnavailable as exc:
+            if str(exc) == "state_changing":
+                return sequence, None, ""
+            self._fixed_failure(sequence, exc)
+            return sequence, None, ""
+        except Exception as exc:
+            self._fixed_failure(sequence, exc)
+            return sequence, None, ""
+        return sequence, version, datetime.now(timezone.utc).isoformat()
+
+    def _fixed_failure(self, sequence: int, exc: Exception) -> None:
+        self._newer_failed_sequence = max(self._newer_failed_sequence, sequence)
+        category = self._failure_category(exc)
+        logger.error(
+            f"failed to build checkpoint snapshot for "
+            f"{self.checkpoint_file}: {category}"
+        )
+        self._record_outcome(sequence, False, False, "", category)
+
     @staticmethod
     def _failure_category(exc: Exception) -> str:
         """Expose a stable diagnosis without paths or raw exception text."""
+        if isinstance(exc, CheckpointResourceError) or (
+            isinstance(exc, VersionUnavailable)
+            and str(exc) in {"version_memory_limit", "field_too_large"}
+        ):
+            return "resource exhausted"
         if isinstance(exc, OSError):
             if exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
                 return "permission denied"
@@ -429,6 +516,7 @@ class CheckpointManager:
                     self.bunch.server_state,
                 ):
                     scheduler.notify_query_change("/", "service")
+                    scheduler.version_store.flush()
                 scheduler.query_revision += 1
 
     def _apply_outcome(
@@ -465,6 +553,11 @@ class CheckpointManager:
     ) -> tuple[bool, bool, Optional[str]]:
         """Serialize disk publication and discard a view older than disk."""
         with self._publish_lock:
+            if (
+                sequence <= self._newer_failed_sequence
+                and self._newer_failed_sequence > self._last_attempted_sequence
+            ):
+                return False, False, None
             if sequence <= self._last_attempted_sequence:
                 return self._last_attempt_succeeded, False, None
             self._last_attempted_sequence = sequence
@@ -481,6 +574,56 @@ class CheckpointManager:
             self._last_attempt_succeeded = success
             return success, success, self._write_error_kind
 
+    def _prepared_path(self, sequence: int) -> Path:
+        return Path(
+            f"{self.checkpoint_file}{TEMP_SUFFIX}.{os.getpid()}."
+            f"{sequence}.{uuid4().hex}"
+        )
+
+    def _publish_prepared(
+        self, sequence: int, prepared: Path
+    ) -> tuple[bool, bool, Optional[str]]:
+        """Rotate a validated, fsynced temp file under publication order."""
+        backup_temp = self._temp_path(self.backup_file)
+        with self._publish_lock:
+            if (
+                sequence <= self._newer_failed_sequence
+                and self._newer_failed_sequence > self._last_attempted_sequence
+            ):
+                self._cleanup_temp_files(prepared)
+                return False, False, None
+            if sequence <= self._last_attempted_sequence:
+                self._cleanup_temp_files(prepared)
+                return self._last_attempt_succeeded, False, None
+            self._last_attempted_sequence = sequence
+            self._write_error_kind = None
+            try:
+                self._ensure_parent_directory()
+                self._copy_to_backup_temp(backup_temp)
+                self._replace_backup(backup_temp)
+                self._replace_checkpoint(prepared)
+                directory_fd = os.open(
+                    self.checkpoint_file.parent,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+                )
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except Exception as exc:
+                self._write_error_kind = self._failure_category(exc)
+                logger.error(
+                    f"failed to write checkpoint to {self.checkpoint_file}: "
+                    f"{self._write_error_kind}"
+                )
+                self._last_attempt_succeeded = False
+                self._cleanup_temp_files(prepared, backup_temp)
+                return False, False, self._write_error_kind
+            self._last_attempt_succeeded = True
+            self._can_link_backup = True
+            self._cleanup_temp_files(backup_temp)
+            return True, True, None
+
     def _finish_async_write(
         self, task: asyncio.Task, sequence: int, saved_at: str
     ) -> None:
@@ -488,13 +631,102 @@ class CheckpointManager:
         try:
             success, published, reason = task.result()
         except asyncio.CancelledError:
+            self._newer_failed_sequence = max(self._newer_failed_sequence, sequence)
             self._record_outcome(sequence, False, False, "", "storage I/O error")
         except Exception as exc:
+            self._newer_failed_sequence = max(self._newer_failed_sequence, sequence)
             category = self._failure_category(exc)
             logger.error(f"checkpoint worker failed: {category}")
             self._record_outcome(sequence, False, False, "", category)
         else:
             self._record_outcome(sequence, success, published, saved_at, reason)
+
+    async def _write_fixed_background(
+        self, sequence: int, version: StateVersion, saved_at: str
+    ) -> tuple[bool, bool, Optional[str]]:
+        """Validate and encode away from the loop, then publish in order."""
+        assert self._background_slots is not None
+        async with self._background_slots:
+            prepared = self._prepared_path(sequence)
+            try:
+                registry = self.query_scheduler.version_store.registry
+                if all(type_id.startswith("takler.") for type_id in registry._ids):
+                    if self._background_pool is None:
+                        self._background_pool = ProcessPoolExecutor(
+                            max_workers=1,
+                            mp_context=multiprocessing.get_context("spawn"),
+                        )
+                    preparation = asyncio.get_running_loop().run_in_executor(
+                        self._background_pool,
+                        _prepare_fixed_version,
+                        CheckpointTransfer(version),
+                        saved_at,
+                        str(prepared),
+                    )
+                    try:
+                        await asyncio.wait_for(
+                            preparation, timeout=MAX_BACKGROUND_SECONDS
+                        )
+                    except TimeoutError:
+                        pool = self._background_pool
+                        self._background_pool = None
+                        await asyncio.to_thread(pool.terminate_workers)
+                        raise CheckpointResourceError("checkpoint timeout") from None
+                else:
+                    # Trusted plugin codecs can be local classes and cannot be
+                    # imported in a spawn worker. Keep the same fixed-root
+                    # semantics, with a single bounded thread worker.
+                    await asyncio.to_thread(
+                        _prepare_fixed_version,
+                        version,
+                        saved_at,
+                        str(prepared),
+                        registry,
+                    )
+                return await asyncio.to_thread(
+                    self._publish_prepared, sequence, prepared
+                )
+            except Exception as exc:
+                self._cleanup_temp_files(prepared)
+                self._newer_failed_sequence = max(self._newer_failed_sequence, sequence)
+                category = self._failure_category(exc)
+                logger.error(f"checkpoint worker failed: {category}")
+                return False, False, category
+
+    async def _write_fixed_async(self) -> bool:
+        if self._stopping:
+            return False
+        sequence, version, saved_at = self._pin_fixed_for_write()
+        if version is None:
+            return False
+        reservation = (version.retained_bytes * 5 + 1) // 2
+        if (
+            len(self._background_writes) >= MAX_BACKGROUND_WRITES
+            or self._background_reserved + reservation > MAX_BACKGROUND_BYTES
+        ):
+            self._fixed_failure(sequence, CheckpointResourceError())
+            return False
+        self._background_reserved += reservation
+        if self._background_slots is None:
+            self._background_slots = asyncio.Semaphore(1)
+        worker = asyncio.create_task(
+            self._write_fixed_background(sequence, version, saved_at)
+        )
+        self._background_writes.add(worker)
+
+        def finish(task):
+            self._background_writes.discard(task)
+            self._background_reserved -= reservation
+            self._finish_async_write(task, sequence, saved_at)
+
+        worker.add_done_callback(finish)
+        try:
+            success, _, _ = await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return False  # the completion callback records the worker fault
+        return success
 
     def _collect_job_passwords(self) -> Dict[str, str]:
         """Collect the Job_Passwords of the in-flight tasks, keyed by node path.
@@ -546,6 +778,24 @@ class CheckpointManager:
         Returns:
             ``True`` when the Checkpoint_File now holds the new snapshot.
         """
+        if getattr(self, "query_scheduler", None) is not None:
+            sequence, version, saved_at = self._pin_fixed_for_write()
+            if version is None:
+                return False
+            prepared = self._prepared_path(sequence)
+            try:
+                _prepare_fixed_version(
+                    version,
+                    saved_at,
+                    str(prepared),
+                    self.query_scheduler.version_store.registry,
+                )
+            except Exception as exc:
+                self._fixed_failure(sequence, exc)
+                return False
+            success, published, reason = self._publish_prepared(sequence, prepared)
+            self._record_outcome(sequence, success, published, saved_at, reason)
+            return success
         sequence, payload, saved_at, error = self._capture_for_write()
         if error is not None:
             logger.error(
@@ -562,15 +812,17 @@ class CheckpointManager:
         return success
 
     async def write_checkpoint_async(self) -> bool:
-        """Write one snapshot without blocking the event loop.
+        """Write a fixed state version with background validation and encoding.
 
-        The payload is built on the loop thread (consistent view) and only the
-        file IO goes to a worker thread, so a large bunch cannot stall the main
-        loop or the RPC handlers while it is being written to disk.
+        A server with a scheduler pins on the loop, then sends only immutable
+        records to a spawned process. Standalone manager use retains the old
+        capture path for callers that have no version store.
 
         Returns:
             ``True`` when the Checkpoint_File now holds the new snapshot.
         """
+        if getattr(self, "query_scheduler", None) is not None:
+            return await self._write_fixed_async()
         sequence, payload, saved_at, error = self._capture_for_write()
         if error is not None:
             logger.error(
@@ -676,9 +928,8 @@ class CheckpointManager:
     def _copy_to_backup_temp(self, backup_temp: Path) -> None:
         """Copy the current Checkpoint_File aside as the next backup.
 
-        Copy-then-replace rather than renaming the live file (requirement 5.3):
-        renaming would leave a window in which the Checkpoint_File does not
-        exist, while copying keeps it complete and in place the whole time.
+        Preserve the live file until the new one is ready (requirement 5.3):
+        renaming it first would leave a window with no Checkpoint_File.
         Nothing to do on the very first snapshot, when no Checkpoint_File
         exists yet.
 
@@ -690,9 +941,28 @@ class CheckpointManager:
         if not self.checkpoint_file.exists():
             return
 
+        if self._can_link_backup:
+            try:
+                source = self.checkpoint_file.lstat()
+                if (
+                    stat.S_ISREG(source.st_mode)
+                    and stat.S_IMODE(source.st_mode) == CHECKPOINT_FILE_MODE
+                    and source.st_nlink == 1
+                ):
+                    # The old primary was fsynced by this process and is never
+                    # modified in place. The link becomes the previous version
+                    # after the new primary is atomically installed.
+                    os.link(self.checkpoint_file, backup_temp, follow_symlinks=False)
+                    return
+            except (OSError, NotImplementedError):
+                # Filesystems without hard links retain the copy path.
+                pass
+
         with open(self.checkpoint_file, "rb") as source:
             with self._open_restricted(backup_temp, "wb") as target:
                 shutil.copyfileobj(source, target)
+                target.flush()
+                os.fsync(target.fileno())
 
     def _replace_backup(self, backup_temp: Path) -> None:
         """Move the copied snapshot onto the Checkpoint_Backup_File path."""
@@ -816,6 +1086,7 @@ class CheckpointManager:
             )
             return
 
+        self._stopping = False
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
         logger.info(
             f"periodic checkpoint task started: file={self.checkpoint_file}, "
@@ -846,6 +1117,7 @@ class CheckpointManager:
         Returns whether the final snapshot reached disk. Callers can make a
         failed final write visible in their process exit status.
         """
+        self._stopping = True
         task = self._snapshot_task
         self._snapshot_task = None
         if task is not None and not task.done():
@@ -862,6 +1134,11 @@ class CheckpointManager:
                 )
 
         await self._drain_in_flight_write()
+
+        if self._background_pool is not None:
+            pool = self._background_pool
+            self._background_pool = None
+            await asyncio.to_thread(pool.shutdown, wait=True, cancel_futures=True)
 
         logger.info(
             f"writing final checkpoint to {self.checkpoint_file} before shutdown."
@@ -932,37 +1209,23 @@ class CheckpointManager:
                 )
 
     async def _drain_in_flight_write(self) -> None:
-        """Wait for a snapshot write the cancelled periodic task left running.
+        """Wait for every snapshot write left by a cancelled caller or loop.
 
-        :meth:`write_checkpoint_async` hands the file IO to a worker thread, and
-        cancelling the periodic task does not stop that thread. Without this
-        wait the final snapshot of :meth:`stop` would race the abandoned write:
-        both go through the same pid-suffixed temporary files, so one of them
-        loses its temporary file to the other's :func:`os.replace` and reports a
-        spurious ERROR -- and in the worst interleaving both write the same
-        temporary file at once, which is exactly the partially written
-        Checkpoint_File requirement 5.2 rules out.
+        A caller cancellation is shielded from its process or thread worker.
+        Draining before the final write prevents an older worker from touching
+        the checkpoint files after shutdown completes.
 
         Never raises: the drained write's own failure is reported as an ERROR
         (requirement 5.8), and the final snapshot is written either way.
         """
         write_task = self._write_task
         self._write_task = None
-        if write_task is None:
-            return
-
-        try:
-            await write_task
-        except asyncio.CancelledError:
-            # The write was cancelled rather than merely abandoned; nothing is
-            # left in flight, which is all this method needs to establish.
-            pass
-        except Exception as exc:  # noqa: BLE001 - boundary is intentional
-            logger.error(
-                f"checkpoint write to {self.checkpoint_file} that was still in "
-                f"flight when the periodic task was cancelled failed: "
-                f"{self._failure_category(exc)}"
-            )
+        pending = set(self._background_writes)
+        if write_task is not None:
+            pending.add(write_task)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+            await asyncio.sleep(0)  # let outcome callbacks run before final write
 
     # Restoring -------------------------------------------
 
@@ -1113,6 +1376,12 @@ class CheckpointManager:
         candidate = restore_checkpoint(snapshot)
         if not isinstance(candidate, Bunch):
             raise DefinitionError("invalid_structure")
+        # Rebuild before publishing the candidate. A bad retained path must
+        # reject this snapshot without partly replacing the live bunch, and
+        # the first post-recovery submission must not scan the full tree.
+        from takler.serialization.artifact_path_index import ArtifactPathIndex
+
+        candidate._artifact_path_index = ArtifactPathIndex(candidate)
         mapping = snapshot["secrets"][JOB_PASSWORDS_KEY]
         deployment = self.bunch.server_config
         self.bunch.__dict__.update(vars(candidate))

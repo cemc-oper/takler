@@ -40,11 +40,16 @@ def strict_json(raw):
 
     def strings(value):
         if isinstance(value, str):
-            value.encode("utf-8")
+            if check_unicode:
+                value.encode("utf-8")
         elif isinstance(value, dict):
-            for k, v in value.items():
-                strings(k)
-                strings(v)
+            if check_unicode:
+                for k, v in value.items():
+                    strings(k)
+                    strings(v)
+            else:
+                for v in value.values():
+                    strings(v)
         elif isinstance(value, list):
             for v in value:
                 strings(v)
@@ -52,6 +57,15 @@ def strict_json(raw):
     try:
         text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         result = json.loads(text, object_pairs_hook=pairs, parse_constant=invalid)
+        # UTF-8 text without \u escapes cannot decode into surrogate strings.
+        # Prove the input once instead of re-encoding repeated keys and values.
+        # Keep value traversal, including its existing recursion-depth guard.
+        # Escaped Unicode and custom input types keep the complete validation.
+        utf8_proven = type(raw) is bytes
+        if type(raw) is str:
+            text.encode("utf-8")
+            utf8_proven = True
+        check_unicode = not utf8_proven or "\\u" in text
         strings(result)
         return result
     except (ValueError, TypeError, UnicodeError, RecursionError):
