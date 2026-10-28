@@ -3,6 +3,8 @@
 import asyncio
 import json
 
+import pytest
+
 from takler.core import Bunch, Flow, NodeStatus, RepeatDate
 from takler.protocol.commands import (
     Command,
@@ -28,6 +30,23 @@ def _scheduler():
     task.add_event("e")
     task.add_meter("m", 0, 100)
     return Scheduler(bunch), flow, task
+
+
+@pytest.mark.parametrize("inactive", ["unbegun", "halted"])
+def test_main_loop_skips_query_guard_for_inactive_flow(monkeypatch, inactive):
+    scheduler, flow, _ = _scheduler()
+    if inactive == "halted":
+        flow.begin()
+        scheduler.run_command_server_halt(ServerHaltCommand())
+    initial_revision = scheduler.query_revision
+
+    async def stop_after_iteration(_):
+        scheduler.should_stop = True
+
+    monkeypatch.setattr(asyncio, "sleep", stop_after_iteration)
+    asyncio.run(scheduler.main_loop())
+
+    assert scheduler.query_revision == initial_revision
 
 
 def test_noop_and_sparse_changes_do_not_scan_tree():

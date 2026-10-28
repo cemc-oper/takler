@@ -144,6 +144,12 @@ class Scheduler:
             for name, flow in list(self.bunch.flows.items()):
                 try:
                     async with self.query_state_lock:
+                        # Inactive flows cannot write; avoid invalidating query captures.
+                        if (
+                            self.bunch.server_state.status is ServerStatus.halted
+                            or not flow.begun
+                        ):
+                            continue
                         self.query_revision += 1
                         self.query_changes.begin()
                         try:

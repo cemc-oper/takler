@@ -107,6 +107,11 @@ def _summary_lines(output):
     return [line for line in output.splitlines() if "|- " in line]
 
 
+def _sync_revision(output):
+    assert output.startswith("# revision=")
+    return int(output[len("# revision=") :].split(None, 1)[0])
+
+
 def _fresh_lines(runner, transport, http_port, scope):
     client = runner.make_client(transport_name=transport)
     if transport == "http":
@@ -208,6 +213,7 @@ def test_seeded_delta_sequence_matches_fresh_projection(
     assert result.returncode == 0, f"seed={SEED} {actions}: {result.stderr}"
     assert seen == actions
     expected, snapshot = _fresh_lines(runner, transport, http_port, "/flow")
+    assert _sync_revision(result.stdout) == snapshot.revision
     assert _summary_lines(result.stdout) == expected, f"seed={SEED} {actions}"
     assert snapshot.get("/flow/late") is not None
     assert snapshot.get("/flow/task0031") is None
@@ -333,6 +339,15 @@ def test_paired_load_and_replace_rebuilds_exact_full_view(
 ):
     runner, grpc_port, http_port, _, _ = query_b_server
     port = http_port if transport == "http" else grpc_port
+    control = runner.make_client(transport_name=transport)
+    if transport == "http":
+        control.port = http_port
+    control.start()
+    try:
+        # Keep the replacement queued until the final views have been compared.
+        assert control.server_halt().flag == 0
+    finally:
+        control.close_channel()
     service = runner.server.scheduler.query_service
     original_since = service.since
     calls = 0
@@ -366,6 +381,7 @@ def test_paired_load_and_replace_rebuilds_exact_full_view(
     assert result.returncode == 0, result.stderr
     assert calls == 2
     expected, snapshot = _fresh_lines(runner, transport, http_port, "/")
+    assert _sync_revision(result.stdout) == snapshot.revision
     assert _summary_lines(result.stdout) == expected
     assert snapshot.get("/loaded/new") is not None
     assert snapshot.get("/flow/replacement") is not None
