@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Callable, Mapping
 
+from takler.client._summary_receiver import create_receiver
 from takler.exceptions import QueryResponseError, ServerResponseError, TransportError
 from takler.protocol.query_v1 import (
     CapabilitiesReply,
@@ -58,6 +59,11 @@ class QueryNode:
             node.attempt_id,
             node.submission_unknown,
         )
+
+
+_ORIGINAL_QUERY_NODE = QueryNode
+_NODE_FROM_WIRE = QueryNode.from_wire.__func__
+_NODE_INIT = QueryNode.__init__
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +173,21 @@ class QueryClient:
         scope = scope_path or ("/" + flow_name if flow_name else "/")
         previous = self.current
         old_size = previous.estimated_bytes if previous else 0
+        receiver = None
+        if (
+            QueryNode is _ORIGINAL_QUERY_NODE
+            and getattr(QueryNode.from_wire, "__func__", None) is _NODE_FROM_WIRE
+            and QueryNode.__init__ is _NODE_INIT
+        ):
+            receiver = create_receiver(
+                self.transport,
+                scope,
+                depth,
+                old_size,
+                MAX_CLIENT_VIEW_BYTES,
+                QueryNode,
+                PageReply,
+            )
         nodes: dict[str, QueryNode] = {}
         order: list[str] = []
         generations: dict[str, str] = {}
@@ -177,7 +198,9 @@ class QueryClient:
         while True:
             if cancelled is not None and cancelled():
                 raise QueryResponseError("cancelled", "superseded query")
-            reply = self.transport.query(request)
+            reply = (
+                receiver.query(request) if receiver else self.transport.query(request)
+            )
             self._failure(reply)
             if not isinstance(reply, PageReply):
                 raise ServerResponseError("invalid query page response")
@@ -205,41 +228,46 @@ class QueryClient:
                 earlier = generations.setdefault(flow_path, generation)
                 if earlier != generation:
                     raise ServerResponseError("query flow identity changed")
-            for wire_node in reply.nodes:
-                row = QueryNode.from_wire(wire_node)
-                path = row.path
-                if path in nodes:
-                    raise ServerResponseError("duplicate query node")
-                if path != scope and not path.startswith(scope.rstrip("/") + "/"):
-                    raise ServerResponseError("query node outside requested scope")
-                relative_depth = (path.count("/") if path != "/" else 0) - (
-                    scope.count("/") if scope != "/" else 0
-                )
-                if depth is not None and relative_depth > depth:
-                    raise ServerResponseError("query node outside requested depth")
-                parent = path.rsplit("/", 1)[0] or "/"
-                if path != scope and parent not in nodes:
-                    raise ServerResponseError("query parent is missing")
-                nodes[path] = row
-                order.append(path)
-                size += 512 + sum(
-                    len(value.encode())
-                    for value in (
-                        row.path,
-                        row.node_kind,
-                        row.type_id,
-                        row.status,
-                        row.attempt_id or "",
+            if receiver:
+                receiver.append()
+            else:
+                for wire_node in reply.nodes:
+                    row = QueryNode.from_wire(wire_node)
+                    path = row.path
+                    if path in nodes:
+                        raise ServerResponseError("duplicate query node")
+                    if path != scope and not path.startswith(scope.rstrip("/") + "/"):
+                        raise ServerResponseError("query node outside requested scope")
+                    relative_depth = (path.count("/") if path != "/" else 0) - (
+                        scope.count("/") if scope != "/" else 0
                     )
-                )
-                if old_size + size > MAX_CLIENT_VIEW_BYTES:
-                    raise QueryResponseError(
-                        "resource_exhausted", "query view memory budget exceeded"
+                    if depth is not None and relative_depth > depth:
+                        raise ServerResponseError("query node outside requested depth")
+                    parent = path.rsplit("/", 1)[0] or "/"
+                    if path != scope and parent not in nodes:
+                        raise ServerResponseError("query parent is missing")
+                    nodes[path] = row
+                    order.append(path)
+                    size += 512 + sum(
+                        len(value.encode())
+                        for value in (
+                            row.path,
+                            row.node_kind,
+                            row.type_id,
+                            row.status,
+                            row.attempt_id or "",
+                        )
                     )
+                    if old_size + size > MAX_CLIENT_VIEW_BYTES:
+                        raise QueryResponseError(
+                            "resource_exhausted", "query view memory budget exceeded"
+                        )
             if reply.complete:
                 break
             request = request.model_copy(update={"cursor": reply.next_cursor})
             index += 1
+        if receiver:
+            nodes, order, size = receiver.finish()
         if not order or order[0] != scope:
             raise ServerResponseError("query scope root is missing")
         if expected_total is not None and len(order) != expected_total:

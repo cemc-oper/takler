@@ -388,6 +388,19 @@ class GrpcTransport(ClientTransport):
         self.query_stub = None
 
     def query(self, document: QueryModel) -> QueryModel:
+        return self._query(document)
+
+    def query_summary(self, document: QueryModel, decode) -> QueryModel:
+        """Opt-in summary callback at the ordinary response decode boundary."""
+        if document.kind != "page_request":
+            raise InvalidRequestError("summary callback requires page_request")
+        if getattr(self.query, "__func__", None) is not GrpcTransport.query:
+            return self.query(document)
+        return self._query(document, decode=decode)
+
+    query_summary._original_query = query
+
+    def _query(self, document: QueryModel, *, decode=None) -> QueryModel:
         if self.query_stub is None:
             raise TransportError("query transport is not open")
         method = {
@@ -414,7 +427,7 @@ class GrpcTransport(ClientTransport):
             classify_grpc_error,
         )
         try:
-            return query_from_pb2(response)
+            return query_from_pb2(response) if decode is None else decode(response.json)
         except WireError:
             raise ServerResponseError("invalid query response") from None
 

@@ -1,0 +1,18 @@
+[package]
+name = "takler-summary-kernel"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "takler_summary_kernel"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "=0.27.2", features = ["extension-module"] }
+serde = "=1.0.228"
+serde_json = { version = "=1.0.145", features = ["preserve_order"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"

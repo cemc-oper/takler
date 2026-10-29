@@ -458,6 +458,19 @@ class HttpTransport(ClientTransport):
         )
 
     def query(self, document: QueryModel) -> QueryModel:
+        return self._query(document)
+
+    def query_summary(self, document: QueryModel, decode) -> QueryModel:
+        """Opt-in summary callback at the ordinary response decode boundary."""
+        if document.kind != "page_request":
+            raise InvalidRequestError("summary callback requires page_request")
+        if getattr(self.query, "__func__", None) is not HttpTransport.query:
+            return self.query(document)
+        return self._query(document, decode=decode)
+
+    query_summary._original_query = query
+
+    def _query(self, document: QueryModel, *, decode=None) -> QueryModel:
         if self.client is None:
             raise TransportError("query transport is not open")
         route = {
@@ -491,7 +504,8 @@ class HttpTransport(ClientTransport):
             if not is_json_content_type(response.headers.get("content-type", "")):
                 raise ServerResponseError("invalid query response content type")
             try:
-                return decode_query_document(response.content)
+                decoder = decode_query_document if decode is None else decode
+                return decoder(response.content)
             except WireError:
                 raise ServerResponseError("invalid query response") from None
 

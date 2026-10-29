@@ -25,6 +25,11 @@ For the HTTP listener, install `takler[http]`; for the terminal interface,
 install `takler[tui]`. The Go client is built separately from the
 `takler-client` repository.
 
+An optional [Rust summary receiver](native/summary/README.md) can be built and
+installed separately for this client. It preserves the JSON protocol and Python
+views; without the extension, the Python receiver remains available. The
+candidate still awaits real-load validation.
+
 ### 1. Define a flow
 
 Create **test.py**, which defines a flow named `test` with two shell tasks.
