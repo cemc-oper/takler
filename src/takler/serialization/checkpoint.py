@@ -411,6 +411,13 @@ def _validate_checkpoint_view(
             visit(flow, f"/{flow.name}")
 
     visit(definition.root, "/")
+    _validate_checkpoint_nodes(document, definitions, registry, live_nodes=live_nodes)
+
+
+def _validate_checkpoint_nodes(
+    document: CheckpointDocument, definitions, registry, *, live_nodes=None
+) -> None:
+    """Cross-check a unique, canonical path index of validated definitions."""
     runtime = document.runtime.nodes
     _same_names(definitions, runtime)
     root = runtime["/"]
@@ -427,7 +434,10 @@ def _validate_checkpoint_view(
             else f"{dirname(owner_path)}/{reference}"
         )
         # Bunch uses "/" as its runtime key and "/<name>" as Node.node_path.
-        if target_path == f"/{definition.root.name}" and target_path not in definitions:
+        if (
+            target_path == f"/{definitions['/'].name}"
+            and target_path not in definitions
+        ):
             target_path = "/"
         if target_path not in definitions:
             raise DefinitionError("unresolved_reference")

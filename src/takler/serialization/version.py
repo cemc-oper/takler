@@ -30,6 +30,7 @@ from takler.serialization.checkpoint import (
     SecretsDocument,
     SourceAddress,
     _capture_node,
+    _validate_checkpoint_nodes,
     _validate_checkpoint_view,
 )
 from takler.serialization.definition import _project
@@ -333,15 +334,14 @@ class StateVersion:
             return built[path]
 
         def summarize(model, path: str, definitions: dict):
-            root = None
-            pending = [(model, path, None)]
+            pending = [(model, path)]
             while pending:
-                item, current, parent = pending.pop()
-                summary = SimpleNamespace(
+                item, current = pending.pop()
+                if current in definitions:
+                    raise DefinitionError("invalid_structure")
+                definitions[current] = SimpleNamespace(
                     name=item.name,
                     type_id=item.type_id,
-                    children=[],
-                    flows=[],
                     events=getattr(item, "events", ()),
                     meters=getattr(item, "meters", ()),
                     limits=getattr(item, "limits", ()),
@@ -351,13 +351,6 @@ class StateVersion:
                     trigger=getattr(item, "trigger", None),
                     complete_trigger=getattr(item, "complete_trigger", None),
                 )
-                definitions[current] = summary
-                if parent is None:
-                    root = summary
-                else:
-                    getattr(
-                        parent, "flows" if current.count("/") == 1 else "children"
-                    ).append(summary)
                 children = getattr(item, "flows", None)
                 if children is None:
                     children = getattr(item, "children", ())
@@ -367,8 +360,7 @@ class StateVersion:
                         if current == "/"
                         else current + "/" + child.name
                     )
-                    pending.append((child, child_path, summary))
-            return root
+                    pending.append((child, child_path))
 
         definitions = {}
         root_data = json.loads(self.node("/").definition)
@@ -377,7 +369,7 @@ class StateVersion:
             {"kind": "takler.definition", "schema_version": 1, "root": root_data},
             model=registry.document_model(),
         ).root
-        root_summary = summarize(root_model, "/", definitions)
+        summarize(root_model, "/", definitions)
         for flow_path in self.node("/").children:
             flow_model = parse_definition(
                 {
@@ -387,8 +379,11 @@ class StateVersion:
                 },
                 model=registry.document_model(),
             ).root
-            flow_summary = summarize(flow_model, flow_path, definitions)
-            root_summary.flows.append(flow_summary)
+            # The tree validator derives flow paths from names. Preserve that
+            # check when using the flat index directly.
+            if flow_path != f"/{flow_model.name}":
+                raise DefinitionError("invalid_runtime")
+            summarize(flow_model, flow_path, definitions)
 
         runtime = {}
         passwords = {}
@@ -430,8 +425,8 @@ class StateVersion:
             runtime=SimpleNamespace(nodes=runtime),
             secrets=SimpleNamespace(job_passwords=passwords),
         )
-        _validate_checkpoint_view(view, SimpleNamespace(root=root_summary), registry)
-        del view, runtime, passwords, definitions, root_summary
+        _validate_checkpoint_nodes(view, definitions, registry)
+        del view, runtime, passwords, definitions
 
         def compact(value):
             return json.dumps(
