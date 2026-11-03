@@ -138,3 +138,79 @@ Python 编程接口
 
 .. literalinclude:: /../examples/query/sync_query.py
    :language: python
+
+从旧全量 show 迁移
+------------------------------
+
+需要同一时点的完整公开数据时，使用 ``snapshot``，不要循环调用实时
+``query_detail`` 来拼接。Python 返回 ``FullSnapshot.nodes_by_path`` 和
+``completion``；Go 返回 ``FullSnapshot.NodesByPath`` 和 ``Complete``。
+节点记录包含 ``path``、``parent_path``、``child_paths``、``summary`` 和
+所选 ``groups``；不是旧 ``Bunch.to_dict()`` 的嵌套对象格式。
+
+.. list-table:: 旧公开信息到完整快照的映射
+   :header-rows: 1
+
+   * - 信息
+     - 当前读取位置
+   * - 名称、类型、状态、暂停、attempt、定义代次
+     - 节点 ``summary``；层次由路径及 ``child_paths`` 表达
+   * - trigger、complete_trigger、time、repeat定义、event/meter/limit定义
+     - ``groups.definition``
+   * - 用户参数和生成参数
+     - ``groups.parameters.user`` / ``generated``；脱敏项检查 ``redacted``
+   * - 子树范围外的继承参数
+     - 完成记录的 ``ancestor_context``；范围内祖先由已返回节点查找
+   * - calendar、运行时间戳、事件/标尺值、占用和未知提交原因
+     - ``groups.runtime``；完整快照的calendar不要与实时详情的字段布局混用
+   * - 本轮作业、输出和orvix文件引用
+     - ``groups.artifacts``；仅引用，不包含文件正文
+   * - 根级服务状态与公开服务信息
+     - 完成记录的 ``service``，须选择service组
+   * - job密码、可恢复运行树、旧混合JSON
+     - 不由查询提供；不能将查询结果交给load或checkpoint恢复入口
+
+字段选择用 ``field_groups=["summary", "parameters", "runtime"]``；Go使用
+``FullSnapshotSelection.FieldGroups``。省略则选择全部公开组。范围用
+``scope_path="/"`` 读取全树，用 ``"/forecast"`` 读取子树；深度省略表示
+全部后代，``depth=0`` 只读范围根。完整快照选择不使用 ``flow_name``。
+
+下面的可运行Python示例既支持组装，也支持流式输出。它显式接受
+``--host`` / ``--port`` / ``--transport``，默认localhost:33083/gRPC；
+不会自动加载CLI的connect.yaml或从TAKLER_HOST/PORT解析地址。安全凭据
+可由客户端环境变量提供。需要已存在的服务和范围，不会创建或运行工作流。
+
+.. literalinclude:: /../examples/query/full_snapshot.py
+   :language: python
+
+从Python仓库根目录运行：
+
+.. code-block:: console
+
+   python doc/examples/query/full_snapshot.py --scope /forecast
+   python doc/examples/query/full_snapshot.py --scope / --stream --transport http
+
+Python迭代器最后返回 ``FullSnapshotComplete``，Go的 ``IterFullSnapshot``
+在回调消费结束后返回完成对象及error。流式节点可能在后续校验失败前已被
+交给调用方；只有收到完成对象且调用成功，才能提交这一批结果。流式消费者
+应写入暂存位置，失败时丢弃；不要把每个节点立即发布为完整视图。提前停止
+Python迭代时关闭生成器；Go回调返回error可中止读取。客户端会尝试释放租约，
+断线时仍依赖服务端到期回收。组装接口失败不会返回半份结果。
+
+命令行可先写临时结果，成功后才替换目标文件；这不是checkpoint持久化流程：
+
+.. code-block:: bash
+
+   tmp=$(mktemp ./snapshot.XXXXXX)
+   if takler_client snapshot --scope /forecast --stream > "$tmp"; then
+       mv -- "$tmp" snapshot.jsonl
+   else
+       rm -f -- "$tmp"
+       exit 1
+   fi
+
+对应的Go可编译示例位于takler-client仓库 ``examples/snapshot/main.go``，
+使用 ``ReadFullSnapshot`` 和 ``IterFullSnapshot``；运行方法见该仓库README。
+租约300/900秒、组装640MiB、公开编码总量512MiB、单字段16MiB都是不同的
+限制；改用流式不会取消服务端、单字段或总量预算，640MiB也不是进程RSS保证。
+当前验证和配对限制见 :doc:`/operation/support-boundaries`。

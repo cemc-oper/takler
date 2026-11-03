@@ -20,6 +20,7 @@
 
 **参考与排查** ：:doc:`reference` 是环境变量、配置项、错误码与
 退出码的总表； :doc:`troubleshooting` 按症状组织值班排查路径。
+版本升级、下游配对和已验证范围见 :doc:`support-boundaries`。
 
 .. toctree::
    :hidden:
@@ -35,3 +36,4 @@
    resilience
    reference
    troubleshooting
+   support-boundaries
