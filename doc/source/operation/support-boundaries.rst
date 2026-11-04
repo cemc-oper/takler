@@ -83,7 +83,7 @@ halted恢复及100101节点内容比对。正式恢复约16–17秒，恢复加�
 业务允许的数据丢失窗口和恢复时间尚未给定，不承诺生产RPO/RTO。
 
 原始证据保留在工作区 ``doc/2026-10-09-r3/evidence/`` 及
-``doc/2026-10-25-100k-product-optimization/evidence/``。后者的
+``doc/archived/2026-Q4/2026-10-25-100k-product-optimization/evidence/``。后者的
 ``20261101T130542Z/report-CK-ACCEPT-01.md`` 和
 ``20261102T124124Z/report-CK-R-02.md`` 分别记录混合失败与恢复补证，
 不能互相替代。本轮不重跑历史性能、HPC或完整生命周期测试。
