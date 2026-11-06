@@ -40,10 +40,10 @@ def test_main_loop_skips_query_guard_for_inactive_flow(monkeypatch, inactive):
         scheduler.run_command_server_halt(ServerHaltCommand())
     initial_revision = scheduler.query_revision
 
-    async def stop_after_iteration(_):
+    async def stop_after_iteration():
         scheduler.should_stop = True
 
-    monkeypatch.setattr(asyncio, "sleep", stop_after_iteration)
+    monkeypatch.setattr(scheduler._stop_event, "wait", stop_after_iteration)
     asyncio.run(scheduler.main_loop())
 
     assert scheduler.query_revision == initial_revision

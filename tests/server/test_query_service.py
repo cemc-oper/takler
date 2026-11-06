@@ -50,11 +50,11 @@ def test_cached_page_bytes_preserve_replay_and_cursor_errors():
         service = Scheduler(bunch).query_service
         first_raw = await service.page_encoded(page_request())
         first = decode_query_document(first_raw, expected="page")
-        assert first_raw is service._snapshots[first.snapshot_id].pages[0]
+        assert first_raw is service._snapshots[first.snapshot_id].content.pages[0]
         assert first.next_cursor is not None
         next_request = page_request(cursor=first.next_cursor)
         next_raw = await service.page_encoded(next_request)
-        assert next_raw is service._snapshots[first.snapshot_id].pages[1]
+        assert next_raw is service._snapshots[first.snapshot_id].content.pages[1]
         assert await service.page_encoded(next_request) is next_raw
         assert decode_query_document(next_raw, expected="page").page_index == 1
 
@@ -118,7 +118,10 @@ async def _snapshot_pages_survive_live_mutation_and_replay():
     first = await service.page(page_request())
     assert first.kind == "page" and first.next_cursor
     assert first.base_revision == base_revision
-    assert service._snapshots[first.snapshot_id].base_revision == base_revision
+    assert (
+        service._snapshots[first.snapshot_id].content.selection.base_revision
+        == base_revision
+    )
     assert (
         await service.page(page_request(field_groups=["summary", "runtime"]))
     ).code == "unsupported_capability"
@@ -376,7 +379,9 @@ async def _http_and_grpc_query_routes():
         http_page = decode_query_document(response.content, expected="page")
         assert (
             response.content
-            == scheduler.query_service._snapshots[http_page.snapshot_id].pages[0]
+            == scheduler.query_service._snapshots[http_page.snapshot_id].content.pages[
+                0
+            ]
         )
         assert [node.path for node in http_page.nodes] == ["/", "/f", "/f/t"]
         assert http_page.base_revision == scheduler.query_changes.revision
@@ -464,7 +469,9 @@ async def _http_and_grpc_query_routes():
             grpc_page = query_from_pb2(response, expected="page")
             assert (
                 response.json
-                == scheduler.query_service._snapshots[grpc_page.snapshot_id].pages[0]
+                == scheduler.query_service._snapshots[
+                    grpc_page.snapshot_id
+                ].content.pages[0]
             )
             assert [node.path for node in grpc_page.nodes] == ["/", "/f", "/f/t"]
             assert grpc_page.session_id == http_page.session_id

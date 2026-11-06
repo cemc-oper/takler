@@ -14,6 +14,7 @@ import re
 import secrets
 import time
 import weakref
+from contextvars import copy_context
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -59,9 +60,9 @@ from takler.serialization.version import (
 SNAPSHOT_SECONDS = 120
 QUERY_LEASE_SECONDS = 120
 _monotonic = time.monotonic
-MAX_SNAPSHOTS = 8
+MAX_SNAPSHOTS = 64
 MAX_OWNER_SNAPSHOTS = 2
-MAX_QUERY_LEASES = 32
+MAX_QUERY_LEASES = 64
 MAX_OWNER_QUERY_LEASES = 8
 MAX_QUERY_BYTES = 128 * 1024 * 1024
 # Reserve 32 MiB of the total for page models, encoding buffers, and indexes.
@@ -71,11 +72,18 @@ MAX_FIELD_BYTES = 16 * 1024 * 1024
 CHUNK_BYTES = 65_536
 # Leave room for page metadata and cursor. Every serialized document is checked.
 PAGE_TARGET_BYTES = 230_000
-MAX_DELTA_BATCHES = 8
+# Admission is independent of the two workers shared with summary captures.
+MAX_DELTA_REQUESTS = 20
+MAX_DELTA_REQUEST_SECONDS = 120
+# Allow three waves of 20 private multi-page cursors within the byte ceilings.
+MAX_DELTA_BATCHES = 64
 MAX_DELTA_BATCH_BYTES = 8 * 1024 * 1024
 MAX_DELTA_RETAINED_BYTES = 32 * 1024 * 1024
 MAX_CAPTURE_WORKERS = 2
-MAX_CAPTURE_WAITING = 2
+MAX_SUMMARY_READERS = 20
+MAX_SUMMARY_CAPTURE_ROOTS = 4
+# Per-view allowance for the private ids, expiry and dictionary entry.
+SUMMARY_VIEW_BYTES = 512
 
 
 def _utc(value: datetime) -> str:
@@ -158,22 +166,46 @@ def _iter_fixed_summaries(
 
 
 @dataclass(frozen=True)
-class _Snapshot:
-    owner: str
-    query_id: str
+class _SummarySelection:
+    root_id: int
+    base_revision: int
     scope: str
     depth: int | None
-    base_revision: int
+    redacted_parameters: tuple[str, ...]
+
+
+@dataclass(frozen=True, eq=False)
+class _SummaryContent:
+    selection: _SummarySelection
+    source: weakref.ReferenceType
+    original_snapshot_id: str
     pages: tuple[bytes, ...]
     expires: float
     size: int
-    source: weakref.ReferenceType
+
+
+@dataclass(frozen=True)
+class _Snapshot:
+    owner: str
+    query_id: str
+    content: _SummaryContent
+    expires: float
 
 
 @dataclass
 class _Capture:
+    content: _ContentCapture
     task: asyncio.Task | None = None
     readers: int = 0
+
+
+@dataclass
+class _ContentCapture:
+    snapshot_id: str
+    version: object
+    task: asyncio.Task | None = None
+    readers: int = 0
+    reserved_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -224,11 +256,12 @@ class QueryService:
         self._reserved = 0
         self._owner_reserved: dict[str, int] = {}
         self._captures: dict[tuple[str, int, int], _Capture] = {}
+        self._content_captures: dict[_SummarySelection, _ContentCapture] = {}
         self._capture_readers = 0
         self._snapshot_expiry: asyncio.TimerHandle | None = None
         self._closed = False
         self._capture_slots = asyncio.Semaphore(MAX_CAPTURE_WORKERS)
-        self._delta_waiting = 0
+        self._delta_in_flight = 0
         from takler.server.full_snapshot import FullSnapshotService
 
         self.full_snapshots = FullSnapshotService(self)
@@ -299,24 +332,39 @@ class QueryService:
         for key, batch in list(self._delta_batches.items()):
             if batch.expires <= now:
                 del self._delta_batches[key]
-        if not self._snapshots and self._snapshot_expiry is not None:
+        if (
+            not (self._snapshots or self._delta_batches or self._blobs)
+            and self._snapshot_expiry is not None
+        ):
             self._snapshot_expiry.cancel()
             self._snapshot_expiry = None
 
-    def _schedule_snapshot_expiry(self) -> None:
+    def _schedule_snapshot_expiry(self, expires: float) -> None:
+        if self._closed:
+            return
+        loop = asyncio.get_running_loop()
+        when = loop.time() + max(0.001, expires - _monotonic())
         if self._snapshot_expiry is not None:
+            if self._snapshot_expiry.when() <= when:
+                return
             self._snapshot_expiry.cancel()
-            self._snapshot_expiry = None
-        if self._snapshots and not self._closed:
-            delay = min(row.expires for row in self._snapshots.values()) - _monotonic()
-            self._snapshot_expiry = asyncio.get_running_loop().call_later(
-                max(0.001, delay), self._expire_snapshots
-            )
+        self._snapshot_expiry = loop.call_at(when, self._expire_snapshots)
 
     def _expire_snapshots(self) -> None:
         self._snapshot_expiry = None
         self._purge()
-        self._schedule_snapshot_expiry()
+        # Blobs and delta pages can outlive the final summary view. Drive
+        # their expiry even if no further queries arrive.
+        expires = min(
+            (
+                row.expires
+                for table in (self._snapshots, self._delta_batches, self._blobs)
+                for row in table.values()
+            ),
+            default=None,
+        )
+        if expires is not None:
+            self._schedule_snapshot_expiry(expires)
 
     def close(self) -> None:
         """Release query data and prevent late captures from retaining pages."""
@@ -330,10 +378,27 @@ class QueryService:
         self._delta_batches.clear()
         self.full_snapshots.close()
 
-    def _retained_size(self) -> int:
+    def _retained_size(
+        self, *, replacing=None, adding=None, reserved_view=False
+    ) -> int:
+        contents = {
+            view.content for key, view in self._snapshots.items() if key != replacing
+        }
+        if adding is not None:
+            contents.add(adding)
+        occupied = {content.original_snapshot_id for content in contents}
+        views = len(self._snapshots) + self._reserved - (replacing is not None)
+        if adding is not None and not reserved_view:
+            views += 1
         return (
             self.scheduler.query_changes.estimated_bytes
-            + sum(snapshot.size for snapshot in self._snapshots.values())
+            + sum(content.size for content in contents)
+            + sum(
+                build.reserved_bytes
+                for build in self._content_captures.values()
+                if build.snapshot_id not in occupied
+            )
+            + views * SUMMARY_VIEW_BYTES
             + sum(len(blob.data) for blob in self._blobs.values())
             + sum(batch.size for batch in self._delta_batches.values())
         )
@@ -372,6 +437,33 @@ class QueryService:
             full_snapshot_v1=True,
         )
 
+    def _page_identity(self, owner, query_id, snapshot_id, next_index):
+        return dict(
+            query_id=query_id,
+            snapshot_id=snapshot_id,
+            next_cursor=(
+                self._cursor(snapshot_id, next_index, owner)
+                if next_index is not None
+                else None
+            ),
+        )
+
+    def _snapshot_page(self, snapshot_id: str, snapshot: _Snapshot, index: int):
+        content = snapshot.content
+        page = content.pages[index]
+        if snapshot_id == content.original_snapshot_id:
+            return page
+        next_index = index + 1 if index + 1 < len(content.pages) else None
+        identity = self._page_identity(
+            snapshot.owner, snapshot.query_id, snapshot_id, next_index
+        )
+        prefix = json.dumps(identity, separators=(",", ":")).encode()[:-1]
+        # _capture writes these three server-generated fields first, followed
+        # by "kind". Only the requested page gets an owner-specific envelope.
+        # The inspected prefix contains no user data and has bounded length.
+        body_start = page.index(b',"kind":')
+        return b"".join((prefix, memoryview(page)[body_start:]))
+
     def _capture(
         self,
         request: PageRequest,
@@ -381,6 +473,7 @@ class QueryService:
         base_revision: int,
         budget: int,
         version=None,
+        reserve_page=None,
     ):
         scope = request.scope_path or (
             "/" + request.flow_name if request.flow_name else "/"
@@ -407,20 +500,18 @@ class QueryService:
         def flush(complete: bool):
             nonlocal nodes, generations, estimated, total_size, page_index
             fields = dict(
+                **self._page_identity(
+                    owner, query_id, snapshot_id, None if complete else page_index + 1
+                ),
                 kind="page",
                 schema_version=1,
                 session_id=self.session_id,
-                query_id=query_id,
-                snapshot_id=snapshot_id,
                 base_revision=base_revision,
                 as_of=as_of,
                 expires_at=expires_at,
                 page_index=page_index,
                 total_nodes=None,
                 complete=complete,
-                next_cursor=None
-                if complete
-                else self._cursor(snapshot_id, page_index + 1, owner),
                 root_name=root_name,
                 flow_generations=generations,
             )
@@ -444,6 +535,8 @@ class QueryService:
             total_size += len(raw)
             if total_size > budget:
                 raise MemoryError("snapshot budget exceeded")
+            if reserve_page is not None:
+                reserve_page(len(raw))
             pages.append(raw)
             nodes, generations, estimated = [], {}, 1200
             page_index += 1
@@ -534,64 +627,91 @@ class QueryService:
                     return _error("snapshot_expired", "snapshot unavailable")
                 if snapshot.owner != owner or snapshot.query_id != query_id:
                     return _error("permission_denied", "query identity changed")
-                if index < 1 or index >= len(snapshot.pages):
+                if index < 1 or index >= len(snapshot.content.pages):
                     return _error("invalid_request", "cursor index out of range")
-                return snapshot.pages[index]
+                return self._snapshot_page(snapshot_id, snapshot, index)
             try:
                 version = self.scheduler.version_store.pin()
             except VersionUnavailable as exc:
                 return _error("resource_exhausted", str(exc))
             base_revision = self.scheduler.query_changes.revision
-            # Exact immutable root identity proves reuse; a revision hint alone
-            # does not. Weak references never retain an old full state root.
-            for snapshot in self._snapshots.values():
+            selection = _SummarySelection(
+                id(version),
+                base_revision,
+                self._scope(request),
+                request.depth,
+                tuple(self.scheduler.query_redacted_parameters),
+            )
+            # Only the public summary field group is admitted above. Compare
+            # the weak root reference as well as its id (ids can be recycled).
+            reusable = None
+            for snapshot_id, snapshot in self._snapshots.items():
+                content = snapshot.content
                 if (
-                    snapshot.owner == owner
-                    and snapshot.query_id == query_id
-                    and snapshot.base_revision == base_revision
-                    and snapshot.source() is version
-                    # Leave at least half the original lifetime for a complete
-                    # new read; do not hand a fresh reader nearly expired pages.
+                    content.selection == selection
+                    and content.source() is version
                     and snapshot.expires - _monotonic() >= SNAPSHOT_SECONDS / 2
                 ):
-                    self._renew_lease(query_id, owner, snapshot.scope, snapshot.depth)
-                    self._schedule_snapshot_expiry()
-                    return snapshot.pages[0]
+                    if snapshot.owner == owner and snapshot.query_id == query_id:
+                        self._renew_lease(
+                            query_id, owner, selection.scope, request.depth
+                        )
+                        return self._snapshot_page(snapshot_id, snapshot, 0)
+                    reusable = content
+
             key = (query_id, id(version), base_revision)
             capture = self._captures.get(key)
-            if capture is not None:
-                if self._reserved + self._capture_readers >= (
-                    MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
+            if capture is None:
+                if self._owner_reserved.get(owner, 0) >= MAX_OWNER_SNAPSHOTS or (
+                    len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
+                    and self._replaceable_snapshot(owner) is None
                 ):
                     return _error("resource_exhausted", "snapshot count limit")
+                snapshot_id = secrets.token_urlsafe(24)
+                if reusable is not None:
+                    return self._publish_snapshot(
+                        owner, query_id, snapshot_id, reusable
+                    )
+            if self._reserved + self._capture_readers >= MAX_SUMMARY_READERS:
+                return _error("resource_exhausted", "summary reader limit")
+            if capture is not None:
                 self._capture_readers += 1
                 shared = True
             else:
-                replacement = self._replaceable_snapshot(owner)
-                if (
-                    self._owner_reserved.get(owner, 0) >= MAX_OWNER_SNAPSHOTS
-                    or self._reserved + self._capture_readers
-                    >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING
-                ) or (
-                    len(self._snapshots) + self._reserved >= MAX_SNAPSHOTS
-                    and replacement is None
-                ):
-                    return _error("resource_exhausted", "snapshot count limit")
-                budget = MAX_RETAINED_BYTES - self._retained_size()
+                if self._retained_size() + SUMMARY_VIEW_BYTES > MAX_RETAINED_BYTES:
+                    return _error("resource_exhausted", "snapshot memory limit")
+                content_capture = self._content_captures.get(selection)
+                if content_capture is None:
+                    roots = {key.root_id for key in self._content_captures}
+                    if (
+                        selection.root_id not in roots
+                        and len(roots) >= MAX_SUMMARY_CAPTURE_ROOTS
+                    ):
+                        return _error("resource_exhausted", "summary version limit")
+                    content_capture = _ContentCapture(snapshot_id, version)
+                    content_capture.task = asyncio.create_task(
+                        self._build_content(
+                            request,
+                            owner,
+                            query_id,
+                            selection,
+                            content_capture,
+                        )
+                    )
+                    self._content_captures[selection] = content_capture
+                content_capture.readers += 1
                 self._reserved += 1
                 self._owner_reserved[owner] = self._owner_reserved.get(owner, 0) + 1
-                capture = _Capture()
+                capture = _Capture(content_capture)
                 self._captures[key] = capture
                 capture.task = asyncio.create_task(
                     self._capture_snapshot(
-                        request,
                         owner,
                         query_id,
-                        version,
-                        base_revision,
-                        budget,
+                        snapshot_id,
                         key,
                         capture,
+                        selection,
                     )
                 )
                 capture.task.add_done_callback(
@@ -622,86 +742,123 @@ class QueryService:
                 self._capture_readers -= 1
 
     async def _capture_snapshot(
-        self, request, owner, query_id, version, base_revision, budget, key, capture
+        self, owner, query_id, snapshot_id, key, capture, selection
     ):
+        content_capture = capture.content
         try:
-            return await self._build_snapshot(
-                request, owner, query_id, version, base_revision, budget, capture
-            )
-        finally:
+            content = await asyncio.shield(content_capture.task)
             async with self._lock:
-                self._captures.pop(key, None)
-                self._reserved -= 1
-                self._owner_reserved[owner] -= 1
-                if not self._owner_reserved[owner]:
-                    del self._owner_reserved[owner]
+                self._purge()
+                if self._closed or not capture.readers:
+                    return _error("snapshot_expired", "summary capture abandoned")
+                if isinstance(content, FailureReply):
+                    return content
+                return self._publish_snapshot(
+                    owner, query_id, snapshot_id, content, reserved_view=True
+                )
+        finally:
+            # Return the reservation on the same loop turn as publication.
+            content_capture.readers -= 1
+            if not content_capture.readers:
+                del self._content_captures[selection]
+            self._captures.pop(key, None)
+            self._reserved -= 1
+            self._owner_reserved[owner] -= 1
+            if not self._owner_reserved[owner]:
+                del self._owner_reserved[owner]
 
-    async def _build_snapshot(
-        self, request, owner, query_id, version, base_revision, budget, capture
-    ):
-        snapshot_id = secrets.token_urlsafe(24)
+    async def _reserve_summary_page(self, build, size):
+        # Accounting runs on the same loop as delta, blob and view publication.
+        if self._closed:
+            raise RuntimeError("query service closed")
+        if self._retained_size() + size > MAX_RETAINED_BYTES:
+            raise MemoryError("snapshot budget exceeded")
+        build.reserved_bytes += size
+
+    async def _build_content(self, request, owner, query_id, selection, build):
         captured_at = _monotonic()
-        try:
+        loop = asyncio.get_running_loop()
+
+        def reserve_page(size):
+            reservation = asyncio.run_coroutine_threadsafe(
+                self._reserve_summary_page(build, size), loop
+            )
             try:
-                async with self._capture_slots:
-                    work = asyncio.create_task(
-                        asyncio.to_thread(
-                            self._capture,
-                            request,
-                            owner,
-                            query_id,
-                            snapshot_id,
-                            base_revision,
-                            budget,
-                            version,
-                        )
+                reservation.result(timeout=SNAPSHOT_SECONDS)
+            except TimeoutError:
+                reservation.cancel()
+                raise MemoryError("snapshot reservation expired") from None
+
+        try:
+            async with self._capture_slots:
+                if self._closed or not any(
+                    view.content is build and view.readers
+                    for view in self._captures.values()
+                ):
+                    return _error("snapshot_expired", "summary capture abandoned")
+                if captured_at + SNAPSHOT_SECONDS <= _monotonic():
+                    return _error("snapshot_expired", "summary capture expired")
+                work = asyncio.create_task(
+                    asyncio.to_thread(
+                        self._capture,
+                        request,
+                        owner,
+                        query_id,
+                        build.snapshot_id,
+                        selection.base_revision,
+                        MAX_RETAINED_BYTES - self._retained_size(),
+                        build.version,
+                        reserve_page,
                     )
-                    try:
-                        scope, pages, size = await asyncio.shield(work)
-                    except asyncio.CancelledError:
-                        await work
-                        raise
-            except (RuntimeError, KeyError, IndexError):
-                return _error("resource_exhausted", "fixed query version unavailable")
+                )
+                try:
+                    _, pages, size = await asyncio.shield(work)
+                except asyncio.CancelledError:
+                    await work
+                    raise
         except WireError:
             return _error("field_too_large", "summary exceeds page limit")
+        except (RuntimeError, KeyError, IndexError):
+            return _error("resource_exhausted", "fixed query version unavailable")
         except ValueError:
             return _error("invalid_request", "scope unavailable or invalid")
         except OverflowError:
             return _error("field_too_large", "summary exceeds page limit")
         except MemoryError:
             return _error("resource_exhausted", "snapshot memory limit")
-        async with self._lock:
-            self._purge()
-            if self._closed or not capture.readers:
-                return _error("snapshot_expired", "summary capture abandoned")
-            if captured_at + SNAPSHOT_SECONDS <= _monotonic():
-                return _error("snapshot_expired", "summary capture expired")
-            if self.scheduler.query_changes.since(base_revision) is None:
-                return _error("resource_exhausted", "query change window expired")
-            replacement = self._replaceable_snapshot(owner)
-            replaced_size = self._snapshots[replacement].size if replacement else 0
-            if (
-                len(self._snapshots) - bool(replacement) >= MAX_SNAPSHOTS
-                or self._retained_size() + size - replaced_size > MAX_RETAINED_BYTES
-            ):
-                return _error("resource_exhausted", "snapshot budget exceeded")
-            if replacement is not None:
-                del self._snapshots[replacement]
-            self._snapshots[snapshot_id] = _Snapshot(
-                owner,
-                query_id,
-                scope,
-                request.depth,
-                base_revision,
-                pages,
-                captured_at + SNAPSHOT_SECONDS,
-                size,
-                weakref.ref(version),
+        return _SummaryContent(
+            selection,
+            weakref.ref(build.version),
+            build.snapshot_id,
+            pages,
+            captured_at + SNAPSHOT_SECONDS,
+            size,
+        )
+
+    def _publish_snapshot(
+        self, owner, query_id, snapshot_id, content, *, reserved_view=False
+    ):
+        if content.expires <= _monotonic():
+            return _error("snapshot_expired", "summary capture expired")
+        selection = content.selection
+        if self.scheduler.query_changes.since(selection.base_revision) is None:
+            return _error("resource_exhausted", "query change window expired")
+        replacement = self._replaceable_snapshot(owner)
+        if (
+            len(self._snapshots) - bool(replacement) >= MAX_SNAPSHOTS
+            or self._retained_size(
+                replacing=replacement, adding=content, reserved_view=reserved_view
             )
-            self._renew_lease(query_id, owner, scope, request.depth)
-            self._schedule_snapshot_expiry()
-        return pages[0]
+            > MAX_RETAINED_BYTES
+        ):
+            return _error("resource_exhausted", "snapshot budget exceeded")
+        if replacement is not None:
+            del self._snapshots[replacement]
+        snapshot = _Snapshot(owner, query_id, content, content.expires)
+        self._snapshots[snapshot_id] = snapshot
+        self._renew_lease(query_id, owner, selection.scope, selection.depth)
+        self._schedule_snapshot_expiry(content.expires)
+        return self._snapshot_page(snapshot_id, snapshot, 0)
 
     @staticmethod
     def _scope(request: PageRequest) -> str:
@@ -873,6 +1030,72 @@ class QueryService:
             self._project_delta(paths, invalidations, version),
         )
 
+    def _delta_worker_done(self, future: asyncio.Future) -> None:
+        # A client may already have cancelled or timed out. Keep the worker
+        # and admission slot charged until its thread actually finishes.
+        self._capture_slots.release()
+        self._delta_in_flight -= 1
+        if not future.cancelled():
+            future.exception()
+
+    def _delta_selection(self, request: SinceRequest):
+        tracker = self.scheduler.query_changes
+        if request.since_revision > tracker.revision:
+            return self._reset(request, "identity_changed")
+        changes = tracker.since(request.since_revision)
+        if changes is None:
+            return self._reset(request, "history_expired")
+        selection = self._delta_paths(changes, self._scope(request), request.depth)
+        if selection is None:
+            return self._reset(request, "structure_changed")
+        return selection
+
+    async def _changed_delta(self, request, owner, batch_id, target, selection):
+        if self._delta_in_flight >= MAX_DELTA_REQUESTS:
+            return _error("resource_exhausted", "delta worker queue full")
+        self._delta_in_flight += 1
+        acquired = False
+        work = None
+        try:
+            # Wait without pinning old roots. Capture the revision, journal
+            # hints and version together once the FIFO semaphore admits us.
+            await self._capture_slots.acquire()
+            acquired = True
+            self._purge()
+            if request.query_id not in self._query_leases:
+                return self._reset(request, "history_expired")
+            try:
+                version = self.scheduler.version_store.pin()
+            except VersionUnavailable as exc:
+                return _error("resource_exhausted", str(exc))
+            if target != self.scheduler.query_changes.revision:
+                target = self.scheduler.query_changes.revision
+                selection = self._delta_selection(request)
+                if isinstance(selection, ResetReply):
+                    return selection
+            paths, invalidations = selection
+            if not paths and not invalidations:
+                return self._delta_pages(request, owner, batch_id, target, [])
+            work = asyncio.get_running_loop().run_in_executor(
+                None,
+                copy_context().run,
+                self._build_delta_pages,
+                request,
+                owner,
+                batch_id,
+                target,
+                paths,
+                invalidations,
+                version,
+            )
+            work.add_done_callback(self._delta_worker_done)
+            return await asyncio.shield(work)
+        finally:
+            if work is None:
+                if acquired:
+                    self._capture_slots.release()
+                self._delta_in_flight -= 1
+
     async def since(self, request: SinceRequest) -> QueryModel:
         if request.field_groups != ["summary"]:
             return _error(
@@ -915,56 +1138,32 @@ class QueryService:
                 self._renew_lease(request.query_id, owner, scope, request.depth)
                 return decode_query_document(batch.pages[index], expected="since")
 
-        try:
-            version = self.scheduler.version_store.pin()
-        except VersionUnavailable as exc:
-            return _error("resource_exhausted", str(exc))
-        tracker = self.scheduler.query_changes
-        target = tracker.revision
-        if request.since_revision > target:
-            return self._reset(request, "identity_changed")
-        changes = tracker.since(request.since_revision)
-        if changes is None:
-            return self._reset(request, "history_expired")
-        selection = self._delta_paths(changes, scope, request.depth)
-        if selection is None:
-            return self._reset(request, "structure_changed")
-        paths, invalidations = selection
         batch_id = secrets.token_urlsafe(24)
         try:
-            if paths or invalidations:
-                async with self._lock:
-                    if self._delta_waiting >= MAX_CAPTURE_WORKERS + MAX_CAPTURE_WAITING:
-                        return _error("resource_exhausted", "delta worker queue full")
-                    self._delta_waiting += 1
-                try:
-                    async with self._capture_slots:
-                        work = asyncio.create_task(
-                            asyncio.to_thread(
-                                self._build_delta_pages,
-                                request,
-                                owner,
-                                batch_id,
-                                target,
-                                paths,
-                                invalidations,
-                                version,
-                            )
-                        )
-                        try:
-                            pages, expires = await asyncio.shield(work)
-                        except asyncio.CancelledError:
-                            await work
-                            raise
-                finally:
-                    async with self._lock:
-                        self._delta_waiting -= 1
-            else:
+            self.scheduler.version_store.pin()
+        except VersionUnavailable as exc:
+            return _error("resource_exhausted", str(exc))
+        try:
+            target = self.scheduler.query_changes.revision
+            selection = self._delta_selection(request)
+            if isinstance(selection, ResetReply):
+                return selection
+            if not any(selection):
                 pages, expires = self._delta_pages(request, owner, batch_id, target, [])
-        except (ValueError, KeyError, RuntimeError, StopIteration):
-            return self._reset(request, "structure_changed")
+            else:
+                async with asyncio.timeout(MAX_DELTA_REQUEST_SECONDS):
+                    result = await self._changed_delta(
+                        request, owner, batch_id, target, selection
+                    )
+                if isinstance(result, (FailureReply, ResetReply)):
+                    return result
+                pages, expires = result
+        except TimeoutError:
+            return _error("resource_exhausted", "delta request deadline exceeded")
         except (WireError, OverflowError, MemoryError):
             return self._reset(request, "budget_exceeded")
+        except (ValueError, KeyError, RuntimeError, StopIteration):
+            return self._reset(request, "structure_changed")
         if len(pages) == 1:
             async with self._lock:
                 self._purge()
@@ -992,6 +1191,7 @@ class QueryService:
                 expires,
                 size,
             )
+            self._schedule_snapshot_expiry(expires)
             self._renew_lease(request.query_id, owner, scope, request.depth)
         return decode_query_document(pages[0], expected="since")
 
@@ -1192,6 +1392,7 @@ class QueryService:
                             digest,
                             expires,
                         )
+                    self._schedule_snapshot_expiry(expires)
                 return test
             if not changed:
                 return _error("field_too_large", "detail cannot fit document limit")

@@ -170,6 +170,59 @@ def test_owner_lease_eviction_requires_rebuild():
     asyncio.run(exercise())
 
 
+def test_idle_monitors_rebuild_while_active_monitors_keep_their_waterline(monkeypatch):
+    async def exercise():
+        clock = [1000.0]
+        monkeypatch.setattr("takler.server.query_service._monotonic", lambda: clock[0])
+        bunch = Bunch()
+        flow = bunch.add_flow(Flow("f"))
+        flow.add_task("t")
+        service = Scheduler(bunch).query_service
+        owners = [CallCredentials(user="monitor", secret=f"key-{i}") for i in range(20)]
+
+        async def read_as(owner, operation, request):
+            token = set_call_credentials(owner)
+            try:
+                return await operation(request)
+            finally:
+                reset_call_credentials(token)
+
+        try:
+            pages = await asyncio.gather(
+                *(read_as(owner, service.page, _page("/f")) for owner in owners)
+            )
+            assert all(page.kind == "page" for page in pages)
+            assert len({page.snapshot_id for page in pages}) == len(owners)
+            clock[0] += QUERY_LEASE_SECONDS - 5
+            for owner, page in zip(owners[::2], pages[::2]):
+                assert (
+                    await read_as(owner, service.since, _since(page, "/f"))
+                ).unchanged
+
+            # All original page bytes expire; only renewed scopes survive.
+            clock[0] += 10
+            for index, (owner, page) in enumerate(zip(owners, pages)):
+                delta = await read_as(owner, service.since, _since(page, "/f"))
+                if index % 2 == 0:
+                    assert delta.kind == "since" and delta.unchanged
+                else:
+                    assert delta.kind == "reset" and delta.reason == "history_expired"
+            assert not service._snapshots
+            assert len(service._query_leases) == 10
+
+            for owner, old in zip(owners[1::2], pages[1::2]):
+                new = await read_as(owner, service.page, _page("/f"))
+                assert new.kind == "page" and new.snapshot_id != old.snapshot_id
+                assert (
+                    await read_as(owner, service.detail, _detail(new, flow))
+                ).kind == "detail"
+            assert len(service._query_leases) == len(owners)
+        finally:
+            service.close()
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.slow
 def test_real_time_unchanged_poll_smoke():
     async def exercise():
