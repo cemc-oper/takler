@@ -82,7 +82,7 @@ def test_cached_page_bytes_preserve_replay_and_cursor_errors():
     asyncio.run(exercise())
 
 
-def test_owner_replacement_expires_old_cursor():
+def test_same_owner_keeps_old_cursor_across_later_captures():
     async def exercise():
         bunch = Bunch("root")
         flow = bunch.add_flow(Flow("f"))
@@ -96,9 +96,9 @@ def test_owner_replacement_expires_old_cursor():
         flow.add_task("new2")
         newest = await service.page(page_request())
         assert newest.kind == "page"
-        assert (
-            await service.page(page_request(cursor=first.next_cursor))
-        ).code == "snapshot_expired"
+        replay = await service.page(page_request(cursor=first.next_cursor))
+        assert replay.snapshot_id == first.snapshot_id
+        assert replay.base_revision == first.base_revision
         assert (
             await service.page(page_request(cursor=newest.next_cursor))
         ).kind == "page"
@@ -643,7 +643,7 @@ async def _snapshot_and_blob_budgets_and_expiry():
     flow.add_task("third")
     third = await service.page(page_request())
     assert third.kind == "page"
-    assert first.snapshot_id not in service._snapshots
+    assert first.snapshot_id in service._snapshots
     assert second.snapshot_id in service._snapshots
     request = DetailRequest(
         kind="detail_request",

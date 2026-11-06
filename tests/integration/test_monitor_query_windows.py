@@ -1,4 +1,4 @@
-"""Twenty independently authenticated monitor sessions on a 34-node gRPC tree."""
+"""Independently authenticated monitor sessions on a 34-node gRPC tree."""
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
@@ -28,7 +28,8 @@ TASK = "/demo/task00"
 
 
 @pytest.fixture
-def monitors(server_runner_factory, free_port_fixture, tmp_path, monkeypatch):
+def monitors(request, server_runner_factory, free_port_fixture, tmp_path, monkeypatch):
+    window_count = getattr(request, "param", WINDOWS)
     for key in tuple(os.environ):
         if key.startswith("TAKLER_"):
             monkeypatch.delenv(key)
@@ -36,7 +37,7 @@ def monitors(server_runner_factory, free_port_fixture, tmp_path, monkeypatch):
         monkeypatch.setenv(key, "127.0.0.1,localhost,::1")
 
     # Separate processes have separate pools. Avoid gRPC sharing one TCP
-    # connection among all twenty channels inside this test process.
+    # connection among the channels inside this test process.
     insecure_channel = grpc.insecure_channel
 
     def independent_channel(target, options):
@@ -53,7 +54,7 @@ def monitors(server_runner_factory, free_port_fixture, tmp_path, monkeypatch):
         return await read_page(transport, request, context)
 
     monkeypatch.setattr(GrpcTransport, "ReadPage", record_peer)
-    tokens = [secrets.token_hex(16) for _ in range(WINDOWS)]
+    tokens = [secrets.token_hex(16) for _ in range(window_count)]
     allowed = tmp_path / "operators"
     allowed.touch(mode=0o600)
     allowed.write_text("\n".join(tokens) + "\n")
@@ -94,7 +95,7 @@ def monitors(server_runner_factory, free_port_fixture, tmp_path, monkeypatch):
         definition.write_text(export_definition(flow).model_dump_json())
         assert clients[0].run_command_load(str(definition)).flag == 0
         yield clients
-        assert len(peers) == WINDOWS
+        assert len(peers) == window_count
 
 
 def simultaneous(clients, operation):
@@ -166,9 +167,14 @@ def test_independent_monitor_windows(monitors, cold_open):
         refresh_and_check(client, TASK, suspended=False)
 
 
-@pytest.mark.parametrize("shared_subtree", [True, False], ids=["same", "distinct"])
+@pytest.mark.parametrize(
+    "monitors,shared_subtree",
+    [(WINDOWS, True), (WINDOWS, False), (40, True)],
+    indirect=["monitors"],
+    ids=["same", "distinct", "same-40"],
+)
 def test_independent_scoped_windows_and_service_details(monitors, shared_subtree):
-    paths = [f"/demo/task{index:02d}" for index in range(WINDOWS)]
+    paths = [f"/demo/task{index % 32:02d}" for index in range(len(monitors))]
 
     # The TUI keeps its selected subtree and a separate depth-zero status query.
     def open_subtree(index, client):
@@ -182,8 +188,10 @@ def test_independent_scoped_windows_and_service_details(monitors, shared_subtree
         return root_client, root
 
     roots = simultaneous(monitors, open_subtree)
-
-    assert monitors[0].run_command_suspend(paths).flag == 0
+    query_ids = {client.query_client.current.query_id for client in monitors}
+    query_ids.update(root.query_id for _, root in roots)
+    assert len(query_ids) == 2 * len(monitors)
+    assert monitors[0].run_command_suspend(list(dict.fromkeys(paths))).flag == 0
 
     def refresh(index, client):
         refresh_and_check(client, paths[index], suspended=True)

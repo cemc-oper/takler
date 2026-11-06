@@ -70,7 +70,7 @@ def test_concurrent_baselines_since_detail_and_shutdown(
             views = [result.result(timeout=15) for result in results]
         assert len({view.snapshot_id for view in views}) == 1
         assert len(calls) == 1
-        assert not query._captures and query._reserved == query._capture_readers == 0
+        assert not query._captures and query._reserved == 0
     finally:
         proceed.set()
         for client in clients:

@@ -18,9 +18,10 @@ from takler.server.auth import (
     set_call_credentials,
 )
 from takler.server.query_service import (
-    MAX_OWNER_QUERY_LEASES,
+    QUERY_LEASE_BYTES,
     QUERY_LEASE_SECONDS,
     SNAPSHOT_SECONDS,
+    SUMMARY_VIEW_BYTES,
 )
 from takler.server.scheduler import Scheduler
 
@@ -113,7 +114,7 @@ def test_python_client_keeps_detail_after_two_page_lifetimes(monkeypatch):
     assert client.read_detail(view, "/f/t", ["runtime"]).kind == "detail"
 
 
-def test_other_scopes_evict_pages_but_not_active_authorization():
+def test_other_scopes_preserve_pages_and_scope_authorization():
     async def exercise():
         bunch = Bunch()
         flows = [bunch.add_flow(Flow(f"f{i}")) for i in range(3)]
@@ -125,7 +126,7 @@ def test_other_scopes_evict_pages_but_not_active_authorization():
         assert same_scope_client.query_id == first.query_id
         for index in (1, 2):
             assert (await service.page(_page(f"/f{index}"))).kind == "page"
-        assert first.snapshot_id not in service._snapshots
+        assert first.snapshot_id in service._snapshots
         assert (await service.since(_since(first, "/f0"))).kind == "since"
         assert (await service.detail(_detail(first, flows[0]))).kind == "detail"
         assert (
@@ -152,20 +153,60 @@ def test_other_scopes_evict_pages_but_not_active_authorization():
     asyncio.run(exercise())
 
 
-def test_owner_lease_eviction_requires_rebuild():
+def test_many_scopes_under_one_owner_keep_their_earlier_authorization():
     async def exercise():
         bunch = Bunch()
-        for index in range(MAX_OWNER_QUERY_LEASES + 1):
+        for index in range(12):
             bunch.add_flow(Flow(f"f{index}")).add_task("t")
         service = Scheduler(bunch).query_service
-        first = await service.page(_page("/f0"))
-        for index in range(1, MAX_OWNER_QUERY_LEASES + 1):
-            assert (await service.page(_page(f"/f{index}"))).kind == "page"
-        assert len(service._query_leases) == MAX_OWNER_QUERY_LEASES
-        assert (await service.since(_since(first, "/f0"))).reason == "history_expired"
-        assert (
-            await service.detail(_detail(first, bunch.find_flow("f0")))
-        ).code == "snapshot_expired"
+        try:
+            pages = [
+                await service.page(_page(flow.node_path))
+                for flow in bunch.flows.values()
+            ]
+            assert all(page.kind == "page" for page in pages)
+            for page, flow in zip(pages, bunch.flows.values()):
+                assert (await service.since(_since(page, flow.node_path))).unchanged
+                assert (await service.detail(_detail(page, flow))).kind == "detail"
+        finally:
+            service.close()
+
+    asyncio.run(exercise())
+
+
+def test_new_lease_obeys_byte_budget_and_releases_it_at_expiry(monkeypatch):
+    async def exercise():
+        clock = [1000.0]
+        monkeypatch.setattr("takler.server.query_service._monotonic", lambda: clock[0])
+        bunch = Bunch()
+        flow = bunch.add_flow(Flow("f"))
+        flow.add_task("t")
+        service = Scheduler(bunch).query_service
+        try:
+            first = await service.page(_page("/f"))
+            retained = service._retained_size()
+            # A second reader can reuse the encoded pages. Leave room for
+            # its page handle, but one byte too little for its scope lease.
+            lease_size = QUERY_LEASE_BYTES + len(b"/f")
+            assert service._query_lease_bytes == lease_size
+            monkeypatch.setattr(
+                "takler.server.query_service.MAX_RETAINED_BYTES",
+                retained + SUMMARY_VIEW_BYTES + lease_size - 1,
+            )
+            token = set_call_credentials(CallCredentials(user="other", secret="key"))
+            try:
+                denied = await service.page(_page("/f"))
+                assert denied.code == "resource_exhausted"
+                assert service._retained_size() == retained
+            finally:
+                reset_call_credentials(token)
+            assert (await service.detail(_detail(first, flow))).kind == "detail"
+            clock[0] += max(QUERY_LEASE_SECONDS, SNAPSHOT_SECONDS) + 1
+            service._purge()
+            assert service._query_lease_bytes == 0
+            assert (await service.page(_page("/f"))).kind == "page"
+        finally:
+            service.close()
 
     asyncio.run(exercise())
 

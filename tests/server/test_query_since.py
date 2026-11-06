@@ -351,7 +351,7 @@ def test_changed_credentials_cannot_reuse_query_identity():
     asyncio.run(exercise())
 
 
-def test_changed_refresh_queue_admits_twenty_in_order_and_recovers_after_cancel():
+def test_changed_refreshes_wait_for_workers_in_order_and_recover_after_cancel():
     async def exercise():
         bunch = Bunch("root")
         flow = bunch.add_flow(Flow("f"))
@@ -374,11 +374,10 @@ def test_changed_refresh_queue_admits_twenty_in_order_and_recovers_after_cancel(
             completed.append(index)
             return reply
 
-        pending = [asyncio.create_task(read(i)) for i in range(20)]
+        pending = [asyncio.create_task(read(i)) for i in range(40)]
         try:
             await asyncio.sleep(0)
             assert all(not task.done() for task in pending)
-            assert (await service.since(request)).code == "resource_exhausted"
             # Out-of-scope changes and empty polls bypass worker admission.
             filtered = await service.since(_since_request(outside, scope_path="/other"))
             assert filtered.kind == "since" and not filtered.operations
@@ -389,7 +388,7 @@ def test_changed_refresh_queue_admits_twenty_in_order_and_recovers_after_cancel(
             ).unchanged
             pending[1].cancel()
             await asyncio.gather(pending[1], return_exceptions=True)
-            pending.append(asyncio.create_task(read(20)))
+            pending.append(asyncio.create_task(read(40)))
             await asyncio.sleep(0)
             assert not pending[-1].done()
             # The pinned version and journal target must agree after waiting.
@@ -401,7 +400,7 @@ def test_changed_refresh_queue_admits_twenty_in_order_and_recovers_after_cancel(
         finally:
             service._capture_slots.release()
         assert isinstance(replies[1], asyncio.CancelledError)
-        assert completed == [0, *range(2, 21)]
+        assert completed == [0, *range(2, 41)]
         for i, reply in enumerate(replies):
             if i != 1:
                 assert {op.path: op.node.status for op in reply.operations} == {
@@ -421,7 +420,6 @@ def test_delta_deadline_keeps_running_worker_charged_and_drops_expired_waiter(
         service = Scheduler(bunch).query_service
         request = _since_request(await service.page(_page_request()))
         task.set_node_status_only(NodeStatus.queued)
-        monkeypatch.setattr("takler.server.query_service.MAX_DELTA_REQUESTS", 1)
         monkeypatch.setattr("takler.server.query_service.MAX_DELTA_REQUEST_SECONDS", 0)
         await service._capture_slots.acquire()
         await service._capture_slots.acquire()
@@ -435,8 +433,10 @@ def test_delta_deadline_keeps_running_worker_charged_and_drops_expired_waiter(
 
         build = service._build_delta_pages
         release = threading.Event()
+        started = threading.Event()
 
         def blocked(*args):
+            started.set()
             assert release.wait(5)
             return build(*args)
 
@@ -446,7 +446,13 @@ def test_delta_deadline_keeps_running_worker_charged_and_drops_expired_waiter(
             assert (
                 expired.code == "resource_exhausted" and "deadline" in expired.message
             )
-            assert (await service.since(request)).message == "delta worker queue full"
+            assert await asyncio.to_thread(started.wait, 3)
+            # The first caller has timed out. Its running thread still holds
+            # the only permit available to this query.
+            assert service._capture_slots.locked()
+            assert (
+                await service.since(request)
+            ).message == "delta request deadline exceeded"
         finally:
             release.set()
         # One permit is held by this test; the other is returned by the worker.
@@ -491,9 +497,9 @@ def test_twenty_private_multipage_deltas_across_waterlines_and_scopes(monkeypatc
                 update={"since_revision": advance.target_revision}
             )
         monkeypatch.setattr("takler.server.query_service.MAX_PAGE_NODES", 1)
-        for wave, status in enumerate(
-            (NodeStatus.queued, NodeStatus.complete, NodeStatus.queued)
-        ):
+        # Keep 80 private batches alive to exercise replay beyond the old 64 limit.
+        replay_start = requests[0]
+        for wave, status in enumerate((NodeStatus.queued, NodeStatus.complete) * 2):
             for task in [*left, other]:
                 task.set_node_status_only(status)
             first = await asyncio.gather(
@@ -501,6 +507,11 @@ def test_twenty_private_multipage_deltas_across_waterlines_and_scopes(monkeypatc
             )
             assert all(reply.kind == "since" and reply.next_cursor for reply in first)
             assert len({reply.batch_id for reply in first}) == 20
+            if wave == 0:
+                replay_request = replay_start.model_copy(
+                    update={"cursor": first[0].next_cursor}
+                )
+                replay_page = await call(0, service.since, replay_request)
             foreign = requests[0].model_copy(update={"cursor": first[1].next_cursor})
             assert (await call(0, service.since, foreign)).code == "invalid_request"
             for i, reply in enumerate(first):
@@ -522,6 +533,12 @@ def test_twenty_private_multipage_deltas_across_waterlines_and_scopes(monkeypatc
                     expected["/f/early"] = "queued"
                 assert seen == expected
                 requests[i] = requests[i].model_copy(update={"since_revision": target})
+
+        assert (await call(0, service.since, replay_request)) == replay_page
+        monkeypatch.setattr("takler.server.query_service.MAX_DELTA_RETAINED_BYTES", 1)
+        refused = await call(0, service.since, replay_start)
+        assert refused.kind == "reset" and refused.reason == "budget_exceeded"
+        assert (await call(0, service.since, replay_request)) == replay_page
 
     asyncio.run(exercise())
 
@@ -555,9 +572,13 @@ def test_idle_expiry_orders_blobs_snapshots_and_later_delta_pages(monkeypatch):
         clock[0] = 130.0
         task.set_node_status(NodeStatus.queued)
         monkeypatch.setattr("takler.server.query_service.MAX_PAGE_NODES", 1)
-        assert (
-            await service.since(_since_request(page))
-        ).next_cursor  # Expires at 250.
+        first = await service.since(_since_request(page))
+        assert first.next_cursor  # Expires at 250.
+        clock[0] = 140.0
+        renewed = await service.since(
+            _since_request(page, since_revision=first.target_revision)
+        )
+        assert renewed.unchanged  # Only the scope lease extends to 260.
 
         async def advance(now):
             clock[0] = now
@@ -570,6 +591,8 @@ def test_idle_expiry_orders_blobs_snapshots_and_later_delta_pages(monkeypatch):
         await advance(220.0)
         assert not service._snapshots and service._delta_batches
         await advance(250.0)
-        assert not service._delta_batches and service._snapshot_expiry is None
+        assert not service._delta_batches and page.query_id in service._query_leases
+        await advance(260.0)
+        assert not service._query_leases and service._snapshot_expiry is None
 
     asyncio.run(exercise())

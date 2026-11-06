@@ -54,12 +54,8 @@ async def settled(predicate):
 
 
 def assert_released(query):
-    assert (
-        not query._captures
-        and not query._owner_reserved
-        and not query._content_captures
-    )
-    assert query._reserved == query._capture_readers == 0
+    assert not query._captures and not query._content_captures
+    assert query._reserved == 0
 
 
 def test_three_baselines_share_one_capture_and_keep_complete_fixed_pages(monkeypatch):
@@ -209,7 +205,7 @@ def test_pending_reuse_isolated_by_owner_and_selection(monkeypatch, other):
     asyncio.run(run())
 
 
-def test_other_root_and_selection_keep_existing_owner_capture_quota(monkeypatch):
+def test_same_owner_can_queue_other_versions_and_scopes(monkeypatch):
     async def run():
         scheduler, query, flow = service()
         entered, proceed, calls = pause_capture(monkeypatch, query)
@@ -219,13 +215,12 @@ def test_other_root_and_selection_keep_existing_owner_capture_quota(monkeypatch)
             flow.add_task("new")
             second = asyncio.create_task(query.page(page_request()))
             await settled(lambda: len(calls) == 2)
-            denied = await query.page(page_request(scope_path="/f"))
-            assert denied.code == "resource_exhausted"
-            assert query._reserved == module.MAX_OWNER_SNAPSHOTS == 2
+            third = asyncio.create_task(query.page(page_request(scope_path="/f")))
+            await settled(lambda: query._reserved == 3)
             proceed.set()
-            a, b = await asyncio.gather(first, second)
-            assert a.base_revision < b.base_revision and a.snapshot_id != b.snapshot_id
-            assert len(query._snapshots) == 2
+            a, b, c = await asyncio.gather(first, second, third)
+            assert a.base_revision < b.base_revision == c.base_revision
+            assert len({p.snapshot_id for p in (a, b, c)}) == len(query._snapshots) == 3
             assert_released(query)
         finally:
             proceed.set()
@@ -234,19 +229,17 @@ def test_other_root_and_selection_keep_existing_owner_capture_quota(monkeypatch)
     asyncio.run(run())
 
 
-def test_shared_reader_waiting_is_bounded(monkeypatch):
+def test_many_waiters_share_a_single_capture(monkeypatch):
     async def run():
         _, query, _ = service()
         entered, proceed, calls = pause_capture(monkeypatch, query)
-        monkeypatch.setattr(module, "MAX_SUMMARY_READERS", 4)
-        readers = [asyncio.create_task(query.page(page_request())) for _ in range(4)]
+        readers = [asyncio.create_task(query.page(page_request())) for _ in range(80)]
         try:
             assert await asyncio.to_thread(entered.wait, 3)
-            await settled(lambda: query._capture_readers == 3)
-            assert (await query.page(page_request())).code == "resource_exhausted"
-            assert (
-                query._reserved + query._capture_readers == module.MAX_SUMMARY_READERS
+            await settled(
+                lambda: next(iter(query._captures.values())).readers == len(readers)
             )
+            assert query._reserved == 1
             proceed.set()
             assert all(p.kind == "page" for p in await asyncio.gather(*readers))
             assert len(calls) == 1
@@ -268,7 +261,7 @@ def test_cancellation_releases_only_its_reader_and_abandons_unused_pages(
         readers = [asyncio.create_task(query.page(page_request())) for _ in range(3)]
         try:
             assert await asyncio.to_thread(entered.wait, 3)
-            await settled(lambda: query._capture_readers == 2)
+            await settled(lambda: next(iter(query._captures.values())).readers == 3)
             for reader in readers if cancel_all else readers[:1]:
                 reader.cancel()
             await settled(
@@ -314,7 +307,7 @@ def test_shared_capture_failure_is_detached_and_releases_reservations(
         readers = [asyncio.create_task(query.page(page_request())) for _ in range(3)]
         try:
             assert await asyncio.to_thread(entered.wait, 3)
-            await settled(lambda: query._capture_readers == 2)
+            await settled(lambda: next(iter(query._captures.values())).readers == 3)
             proceed.set()
             replies = await asyncio.gather(*readers)
             assert all(r.code == code for r in replies)
@@ -337,7 +330,7 @@ def test_idle_expiry_releases_pages_without_expiring_scope_authorization(monkeyp
             assert query._snapshots
             await settled(lambda: not query._snapshots)
             assert first.query_id in query._query_leases
-            assert query._snapshot_expiry is None
+            assert query._snapshot_expiry is not None
         finally:
             query.close()
 
@@ -351,7 +344,7 @@ def test_close_prevents_late_capture_publication(monkeypatch):
         readers = [asyncio.create_task(query.page(page_request())) for _ in range(3)]
         try:
             assert await asyncio.to_thread(entered.wait, 3)
-            await settled(lambda: query._capture_readers == 2)
+            await settled(lambda: next(iter(query._captures.values())).readers == 3)
             query.close()
             proceed.set()
             replies = await asyncio.gather(*readers)
@@ -377,14 +370,15 @@ async def read_as(query, user, request):
 
 
 @pytest.mark.parametrize("distinct_scopes", [False, True])
-def test_twenty_cold_views_share_content_with_private_replay(
+def test_large_burst_of_cold_views_share_content_with_private_replay(
     monkeypatch, distinct_scopes
 ):
     async def run():
-        scheduler, query, flow = service(32)
+        windows = 40
+        scheduler, query, flow = service(windows)
         monkeypatch.setattr(module, "MAX_PAGE_NODES", 3)
         entered, proceed, calls = pause_capture(monkeypatch, query)
-        scopes = [f"/f/t{i}" if distinct_scopes else "/f" for i in range(20)]
+        scopes = [f"/f/t{i}" if distinct_scopes else "/f" for i in range(windows)]
         requests = [page_request(scope_path=scope) for scope in scopes]
         readers = [
             asyncio.create_task(read_as(query, i, request))
@@ -392,28 +386,27 @@ def test_twenty_cold_views_share_content_with_private_replay(
         ]
         try:
             assert await asyncio.to_thread(entered.wait, 3)
-            await settled(lambda: query._reserved == 20)
+            await settled(lambda: query._reserved == windows)
             expected_workers = 2 if distinct_scopes else 1
             await settled(lambda: len(calls) == expected_workers)
-            refused = await read_as(query, 20, requests[0])
-            assert refused.code == "resource_exhausted"
             proceed.set()
             views = await asyncio.gather(*readers)
             assert all(page.kind == "page" for page in views)
-            assert len({page.query_id for page in views}) == 20
-            assert len({page.snapshot_id for page in views}) == 20
+            assert len({page.query_id for page in views}) == windows
+            assert len({page.snapshot_id for page in views}) == windows
             assert len(calls) == len(set(scopes))
             contents = {s.content for s in query._snapshots.values()}
             assert len(contents) == len(set(scopes))
             assert query._retained_size() == (
                 scheduler.query_changes.estimated_bytes
                 + sum(c.size for c in contents)
-                + 20 * module.SUMMARY_VIEW_BYTES
+                + windows * module.SUMMARY_VIEW_BYTES
+                + query._query_lease_bytes
             )
             if distinct_scopes:
                 assert [p.nodes[0].path for p in views] == scopes
             else:
-                assert len({p.next_cursor for p in views}) == 20
+                assert len({p.next_cursor for p in views}) == windows
                 assert (
                     await read_as(
                         query,
@@ -428,17 +421,17 @@ def test_twenty_cold_views_share_content_with_private_replay(
                 paths = [n.path for n in page.nodes]
                 while page.next_cursor:
                     request = page_request(scope_path="/f", cursor=page.next_cursor)
-                    page = await read_as(query, 19, request)
-                    assert page == await read_as(query, 19, request)
+                    page = await read_as(query, windows - 1, request)
+                    assert page == await read_as(query, windows - 1, request)
                     assert page.snapshot_id == views[-1].snapshot_id
                     paths.extend(n.path for n in page.nodes)
-                assert set(paths) == {"/f", *(f"/f/t{i}" for i in range(32))}
-                assert len(paths) == 33
+                assert set(paths) == {"/f", *(f"/f/t{i}" for i in range(windows))}
+                assert len(paths) == windows + 1
             roots = await asyncio.gather(
-                *(read_as(query, i, page_request(depth=0)) for i in range(20))
+                *(read_as(query, i, page_request(depth=0)) for i in range(windows))
             )
             assert all([n.path for n in page.nodes] == ["/"] for page in roots)
-            assert len(query._snapshots) == len(query._query_leases) == 40
+            assert len(query._snapshots) == len(query._query_leases) == 2 * windows
             assert_released(query)
         finally:
             proceed.set()
@@ -485,6 +478,7 @@ def test_parallel_content_builds_charge_pages_before_publication(monkeypatch):
                 limit = (
                     scheduler.query_changes.estimated_bytes
                     + 2 * module.SUMMARY_VIEW_BYTES
+                    + query._new_lease_bytes("new", "/f/t0")
                     + max(sizes)
                 )
                 monkeypatch.setattr(module, "MAX_RETAINED_BYTES", limit)
@@ -543,9 +537,10 @@ def test_origin_owner_cancels_while_another_owner_reads_shared_pages(monkeypatch
     asyncio.run(run())
 
 
-def test_distinct_inflight_roots_are_bounded_and_shutdown_skips_queue(monkeypatch):
+@pytest.mark.parametrize("close", [False, True])
+def test_distinct_inflight_roots_wait_then_repin_or_stop(monkeypatch, close):
     async def run():
-        _, query, flow = service()
+        scheduler, query, flow = service()
         _, proceed, calls = pause_capture(monkeypatch, query)
         readers = []
         try:
@@ -555,14 +550,32 @@ def test_distinct_inflight_roots_are_bounded_and_shutdown_skips_queue(monkeypatc
                 await settled(lambda: query._reserved == len(readers))
             await settled(lambda: len(calls) == module.MAX_CAPTURE_WORKERS)
             flow.add_task("extra")
-            assert (
-                await read_as(query, 20, page_request())
-            ).code == "resource_exhausted"
-            query.close()
+            extra_root = weakref.ref(scheduler.version_store.pin())
+            waiting = asyncio.create_task(read_as(query, 20, page_request()))
+            cancelled = asyncio.create_task(read_as(query, 21, page_request()))
+            await asyncio.sleep(0)
+            assert not waiting.done()
+            assert len(query._content_captures) == module.MAX_SUMMARY_CAPTURE_ROOTS
+            # A waiting reader must not keep the superseded root alive.
+            flow.add_task("latest")
+            scheduler.version_store.pin()
+            assert extra_root() is None
+            cancelled.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await cancelled
+            if close:
+                query.close()
+                assert (await asyncio.wait_for(waiting, 3)).code == "snapshot_expired"
             proceed.set()
             replies = await asyncio.gather(*readers)
-            assert all(p.code == "snapshot_expired" for p in replies)
-            assert len(calls) == module.MAX_CAPTURE_WORKERS
+            if close:
+                assert all(p.code == "snapshot_expired" for p in replies)
+                assert len(calls) == module.MAX_CAPTURE_WORKERS
+            else:
+                latest = await waiting
+                assert latest.nodes[-1].path == "/f/latest"
+                assert latest.base_revision > max(p.base_revision for p in replies)
+                assert all(p.nodes[-1].path != "/f/latest" for p in replies)
             assert_released(query)
         finally:
             proceed.set()
