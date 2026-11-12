@@ -3,6 +3,7 @@
 import asyncio
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -15,6 +16,8 @@ from tests.integration.test_query_a_matrix import _environment
 @pytest.fixture(scope="module")
 def go_snapshot_example(tmp_path_factory):
     repo = Path(__file__).resolve().parents[3] / "takler-client"
+    if shutil.which("go") is None or not (repo / "go.mod").is_file():
+        pytest.skip("requires Go and the paired takler-client checkout")
     binary = tmp_path_factory.mktemp("snapshot-example") / "snapshot"
     subprocess.run(
         ["go", "build", "-p", "1", "-o", str(binary), "./examples/snapshot"],
@@ -28,8 +31,10 @@ def go_snapshot_example(tmp_path_factory):
 @pytest.mark.parametrize("language", ["python", "go"])
 @pytest.mark.parametrize("transport", ["http", "grpc"])
 def test_documented_full_snapshot_examples(
-    language, transport, go_snapshot_example, server_runner_factory, free_port_fixture
+    language, transport, request, server_runner_factory, free_port_fixture
 ):
+    if language == "go":
+        go_snapshot_example = request.getfixturevalue("go_snapshot_example")
     grpc_port, http_port = free_port_fixture(), free_port_fixture()
     runner = server_runner_factory(
         port=grpc_port,

@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from takler.core import Bunch, NodeStatus, Task
+from takler.core.node import Node
 from takler.exceptions import FlowStateError
 from takler.logging import configure
 from takler.protocol.commands import RunCommand
@@ -63,6 +64,12 @@ def test_controlled_success_has_zero_full_snapshots(builtin):
     assert source.attempt_id and source.job_password and source.try_no == 1
     assert source.state.node_status is NodeStatus.submitted
     assert snapshot.call_count == 0
+
+
+def test_controlled_run_survives_lazy_empty_class_annotations(builtin):
+    scheduler, source, _, _ = builtin
+    assert Node.__annotations__ == {}
+    assert controlled_run(scheduler, source.node_path) is not None
 
 
 def test_controlled_rejection_and_force_preserve_order_and_identity(builtin):

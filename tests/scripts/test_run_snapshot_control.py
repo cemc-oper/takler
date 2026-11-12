@@ -19,6 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import run_snapshot_control as control
 
 
+REPAIR_ROOT = os.environ.get("RUN_SNAPSHOT_REPAIR_ROOT")
+if not REPAIR_ROOT:
+    pytest.skip("requires the G0 validation runner", allow_module_level=True)
+
+
 def owner_pidfd_open(pid):
     library = ctypes.CDLL("/usr/lib/x86_64-linux-gnu/libc.so.6", use_errno=True)
     function = library.pidfd_open
@@ -70,8 +75,14 @@ class Owner:
     def kernel(pid):
         raw = Path(f"/proc/{pid}/stat").read_text()
         fields = raw.rpartition(")")[2].split()
-        return dict(pid=pid, ppid=int(fields[1]), pgid=int(fields[2]),
-                    session=int(fields[3]), ticks=int(fields[19]), state=fields[0])
+        return dict(
+            pid=pid,
+            ppid=int(fields[1]),
+            pgid=int(fields[2]),
+            session=int(fields[3]),
+            ticks=int(fields[19]),
+            state=fields[0],
+        )
 
     def append(self, kind, **data):
         if len(self.rows) >= 4096:
@@ -82,7 +93,7 @@ class Owner:
         try:
             return self.register_checked(hint)
         except BaseException as exc:
-            self.fail("registration:"+type(exc).__name__+":"+str(exc))
+            self.fail("registration:" + type(exc).__name__ + ":" + str(exc))
             raise
 
     def register_checked(self, hint):
@@ -102,8 +113,9 @@ class Owner:
             if self.kernel(raw["pid"])["ticks"] != raw["ticks"]:
                 os.close(fd)
                 raise RuntimeError("owner_identity_after_pidfd")
-            value = dict(hint, kernel_at_registration=raw,
-                         registered_ns=time.monotonic_ns())
+            value = dict(
+                hint, kernel_at_registration=raw, registered_ns=time.monotonic_ns()
+            )
             self.entries[key], self.fds[key] = value, fd
             self.append("identity_ack", item=value)
             if hint["role"] == "fixture_child":
@@ -116,8 +128,9 @@ class Owner:
         if fault is None or self.fired or fault["barrier"] != name:
             return
         with self.lock:
-            target = next(v for v in self.entries.values()
-                          if v["role"] == fault["role"])
+            target = next(
+                v for v in self.entries.values() if v["role"] == fault["role"]
+            )
             raw = self.kernel(target["pid"])
             if raw["ticks"] != target["ticks"] or raw["state"] == "Z":
                 raise RuntimeError("owner_fault_target_not_live")
@@ -125,19 +138,28 @@ class Owner:
             self.trigger_ns = time.monotonic_ns()
             context = control.Client.current().rpc("case_context")
             step = context["spec"]["steps"][0]
-            control.Client.current().rpc("death_intent", fault=fault, target=raw,
-                                         at_ns=self.trigger_ns, nonce=step["fault_nonce"])
+            control.Client.current().rpc(
+                "death_intent",
+                fault=fault,
+                target=raw,
+                at_ns=self.trigger_ns,
+                nonce=step["fault_nonce"],
+            )
             self.tighten(dict(at_ns=self.trigger_ns))
             owner_signal(self.fds[(target["pid"], target["ticks"])], signal.SIGKILL)
-            self.append("fault_injected", target=raw, fault=fault,
-                        nonce=step["fault_nonce"])
+            self.append(
+                "fault_injected", target=raw, fault=fault, nonce=step["fault_nonce"]
+            )
 
     def loop(self):
         try:
             if self.failure_domain is not None:
                 raw = self.kernel(os.getpid())
-                self.append("injected_owner_read_boundary", raw=raw,
-                            nonce=self.context["spec"]["owner_fixture"]["nonce"])
+                self.append(
+                    "injected_owner_read_boundary",
+                    raw=raw,
+                    nonce=self.context["spec"]["owner_fixture"]["nonce"],
+                )
                 raise OSError("injected_owner_thread_read_failure")
             while not self.stop_event.is_set():
                 tick = time.monotonic_ns()
@@ -155,27 +177,40 @@ class Owner:
                             continue
                         if select.select([self.fds[key]], [], [], 0)[0]:
                             self.exits[key] = tick
-                            self.append("first_exit", pid=value["pid"],
-                                        ticks=value["ticks"], observed_ns=tick)
+                            self.append(
+                                "first_exit",
+                                pid=value["pid"],
+                                ticks=value["ticks"],
+                                observed_ns=tick,
+                            )
                     c = self.trigger_ns
                     if tick >= self.context["operational_ns"]:
                         c = c if c is not None else tick
                         self.trigger_ns = c
                     if c is not None:
-                        end = min(c + 20 * control.NS, self.cleanup_end_ns,
-                                  self.context["hard_ns"] - 10 * control.NS)
+                        end = min(
+                            c + 20 * control.NS,
+                            self.cleanup_end_ns,
+                            self.context["hard_ns"] - 10 * control.NS,
+                        )
                         for key, fd in list(self.fds.items()):
                             if key in self.exits:
                                 continue
-                            sig = signal.SIGKILL if tick >= min(
-                                c + 150_000_000, end - control.NS
-                            ) else signal.SIGTERM
+                            sig = (
+                                signal.SIGKILL
+                                if tick >= min(c + 150_000_000, end - control.NS)
+                                else signal.SIGTERM
+                            )
                             mark = (key, int(sig))
                             if mark not in self.signals:
                                 owner_signal(fd, sig)
                                 self.signals.append(mark)
-                                self.append("owner_signal", pid=key[0],
-                                            signal=int(sig), C_end=end)
+                                self.append(
+                                    "owner_signal",
+                                    pid=key[0],
+                                    signal=int(sig),
+                                    C_end=end,
+                                )
                 if tick >= self.context["hard_ns"]:
                     self.error = "owner_hard_tail"
                     break
@@ -190,7 +225,9 @@ class Owner:
             self.tighten(dict(at_ns=at))
             try:
                 if self.failure_domain is None:
-                    control.Client.current().rpc("stop", reason="owner:" + reason, at_ns=at)
+                    control.Client.current().rpc(
+                        "stop", reason="owner:" + reason, at_ns=at
+                    )
                 else:
                     self.failure_domain(reason, at)
             except Exception as exc:
@@ -198,10 +235,15 @@ class Owner:
 
     def tighten(self, trigger):
         at = trigger["at_ns"]
-        self.trigger_ns = min(self.trigger_ns, at) if self.trigger_ns is not None else at
-        self.cleanup_end_ns = min(self.cleanup_end_ns, at + 20 * 10**9,
-                                  trigger.get("cleanup_deadline_ns", self.cleanup_end_ns),
-                                  trigger.get("ancestor_end_ns", self.cleanup_end_ns))
+        self.trigger_ns = (
+            min(self.trigger_ns, at) if self.trigger_ns is not None else at
+        )
+        self.cleanup_end_ns = min(
+            self.cleanup_end_ns,
+            at + 20 * 10**9,
+            trigger.get("cleanup_deadline_ns", self.cleanup_end_ns),
+            trigger.get("ancestor_end_ns", self.cleanup_end_ns),
+        )
         self.append("ancestor_deadline", original_ns=at, C_end=self.cleanup_end_ns)
 
     def scan_tree(self):
@@ -217,17 +259,27 @@ class Owner:
         groups = {(v["pgid"], v["session"]) for v in known.values()}
         while True:
             parents = {v["pid"] for v in known.values()}
-            additions = {k: v for k, v in observed.items()
-                         if k not in known and (v["ppid"] in parents
-                         or (v["pgid"], v["session"]) in groups)}
+            additions = {
+                k: v
+                for k, v in observed.items()
+                if k not in known
+                and (v["ppid"] in parents or (v["pgid"], v["session"]) in groups)
+            }
             if not additions:
                 break
             known.update(additions)
             if len(known) > 64:
                 raise RuntimeError("owner_scan_capacity")
-        rows = [dict(value, independently_registered=key in self.entries,
-                     live=value["state"] != "Z", scan_ns=time.monotonic_ns())
-                for key, value in observed.items() if key in known]
+        rows = [
+            dict(
+                value,
+                independently_registered=key in self.entries,
+                live=value["state"] != "Z",
+                scan_ns=time.monotonic_ns(),
+            )
+            for key, value in observed.items()
+            if key in known
+        ]
         unknown = [v for v in rows if not v["independently_registered"]]
         if unknown:
             self.unknown.extend(unknown)
@@ -236,10 +288,15 @@ class Owner:
         return rows
 
     def configure(self, job):
-        self.context["operational_ns"] = min(self.context["operational_ns"], job["operational_ns"])
+        self.context["operational_ns"] = min(
+            self.context["operational_ns"], job["operational_ns"]
+        )
         self.context["hard_ns"] = min(self.context["hard_ns"], job["hard_ns"])
-        self.append("job_deadlines", operational_ns=job["operational_ns"],
-                    hard_ns=job["hard_ns"])
+        self.append(
+            "job_deadlines",
+            operational_ns=job["operational_ns"],
+            hard_ns=job["hard_ns"],
+        )
 
     def checkpoint(self, deadline):
         while time.monotonic_ns() < deadline:
@@ -248,12 +305,17 @@ class Owner:
                     break
             time.sleep(0.005)
         scan = self.scan_tree()
-        return dict(complete=self.error is None and not self.unknown
-                    and not any(v["live"] for v in scan)
-                    and len(self.exits) == len(self.entries),
-                    error=self.error, fault_fired=self.fired,
-                    events=list(self.rows), thread_alive=self.thread.is_alive(),
-                    scope="case; final join follows at fixture teardown")
+        return dict(
+            complete=self.error is None
+            and not self.unknown
+            and not any(v["live"] for v in scan)
+            and len(self.exits) == len(self.entries),
+            error=self.error,
+            fault_fired=self.fired,
+            events=list(self.rows),
+            thread_alive=self.thread.is_alive(),
+            scope="case; final join follows at fixture teardown",
+        )
 
     def finish(self, deadline):
         if self.finished is not None:
@@ -273,8 +335,15 @@ class Owner:
                 live = current["ticks"] == key[1] and current["state"] != "Z"
             except FileNotFoundError:
                 current, live = None, False
-            scan.append(dict(pid=key[0], ticks=key[1], current=current, live=live,
-                             at_ns=time.monotonic_ns()))
+            scan.append(
+                dict(
+                    pid=key[0],
+                    ticks=key[1],
+                    current=current,
+                    live=live,
+                    at_ns=time.monotonic_ns(),
+                )
+            )
             if key in self.exits:
                 try:
                     pid, status = os.waitpid(key[0], os.WNOHANG)
@@ -284,16 +353,26 @@ class Owner:
                     pass
             os.close(self.fds[key])
         required_fault = self.context["spec"].get("owner_fault")
-        complete = (not self.thread.is_alive() and self.error is None
-                    and len(self.exits) == len(self.entries)
-                    and not any(v["live"] for v in scan)
-                    and not any(v["live"] for v in tree_scan) and not self.unknown
-                    and (not required_fault or self.fired))
-        self.finished = dict(complete=complete, error=self.error,
-                             events=self.rows, scans=scan, fault_fired=self.fired,
-                             thread_join_ns=time.monotonic_ns(),
-                             thread_alive=self.thread.is_alive(), tree_scan=tree_scan,
-                             unknown=self.unknown)
+        complete = (
+            not self.thread.is_alive()
+            and self.error is None
+            and len(self.exits) == len(self.entries)
+            and not any(v["live"] for v in scan)
+            and not any(v["live"] for v in tree_scan)
+            and not self.unknown
+            and (not required_fault or self.fired)
+        )
+        self.finished = dict(
+            complete=complete,
+            error=self.error,
+            events=self.rows,
+            scans=scan,
+            fault_fired=self.fired,
+            thread_join_ns=time.monotonic_ns(),
+            thread_alive=self.thread.is_alive(),
+            tree_scan=tree_scan,
+            unknown=self.unknown,
+        )
         (self.directory / "independent-owner.json").write_text(
             json.dumps(self.finished, indent=2) + "\n"
         )
@@ -317,9 +396,12 @@ def independent_owner(tmp_path):
         control._OWNER = previous
         if not result["complete"]:
             control.Client.current().rpc("stop", reason="independent_owner_failed")
-        control.Client.current().rpc("owner_closed", complete=result["complete"],
-                                     thread_alive=result["thread_alive"],
-                                     evidence=str(owner.directory / "independent-owner.json"))
+        control.Client.current().rpc(
+            "owner_closed",
+            complete=result["complete"],
+            thread_alive=result["thread_alive"],
+            evidence=str(owner.directory / "independent-owner.json"),
+        )
         assert result["complete"], result
 
 
@@ -330,16 +412,25 @@ def job_for(
     context = client.rpc("case_context")
     header = client.header
     return dict(
-        stage="G0", start_ns=context["start_ns"],
-        operational_ns=min(context["operational_ns"], context["start_ns"] + 2 * control.NS),
-        hard_ns=context["hard_ns"], parent_operational_ns=context["parent_operational_ns"],
+        stage="G0",
+        start_ns=context["start_ns"],
+        operational_ns=min(
+            context["operational_ns"], context["start_ns"] + 2 * control.NS
+        ),
+        hard_ns=context["hard_ns"],
+        parent_operational_ns=context["parent_operational_ns"],
         budget=str(Path(header["root"]) / "header.json"),
         batch_directory=header["root"],
         sources=control.read(Path(header["root"]) / "manifest.json")["sources"],
-        command=[sys.executable, "-c", program], cwd=str(Path(control.SCRIPT).parents[1]),
-        coordinator_mode=mode, fault=fault, pss=False,
+        command=[sys.executable, "-c", program],
+        cwd=str(Path(control.SCRIPT).parents[1]),
+        coordinator_mode=mode,
+        fault=fault,
+        pss=False,
         owner_fd=control._OWNER.child_channel.fileno(),
-        view=context["spec"]["steps"][0].get("view") if context["spec"]["steps"] else None,
+        view=context["spec"]["steps"][0].get("view")
+        if context["spec"]["steps"]
+        else None,
     )
 
 
@@ -465,8 +556,11 @@ def test_admission_rejects_before_any_child(tmp_path, failure):
     else:
         previous = dict(closed=False, started_ns=1)
         control.save(tmp_path / "attempt.json", previous)
-    expected = {"source": "source_mismatch", "expired": "budget_admission",
-                "unclosed": "already_attempted"}[failure]
+    expected = {
+        "source": "source_mismatch",
+        "expired": "budget_admission",
+        "unclosed": "already_attempted",
+    }[failure]
     with pytest.raises(RuntimeError, match=expected):
         control.run_owned(tmp_path, job)
     assert not (tmp_path / "W.log").exists()
@@ -477,11 +571,19 @@ def test_admission_rejects_before_any_child(tmp_path, failure):
 def test_critical_one_ns_boundary_rejected_at_real_admission(tmp_path):
     client = control.Client.current()
     job = job_for(tmp_path)
-    for tick, expected in [(job["operational_ns"], "budget_admission"),
-                           (job["operational_ns"] - 1, None)]:
-        value = client.rpc("view", name="critical", decision=dict(
-            header=client.header, job=job, tick=tick,
-        ))
+    for tick, expected in [
+        (job["operational_ns"], "budget_admission"),
+        (job["operational_ns"] - 1, None),
+    ]:
+        value = client.rpc(
+            "view",
+            name="critical",
+            decision=dict(
+                header=client.header,
+                job=job,
+                tick=tick,
+            ),
+        )
         assert value == dict(reason=expected, grants_spawn=False)
     assert not (tmp_path / "job.json").exists()
 
@@ -491,9 +593,14 @@ def test_unrelated_owned_by_test_process_is_not_signalled(tmp_path):
     intent = client.rpc("aux_intent")
     begin = time.monotonic_ns()
     unrelated = subprocess.Popen([sys.executable, "-c", "import time;time.sleep(10)"])
-    item = dict(Owner.kernel(unrelated.pid), role="unrelated", birth_lower=begin,
-                spawn_before_ns=begin, spawn_after_ns=time.monotonic_ns(),
-                attempt=os.environ["RUN_SNAPSHOT_CURRENT_ATTEMPT"])
+    item = dict(
+        Owner.kernel(unrelated.pid),
+        role="unrelated",
+        birth_lower=begin,
+        spawn_before_ns=begin,
+        spawn_after_ns=time.monotonic_ns(),
+        attempt=os.environ["RUN_SNAPSHOT_CURRENT_ATTEMPT"],
+    )
     fd = owner_pidfd_open(unrelated.pid)
     try:
         client.rpc("identity", item=item, intent=intent["id"])
@@ -663,24 +770,41 @@ def test_owned_descendant_rss_cpu_are_in_actual_samples(tmp_path):
     ]
     assert child_samples and all("cpu" in row and "rss" in row for row in child_samples)
     assert all(
-        item["first_exit_observed_ns"] and item["reaped_ns"]
+        item["first_exit_observed_ns"]
+        and item["reaped_ns"]
         and item["group_scan_ns"] >= item["first_exit_observed_ns"]
         and not control.same_process(item)
         for item in result["observed_descendants"]
     )
 
 
-SCENARIOS = control.read(
-    Path(os.environ["RUN_SNAPSHOT_REPAIR_ROOT"]) / "scene-table.json"
-)
+SCENARIOS = control.read(Path(REPAIR_ROOT) / "scene-table.json")
 
 INITIALIZATION_FAULTS = [
-    "capability_call", "lease_open", "socket_create", "capability", "lease",
-    "selector", "monitor", "fd", "writer", "sampler_started", "thread",
-    "cutoff_thread", "client", "writer_io", "writer_ack_block",
+    "capability_call",
+    "lease_open",
+    "socket_create",
+    "capability",
+    "lease",
+    "selector",
+    "monitor",
+    "fd",
+    "writer",
+    "sampler_started",
+    "thread",
+    "cutoff_thread",
+    "client",
+    "writer_io",
+    "writer_ack_block",
 ]
 
-OUTER_FIXTURES = ["normal", "capability_failure", "entry_fatal", "early_exit", "ready_timeout"]
+OUTER_FIXTURES = [
+    "normal",
+    "capability_failure",
+    "entry_fatal",
+    "early_exit",
+    "ready_timeout",
+]
 MONITOR_FIXTURES = ["unavailable", "cpu_missing", "identity", "read_gap", "finish_race"]
 
 
@@ -688,8 +812,10 @@ MONITOR_FIXTURES = ["unavailable", "cpu_missing", "identity", "read_gap", "finis
 def test_finite_monitor_registration_actual_entry(tmp_path, monitor_fixture):
     context = control.Client.current().rpc("case_context")
     job = job_for(tmp_path)
-    job.update(command=context["spec"]["steps"][0]["command"],
-               operational_ns=context["operational_ns"])
+    job.update(
+        command=context["spec"]["steps"][0]["command"],
+        operational_ns=context["operational_ns"],
+    )
     result = control.run_owned(tmp_path / "entry", job)
     assert result["success"], result
     assert_independent(result)
@@ -706,12 +832,18 @@ def finite_owner_fixture(directory):
     acknowledged = []
 
     def domain(reason, at):
-        client.rpc("owner_fixture_failure", nonce=specification["nonce"],
-                   reason=reason, at_ns=at)
+        client.rpc(
+            "owner_fixture_failure",
+            nonce=specification["nonce"],
+            reason=reason,
+            at_ns=at,
+        )
         acknowledged.append(time.monotonic_ns())
 
     value = Owner(directory, context, failure_domain=domain)
-    value.thread.join(max(0, (context["operational_ns"]-time.monotonic_ns())/control.NS))
+    value.thread.join(
+        max(0, (context["operational_ns"] - time.monotonic_ns()) / control.NS)
+    )
     observed = value.finish(context["hard_ns"])
     assert acknowledged and not observed["complete"] and not observed["thread_alive"]
     assert observed["error"] == "OSError:injected_owner_thread_read_failure"
@@ -723,8 +855,10 @@ def finite_owner_fixture(directory):
 def test_finite_owner_thread_failure_actual_entry(tmp_path):
     context = control.Client.current().rpc("case_context")
     job = job_for(tmp_path)
-    job.update(command=context["spec"]["steps"][0]["command"],
-               operational_ns=context["operational_ns"])
+    job.update(
+        command=context["spec"]["steps"][0]["command"],
+        operational_ns=context["operational_ns"],
+    )
     result = control.run_owned(tmp_path / "entry", job)
     assert result["success"], result
     assert_independent(result)
@@ -747,7 +881,9 @@ def test_finite_outer_actual_entry(tmp_path, outer_fixture):
     assert observed["fixture"]["nonce"] == context["spec"]["outer_fixture"]["nonce"]
     assert observed["physical_tail_known"] and observed["threads_joined"]
     assert observed["cleanup_within_deadline"]
-    assert observed["measurement_valid"] is (None if outer_fixture == "capability_failure" else True)
+    assert observed["measurement_valid"] is (
+        None if outer_fixture == "capability_failure" else True
+    )
     reason = observed["state"]["stop"]["reason"] if observed["state"]["stop"] else None
     assert reason in context["spec"]["outer_fixture"]["expected"]
     assert not (tmp_path / "outer-fixture/header.json").exists()
@@ -778,8 +914,9 @@ def test_pidfd_named_backend_errno_and_descriptor_cleanup():
     assert set(os.listdir("/proc/self/fd")) == before
 
 
-@pytest.mark.parametrize("initialization_fault", INITIALIZATION_FAULTS,
-                         ids=INITIALIZATION_FAULTS)
+@pytest.mark.parametrize(
+    "initialization_fault", INITIALIZATION_FAULTS, ids=INITIALIZATION_FAULTS
+)
 def test_finite_initialization_transaction_actual_entry(tmp_path, initialization_fault):
     client = control.Client.current()
     context = client.rpc("case_context")
@@ -813,10 +950,17 @@ def test_scene(tmp_path, scene):
         job = job_for(tmp_path)
         variant = scene["variant"]
         if variant in {"stopped", "pending"}:
-            response = client.rpc("view", name=scene["id"], decision=dict(
-                header=client.header, job=job, tick=job["start_ns"],
-                stopped=variant == "stopped", pending=variant == "pending",
-            ))
+            response = client.rpc(
+                "view",
+                name=scene["id"],
+                decision=dict(
+                    header=client.header,
+                    job=job,
+                    tick=job["start_ns"],
+                    stopped=variant == "stopped",
+                    pending=variant == "pending",
+                ),
+            )
             assert response["reason"] == spec["refusal"]
             assert not response["grants_spawn"]
         else:
@@ -846,7 +990,9 @@ def test_scene(tmp_path, scene):
         assert not control._OWNER.entries
         return
     if action == "bootstrap":
-        outcome = client.rpc("bootstrap_view", name=scene["id"], variant=scene["variant"])
+        outcome = client.rpc(
+            "bootstrap_view", name=scene["id"], variant=scene["variant"]
+        )
         assert outcome["reason"] == spec["refusal"]
         assert not outcome["grants_spawn"]
         assert not control._OWNER.entries
@@ -857,12 +1003,14 @@ def test_scene(tmp_path, scene):
         directory = tmp_path / "entry"
         if scene["variant"] == "concurrent":
             results = []
-            thread = threading.Thread(target=lambda: results.append(
-                control.run_owned(directory, job)
-            ))
+            thread = threading.Thread(
+                target=lambda: results.append(control.run_owned(directory, job))
+            )
             thread.start()
             deadline = min(time.monotonic_ns() + control.NS, context["operational_ns"])
-            while not (directory / "job.json").exists() and time.monotonic_ns() < deadline:
+            while (
+                not (directory / "job.json").exists() and time.monotonic_ns() < deadline
+            ):
                 time.sleep(0.002)
             with pytest.raises(RuntimeError, match="unclosed_sibling_attempt"):
                 control.admit(tmp_path / "sibling", job)
@@ -892,9 +1040,14 @@ def test_scene(tmp_path, scene):
         with pytest.raises(RuntimeError, match="child_domain_stopped"):
             control.admit(tmp_path / "domain-2", job)
         baseline = Path(client.header["root"]) / "bootstrap.json"
-        assert hashlib.sha256(baseline.read_bytes()).hexdigest() == client.header["bootstrap_hash"]
-        parts = {line.split()[0]: int(line.split()[1]) * 1024
-                 for line in control.read(baseline)["swap_raw"]}
+        assert (
+            hashlib.sha256(baseline.read_bytes()).hexdigest()
+            == client.header["bootstrap_hash"]
+        )
+        parts = {
+            line.split()[0]: int(line.split()[1]) * 1024
+            for line in control.read(baseline)["swap_raw"]
+        }
         assert parts["SwapTotal:"] - parts["SwapFree:"] == client.header["swap_start"]
         return
     job = job_for(tmp_path)
@@ -908,28 +1061,43 @@ def test_scene(tmp_path, scene):
         assert result["success"], result
     else:
         assert not result["success"], result
-        assert result["error"] in (expected if isinstance(expected, list) else [expected]), result
+        assert result["error"] in (
+            expected if isinstance(expected, list) else [expected]
+        ), result
     assert result["tail_known"] == spec["steps"][0].get("tail_known", True), result
     if action == "sample":
-        rows = [json.loads(line) for line in
-                (tmp_path / "entry/injected-resources.jsonl").read_text().splitlines()]
+        rows = [
+            json.loads(line)
+            for line in (tmp_path / "entry/injected-resources.jsonl")
+            .read_text()
+            .splitlines()
+        ]
         assert len(rows) == 1 and rows[0]["spec"] == scene["view"]
         assert rows[0]["error"] == expected
         assert rows[0]["invalid"] == (expected is not None)
         assert not rows[0]["host_deadlines_changed"]
         assert (tmp_path / "entry/real-resources.jsonl").stat().st_size > 0
     if scene.get("fault") == "ancestor_late":
-        assert result["startup_trigger"]["cleanup_deadline_ns"] <= result["startup_trigger"]["at_ns"] + 1200_000_000
-        assert result["cleanup_deadline_ns"] <= result["startup_trigger"]["cleanup_deadline_ns"]
+        assert (
+            result["startup_trigger"]["cleanup_deadline_ns"]
+            <= result["startup_trigger"]["at_ns"] + 1200_000_000
+        )
+        assert (
+            result["cleanup_deadline_ns"]
+            <= result["startup_trigger"]["cleanup_deadline_ns"]
+        )
     if action == "death":
         assert result["independent_owner"]["fault_fired"]
     if action == "descendant":
-        owner_children = [v for v in control._OWNER.entries.values()
-                          if v["role"] == "fixture_child"]
+        owner_children = [
+            v for v in control._OWNER.entries.values() if v["role"] == "fixture_child"
+        ]
         assert owner_children
         if scene["mode"] != "omit_descendant":
             assert result["observed_descendants"]
-        assert all((i["pid"], i["ticks"]) in control._OWNER.exits for i in owner_children)
+        assert all(
+            (i["pid"], i["ticks"]) in control._OWNER.exits for i in owner_children
+        )
     if action == "plugin_domain":
         assert "worker_failed" == result["error"]
         text = (tmp_path / "entry/worker.log").read_text()

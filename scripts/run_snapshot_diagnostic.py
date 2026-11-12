@@ -651,8 +651,17 @@ def cli_service_fence():
     try:
         for owner in owners:
             owner.start = forbidden
-        print(json.dumps(dict(event="service_fences_installed",
-                              owners=[owner.__module__+"."+owner.__qualname__ for owner in owners])), flush=True)
+        print(
+            json.dumps(
+                dict(
+                    event="service_fences_installed",
+                    owners=[
+                        owner.__module__ + "." + owner.__qualname__ for owner in owners
+                    ],
+                )
+            ),
+            flush=True,
+        )
         yield
     finally:
         for owner, original in originals:

@@ -100,21 +100,13 @@ def _builtin_registry(registry):
         return False
     if type(registry._ids) is not dict or type(registry._types) is not dict:
         return False
-    expected = {
-        "takler.bunch",
-        "takler.flow",
-        "takler.container",
-        "takler.task",
-        "takler.shell",
-    }
+    builtin_types = registry_module._builtin_node_types()
     if (
         any(type(key) is not str for key in registry._ids)
-        or set(registry._ids) != expected
+        or set(registry._ids) != {type_id for _, type_id, _ in builtin_types}
+        or len(registry._types) != len(builtin_types)
     ):
         return False
-    if len(registry._types) != 5:
-        return False
-    from takler.tasks.shell import ShellScriptTask
 
     fields = {
         "type_id",
@@ -130,13 +122,7 @@ def _builtin_registry(registry):
         "secret_fields",
     }
     # Exact default registrations have no user code or mutable type-data aliases.
-    for cls, type_id, kind in (
-        (Bunch, "takler.bunch", "bunch"),
-        (Flow, "takler.flow", "flow"),
-        (NodeContainer, "takler.container", "container"),
-        (Task, "takler.task", "task"),
-        (ShellScriptTask, "takler.shell", "task"),
-    ):
+    for cls, type_id, kind in builtin_types:
         entries = [entry for key, entry in registry._types.items() if key is cls]
         if (
             len(entries) != 1

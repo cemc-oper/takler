@@ -242,10 +242,12 @@ def test_resource_consecutive_points_reset_and_stop():
     assert "collector_rss" in hooks.resource_violation(sample(60), limits, state)
 
 
-def test_clock_and_tick_capacity_and_external_bound(tmp_path):
-    settings = json.loads((runner.ROOT / "PERF-08A-config.json").read_text())[
-        "observation"
-    ]
+def test_clock_and_tick_capacity_and_external_bound():
+    settings = dict(
+        sample_tick_capacity=1024,
+        clock_record_capacity=8192,
+        external_retained_evidence_max_bytes=64 * 1024**2,
+    )
     sampler = runner.Sampler(settings)
     for _ in range(1024):
         sampler.tick()
@@ -358,15 +360,35 @@ def test_default_gc_diagnostic_patch_still_exact(tmp_path):
     before = (gc.isenabled(), gc.get_threshold())
     source = tmp_path / "source"
     runner.probe.diagnostic_copy(SCRIPTS.parent, source)
-    previous = json.loads(
-        (runner.ROOT / "PERF-03-native-reference-execution.json").read_text()
-    )
-    assert runner.probe.digest(source / "gc.patch") == previous["gc_patch_sha256"]
+    headers, changes = (source / "gc.patch").read_text().split("\n@@", 1)
+    assert headers.splitlines() == [
+        "--- a/src/takler/server/full_snapshot.py",
+        "+++ b/src/takler/server/full_snapshot.py",
+    ]
+    assert [
+        line.strip() for line in changes.splitlines() if line.startswith(("+", "-"))
+    ] == [
+        "-        if lease is not None and lease.gc_tuned:",
+        "-            lease.gc_tuned = False",
+        "-            _release_large_snapshot_gc()",
+        "-                if len(paths) >= GC_TUNE_MIN_PATHS:",
+        "-                    lease.gc_tuned = _acquire_large_snapshot_gc()",
+        "-                if page.complete and lease.gc_tuned:",
+        "-                    lease.gc_tuned = False",
+        "-                    _release_large_snapshot_gc()",
+        "-        # Large page streams create many short-lived container objects. A small",
+        "-        # collection per page avoids rare whole-generation pauses on the event",
+        "-        # loop while preserving normal GC for the rest of the process.",
+        "-        if gc.isenabled():",
+        "-            gc.collect(0)",
+    ]
     assert (gc.isenabled(), gc.get_threshold()) == before
 
 
 def test_insufficient_full_samples_continue_but_short_failure_stops(monkeypatch):
-    config = json.loads((runner.ROOT / "PERF-08A-config.json").read_text())
+    config = {
+        "schedule": {"short": ["A", "B"], "full": [["A", "B"], ["B", "A"], ["A", "B"]]}
+    }
     seen = []
 
     def execute(base, source, rows, variant, pair, short):

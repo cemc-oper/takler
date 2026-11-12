@@ -221,12 +221,21 @@ class Emitter:
             + 524288
         )
 
-    def close(self):
+    def close(self, *, drain=None):
         self.drain_deadline = time.monotonic() + 1.5
         self.done.set()
         if self.sender.ident is None:
             self.sender.start()
-        self.sender.join(timeout=2)
+        try:
+            # A collector on the caller's thread must read while the sender flushes.
+            if drain is not None:
+                while self.sender.is_alive() and time.monotonic() < self.drain_deadline:
+                    if not drain():
+                        self.sender.join(timeout=0.001)
+        finally:
+            self.sender.join(
+                timeout=max(0, self.drain_deadline + 0.5 - time.monotonic())
+            )
         produced = next(self.sequence) - 1
         result = dict(
             produced=produced,

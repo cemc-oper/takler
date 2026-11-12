@@ -327,6 +327,7 @@ def test_pair_defaults_to_main_and_contract_runs_in_ci(workflow):
     assert "test_child_identity_matrix.py" in commands
     assert "test_server_state_cli_matrix.py" in commands
     assert "test_show_cli_contract.py" in commands
+    assert "test_full_snapshot_examples.py" in commands
     assert "paired_check.py" not in commands
 
 

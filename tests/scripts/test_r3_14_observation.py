@@ -175,6 +175,34 @@ def test_ring_overflow_lock_reentry_and_sequence_evidence(tmp_path):
     sock.close()
 
 
+def test_close_drains_packets_with_collector_on_calling_thread(tmp_path):
+    path = str(tmp_path / "s")
+    received = []
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+        sock.bind(path)
+        sock.setblocking(False)
+        emitter = observation.Emitter(path, 2048, start_sender=False)
+        for _ in range(2048):
+            assert emitter.emit(9)
+
+        def drain():
+            try:
+                packet = sock.recv(65536)
+            except BlockingIOError:
+                return False
+            received.extend(
+                row["sequence"] for row in observation.decode_packet(packet)
+            )
+            return True
+
+        final = emitter.close(drain=drain)
+        while drain():
+            pass
+
+    assert final["sender_stopped"] and final["dropped"] == 0
+    assert received == list(range(1, 2049))
+
+
 def test_stalled_and_dead_collector_cannot_block_producers(tmp_path):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     path = str(tmp_path / "s")

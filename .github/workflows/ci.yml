@@ -222,9 +222,9 @@ jobs:
       env:
         TAKLER_REPO: ../takler
       run: make load-contract replace-contract show-contract query-a-contract query-b-contract
-    - name: Run child identity and service state matrix
+    - name: Run child identity, service state and snapshot examples
       working-directory: takler
       env:
         TAKLER_SHOW_GO_CLIENT: ../takler-client/bin/takler_client
       run: |
-        uv run --no-sync pytest -q tests/packaging/test_ci_workflow.py tests/integration/test_child_identity_matrix.py tests/integration/test_server_state_cli_matrix.py tests/integration/test_show_cli_contract.py
+        uv run --no-sync pytest -q tests/packaging/test_ci_workflow.py tests/integration/test_child_identity_matrix.py tests/integration/test_server_state_cli_matrix.py tests/integration/test_show_cli_contract.py tests/integration/test_full_snapshot_examples.py

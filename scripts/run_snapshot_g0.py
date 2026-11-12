@@ -29,7 +29,9 @@ def protected_project(root, descriptor, fixture=None):
         end = transition["v"] + 5_000_000_000
         if fixture is not None:
             end = fixture["operational_ns"]
-        if not select.select([channel], [], [], max(0, (end - time.monotonic_ns()) / 1e9))[0]:
+        if not select.select(
+            [channel], [], [], max(0, (end - time.monotonic_ns()) / 1e9)
+        )[0]:
             raise RuntimeError("outer_protection_not_ready")
         if channel.recv(65536) != b"G":
             raise RuntimeError("outer_protection_refused")
@@ -44,18 +46,35 @@ def protected_project(root, descriptor, fixture=None):
                     time.sleep(0.005)
                 return 18
             if mode == "normal":
-                channel.send(json.dumps(dict(event="ready", at_ns=time.monotonic_ns())).encode())
-                channel.send(json.dumps(dict(event="project_done", at_ns=time.monotonic_ns(), success=True)).encode())
+                channel.send(
+                    json.dumps(dict(event="ready", at_ns=time.monotonic_ns())).encode()
+                )
+                channel.send(
+                    json.dumps(
+                        dict(
+                            event="project_done",
+                            at_ns=time.monotonic_ns(),
+                            success=True,
+                        )
+                    ).encode()
+                )
                 return 0
             raise RuntimeError("fixture_mode_not_frozen")
         namespace = runpy.run_path(__file__, run_name="g0_protected_execution")
         outcome = namespace["execute"](root, channel)
-        channel.send(json.dumps(dict(event="project_done", at_ns=time.monotonic_ns(),
-                                     success=outcome)).encode())
+        channel.send(
+            json.dumps(
+                dict(event="project_done", at_ns=time.monotonic_ns(), success=outcome)
+            ).encode()
+        )
         return 0 if outcome else 1
     except BaseException as exc:
-        failure = dict(event="fatal", at_ns=time.monotonic_ns(),
-                       phase="project_boundary", error=type(exc).__name__ + ":" + str(exc))
+        failure = dict(
+            event="fatal",
+            at_ns=time.monotonic_ns(),
+            phase="project_boundary",
+            error=type(exc).__name__ + ":" + str(exc),
+        )
         try:
             channel.send(json.dumps(failure).encode())
         except OSError:
@@ -87,14 +106,19 @@ def outer_entry(root, anchor, fixture=None):
             code = ctypes.get_errno()
             raise OSError(code, os.strerror(code))
 
-
     def tick():
         return time.clock_gettime_ns(time.CLOCK_MONOTONIC)
 
     def kernel(pid):
         fields = Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()
-        return dict(pid=pid, ticks=int(fields[19]), ppid=int(fields[1]),
-                    pgid=int(fields[2]), session=int(fields[3]), state=fields[0])
+        return dict(
+            pid=pid,
+            ticks=int(fields[19]),
+            ppid=int(fields[1]),
+            pgid=int(fields[2]),
+            session=int(fields[3]),
+            state=fields[0],
+        )
 
     transition = json.loads((root / "validation-begin.json").read_text())
     v, h = transition["v"], transition["v"] + 30_000_000_000
@@ -104,15 +128,20 @@ def outer_entry(root, anchor, fixture=None):
         # This mode is the already protected test worker, not another root.
         # control imports stdlib only; the real host mode never imports it.
         from run_snapshot_control import Client
+
         parent_client = Client.current()
         context = parent_client.rpc("case_context")
         specification = context["spec"]["outer_fixture"]
         if specification["mode"] != fixture:
             raise RuntimeError("outer_fixture_not_frozen")
-        fixture = dict(specification, start_ns=context["start_ns"],
-                       operational_ns=min(context["start_ns"]+2_000_000_000,
-                                          context["operational_ns"]),
-                       hard_ns=context["hard_ns"])
+        fixture = dict(
+            specification,
+            start_ns=context["start_ns"],
+            operational_ns=min(
+                context["start_ns"] + 2_000_000_000, context["operational_ns"]
+            ),
+            hard_ns=context["hard_ns"],
+        )
         v, h = context["start_ns"], context["hard_ns"]
         directory = Path(context["spec"]["directory"]) / "outer-fixture"
         directory.mkdir()
@@ -133,16 +162,27 @@ def outer_entry(root, anchor, fixture=None):
     def stop(reason, original=None, ancestor=None):
         at = tick() if original is None else original
         with lock:
-            end = min(at + 20_000_000_000, state["H"] - 10_000_000_000,
-                      ancestor if ancestor is not None else state["H"])
+            end = min(
+                at + 20_000_000_000,
+                state["H"] - 10_000_000_000,
+                ancestor if ancestor is not None else state["H"],
+            )
             if state["stop"] is None:
-                state["stop"] = dict(reason=reason, at_ns=at, C_end=end,
-                                     first_reason_at_ns=at)
+                state["stop"] = dict(
+                    reason=reason, at_ns=at, C_end=end, first_reason_at_ns=at
+                )
             else:
                 state["stop"]["C_end"] = min(state["stop"]["C_end"], end)
                 state["stop"]["at_ns"] = min(state["stop"]["at_ns"], at)
-            events.append(dict(event="outer_stop", reason=reason, at_ns=tick(),
-                               original_ns=at, C_end=state["stop"]["C_end"]))
+            events.append(
+                dict(
+                    event="outer_stop",
+                    reason=reason,
+                    at_ns=tick(),
+                    original_ns=at,
+                    C_end=state["stop"]["C_end"],
+                )
+            )
 
     def cutoff():
         try:
@@ -157,7 +197,11 @@ def outer_entry(root, anchor, fixture=None):
                     if select.select([fd], [], [], 0)[0]:
                         entries[key].setdefault("first_exit_observed_ns", at)
                     elif trigger is not None:
-                        sig = signal.SIGKILL if at >= trigger["C_end"] - 1_000_000_000 else signal.SIGTERM
+                        sig = (
+                            signal.SIGKILL
+                            if at >= trigger["C_end"] - 1_000_000_000
+                            else signal.SIGTERM
+                        )
                         mark = (key, int(sig))
                         if mark not in state.setdefault("signals", set()):
                             try:
@@ -165,8 +209,14 @@ def outer_entry(root, anchor, fixture=None):
                             except ProcessLookupError:
                                 pass
                             else:
-                                events.append(dict(event="outer_signal", key=key,
-                                                   signal=int(sig), at_ns=tick()))
+                                events.append(
+                                    dict(
+                                        event="outer_signal",
+                                        key=key,
+                                        signal=int(sig),
+                                        at_ns=tick(),
+                                    )
+                                )
                             state["signals"].add(mark)
                 finished.wait(0.005)
         except BaseException as exc:
@@ -174,13 +224,18 @@ def outer_entry(root, anchor, fixture=None):
 
     def resource_loop():
         import shutil
+
         own = kernel(os.getpid())
         own.update(role="outer", spawn_before_ns=tick(), observation_only=True)
         own_key = str(own["pid"]) + ":" + str(own["ticks"])
-        swap_start = json.loads((root / "bootstrap-adoption-audit.json").read_text())["swap_start"]
+        swap_start = json.loads((root / "bootstrap-adoption-audit.json").read_text())[
+            "swap_start"
+        ]
         over = 0
         try:
-            with (directory / "outer-real-resources.jsonl").open("x", buffering=1) as stream:
+            with (directory / "outer-real-resources.jsonl").open(
+                "x", buffering=1
+            ) as stream:
                 while not sample_done.is_set():
                     began = tick()
                     active = {key: entries[key] for key in list(descriptors)}
@@ -189,23 +244,41 @@ def outer_entry(root, anchor, fixture=None):
                     for key, value in active.items():
                         if key in sampling["exits"]:
                             continue
-                        if key != own_key and select.select([descriptors[key]], [], [], 0)[0]:
+                        if (
+                            key != own_key
+                            and select.select([descriptors[key]], [], [], 0)[0]
+                        ):
                             observed = tick()
                             sampling["exits"][key] = observed
                             previous = sampling["last"].get(key)
                             if previous is None or observed - previous[0] > 250_000_000:
                                 raise RuntimeError("outer_exit_sample_gap")
-                            if value["role"] == "worker" and sampling["counts"][key] < 2:
+                            if (
+                                value["role"] == "worker"
+                                and sampling["counts"][key] < 2
+                            ):
                                 raise RuntimeError("outer_worker_cpu_points")
                             continue
                         begin = tick()
                         first = kernel(value["pid"])
-                        fields = Path(f"/proc/{value['pid']}/stat").read_text().rpartition(")")[2].split()
-                        rss = int(Path(f"/proc/{value['pid']}/statm").read_text().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+                        fields = (
+                            Path(f"/proc/{value['pid']}/stat")
+                            .read_text()
+                            .rpartition(")")[2]
+                            .split()
+                        )
+                        rss = int(
+                            Path(f"/proc/{value['pid']}/statm").read_text().split()[1]
+                        ) * os.sysconf("SC_PAGE_SIZE")
                         last = kernel(value["pid"])
                         end = tick()
-                        cpu = (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
-                        if first["ticks"] != value["ticks"] or last["ticks"] != value["ticks"]:
+                        cpu = (int(fields[11]) + int(fields[12])) / os.sysconf(
+                            "SC_CLK_TCK"
+                        )
+                        if (
+                            first["ticks"] != value["ticks"]
+                            or last["ticks"] != value["ticks"]
+                        ):
                             raise RuntimeError("outer_sample_identity")
                         if min(cpu, rss) < 0 or end - begin > 250_000_000:
                             raise RuntimeError("outer_sample_read_or_negative")
@@ -213,7 +286,9 @@ def outer_entry(root, anchor, fixture=None):
                         birth = value.get("birth_lower", value["spawn_before_ns"])
                         if previous is None and end - birth > 250_000_000:
                             raise RuntimeError("outer_first_sample_gap")
-                        if previous and (end - previous[0] > 250_000_000 or cpu < previous[2]):
+                        if previous and (
+                            end - previous[0] > 250_000_000 or cpu < previous[2]
+                        ):
                             raise RuntimeError("outer_gap_or_cpu_regression")
                         if value["role"] in {"S", "C", "W"} and rss > 512 * 1024**2:
                             raise RuntimeError("outer_tool_rss")
@@ -221,21 +296,48 @@ def outer_entry(root, anchor, fixture=None):
                         sampling["last"][key] = [begin, end, cpu]
                         sampling["counts"][key] = sampling["counts"].get(key, 0) + 1
                         total += rss
-                        rows.append(dict(item=value, identity_before=first, identity_after=last,
-                                         cpu=cpu, rss=rss, read_begin_ns=begin, read_end_ns=end))
-                    memory = {line.split()[0]: int(line.split()[1])*1024
-                              for line in Path("/proc/meminfo").read_text().splitlines()
-                              if line.startswith(("MemAvailable:", "SwapTotal:", "SwapFree:"))}
+                        rows.append(
+                            dict(
+                                item=value,
+                                identity_before=first,
+                                identity_after=last,
+                                cpu=cpu,
+                                rss=rss,
+                                read_begin_ns=begin,
+                                read_end_ns=end,
+                            )
+                        )
+                    memory = {
+                        line.split()[0]: int(line.split()[1]) * 1024
+                        for line in Path("/proc/meminfo").read_text().splitlines()
+                        if line.startswith(("MemAvailable:", "SwapTotal:", "SwapFree:"))
+                    }
                     disk = shutil.disk_usage(root).free
                     used = memory["SwapTotal:"] - memory["SwapFree:"]
                     over = over + 1 if total > 8 * 1024**3 else 0
-                    if memory["MemAvailable:"] < 4 * 1024**3 or disk < 20 * 1024**3 or used-swap_start > 1024**3 or over >= 2:
+                    if (
+                        memory["MemAvailable:"] < 4 * 1024**3
+                        or disk < 20 * 1024**3
+                        or used - swap_start > 1024**3
+                        or over >= 2
+                    ):
                         raise RuntimeError("outer_resource_stop")
-                    stream.write(json.dumps(dict(at_ns=tick(), processes=rows, total_rss=total,
-                                                  memory=memory, disk_free=disk,
-                                                  swap_start=swap_start, pss_enabled=False))+"\n")
-                    sample_done.wait(max(0, (began+100_000_000-tick())/1e9))
-                if tick()-sampling["last"][own_key][0] > 250_000_000:
+                    stream.write(
+                        json.dumps(
+                            dict(
+                                at_ns=tick(),
+                                processes=rows,
+                                total_rss=total,
+                                memory=memory,
+                                disk_free=disk,
+                                swap_start=swap_start,
+                                pss_enabled=False,
+                            )
+                        )
+                        + "\n"
+                    )
+                    sample_done.wait(max(0, (began + 100_000_000 - tick()) / 1e9))
+                if tick() - sampling["last"][own_key][0] > 250_000_000:
                     raise RuntimeError("outer_observation_end_gap")
                 for key, value in entries.items():
                     if key in sampling["exits"]:
@@ -245,15 +347,24 @@ def outer_entry(root, anchor, fixture=None):
                     observed = value.get("first_exit_observed_ns", tick())
                     previous = sampling["last"].get(key)
                     sampling["exits"][key] = observed
-                    if previous is None or observed-previous[0] > 250_000_000:
+                    if previous is None or observed - previous[0] > 250_000_000:
                         raise RuntimeError("outer_final_exit_gap")
                     if value["role"] == "worker" and sampling["counts"][key] < 2:
                         raise RuntimeError("outer_worker_cpu_points")
-                stream.write(json.dumps(dict(event="outer_sampling_finalized", at_ns=tick(),
-                                              exits=sampling["exits"], valid=True))+"\n")
+                stream.write(
+                    json.dumps(
+                        dict(
+                            event="outer_sampling_finalized",
+                            at_ns=tick(),
+                            exits=sampling["exits"],
+                            valid=True,
+                        )
+                    )
+                    + "\n"
+                )
         except BaseException as exc:
-            sampling.update(valid=False, error=type(exc).__name__+":"+str(exc))
-            stop("outer_real_sampling:"+sampling["error"])
+            sampling.update(valid=False, error=type(exc).__name__ + ":" + str(exc))
+            stop("outer_real_sampling:" + sampling["error"])
 
     try:
         if root != root.resolve() or transition["manifest_sha256"] != anchor:
@@ -265,17 +376,29 @@ def outer_entry(root, anchor, fixture=None):
         manifest = json.loads((root / "manifest.json").read_text())
         if [root.stat().st_dev, root.stat().st_ino] != manifest["root_identity"]:
             raise RuntimeError("outer_root_identity")
-        for name in ("header.json", "authority-start.json", "attempt-index.json", "DONE.json"):
+        for name in (
+            "header.json",
+            "authority-start.json",
+            "attempt-index.json",
+            "DONE.json",
+        ):
             if fixture is None and (root / name).exists():
                 raise RuntimeError("outer_root_consumed")
         library_path = "/usr/lib/x86_64-linux-gnu/libc.so.6"
-        if hashlib.sha256(Path(library_path).read_bytes()).hexdigest() != manifest["native_sources"][str(Path(library_path).resolve())]:
+        if (
+            hashlib.sha256(Path(library_path).read_bytes()).hexdigest()
+            != manifest["native_sources"][str(Path(library_path).resolve())]
+        ):
             raise RuntimeError("outer_libc_source")
         library = ctypes.CDLL(library_path, use_errno=True)
         library.pidfd_open.argtypes = [ctypes.c_int, ctypes.c_uint]
         library.pidfd_open.restype = ctypes.c_int
-        library.pidfd_send_signal.argtypes = [ctypes.c_int, ctypes.c_int,
-                                             ctypes.c_void_p, ctypes.c_uint]
+        library.pidfd_send_signal.argtypes = [
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint,
+        ]
         library.pidfd_send_signal.restype = ctypes.c_int
         if fixture is not None and fixture["mode"] == "capability_failure":
             raise RuntimeError("injected_outer_capability_failure")
@@ -289,45 +412,91 @@ def outer_entry(root, anchor, fixture=None):
             os.close(capability)
         if kernel(first["pid"])["ticks"] != first["ticks"]:
             raise RuntimeError("outer_self_identity")
-        library.prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
-                                  ctypes.c_ulong, ctypes.c_ulong]
+        library.prctl.argtypes = [
+            ctypes.c_int,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+        ]
         library.prctl.restype = ctypes.c_int
         value = ctypes.c_int()
         pointer = ctypes.cast(ctypes.pointer(value), ctypes.c_void_p).value
-        if library.prctl(36, 1, 0, 0, 0) != 0 or library.prctl(37, pointer, 0, 0, 0) != 0 or value.value != 1:
+        if (
+            library.prctl(36, 1, 0, 0, 0) != 0
+            or library.prctl(37, pointer, 0, 0, 0) != 0
+            or value.value != 1
+        ):
             raise RuntimeError("outer_subreaper_capability")
         sampler = threading.Thread(target=resource_loop, name="outer-real-sampler")
         sampler.start()
         here, child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
         here.setblocking(False)
         output = (directory / "project-output.txt").open("xb", buffering=0)
-        command = [manifest["project_python"], str(Path(__file__).resolve()),
-                   "--protected-project", str(root), str(child.fileno())]
+        command = [
+            manifest["project_python"],
+            str(Path(__file__).resolve()),
+            "--protected-project",
+            str(root),
+            str(child.fileno()),
+        ]
         gate_parent = gate_child = None
         intent = None
         inherited = (child.fileno(),)
         if fixture is not None:
             from run_snapshot_control import SCRIPT
-            intent = parent_client.rpc("fixture_intent", mode=fixture["mode"], nonce=fixture["nonce"])
-            gate_parent, gate_child = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
-            command = [manifest["project_python"], SCRIPT, "role", "worker", str(directory),
-                       str(gate_child.fileno()), json.dumps(dict(
-                           command=[manifest["project_python"], str(Path(__file__).resolve()),
-                                    "--protected-fixture", str(root), str(child.fileno()), json.dumps(fixture)],
-                           operational_ns=fixture["operational_ns"], hard_ns=fixture["hard_ns"],
-                           inherit_authority=False, attempt=intent["attempt"],
-                       ))]
+
+            intent = parent_client.rpc(
+                "fixture_intent", mode=fixture["mode"], nonce=fixture["nonce"]
+            )
+            gate_parent, gate_child = socket.socketpair(
+                socket.AF_UNIX, socket.SOCK_SEQPACKET
+            )
+            command = [
+                manifest["project_python"],
+                SCRIPT,
+                "role",
+                "worker",
+                str(directory),
+                str(gate_child.fileno()),
+                json.dumps(
+                    dict(
+                        command=[
+                            manifest["project_python"],
+                            str(Path(__file__).resolve()),
+                            "--protected-fixture",
+                            str(root),
+                            str(child.fileno()),
+                            json.dumps(fixture),
+                        ],
+                        operational_ns=fixture["operational_ns"],
+                        hard_ns=fixture["hard_ns"],
+                        inherit_authority=False,
+                        attempt=intent["attempt"],
+                    )
+                ),
+            ]
             inherited += (gate_child.fileno(),)
         spawn_before = tick()
-        proc = subprocess.Popen(command, pass_fds=inherited, cwd=manifest["cwd"],
-                                env=manifest["environment"], stdin=subprocess.DEVNULL,
-                                stdout=output, stderr=subprocess.STDOUT,
-                                start_new_session=True)
+        proc = subprocess.Popen(
+            command,
+            pass_fds=inherited,
+            cwd=manifest["cwd"],
+            env=manifest["environment"],
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
         # Popen is owned before any subsequent identity/descriptor operation.
         fd = outer_pidfd_open(proc.pid, 0)
         outer_pidfd_signal(fd, 0)
-        item = dict(kernel(proc.pid), spawn_before_ns=spawn_before,
-                    spawn_after_ns=tick(), role="project")
+        item = dict(
+            kernel(proc.pid),
+            spawn_before_ns=spawn_before,
+            spawn_after_ns=tick(),
+            role="project",
+        )
         key = str(proc.pid) + ":" + str(item["ticks"])
         entries[key], descriptors[key] = item, fd
         if kernel(proc.pid)["ticks"] != item["ticks"]:
@@ -336,8 +505,14 @@ def outer_entry(root, anchor, fixture=None):
         guard.start()
         if fixture is not None:
             from run_snapshot_control import await_ancestors, send
-            registered = dict(item, role="worker_child", birth_lower=spawn_before,
-                              attempt=intent["attempt"], inferred=True)
+
+            registered = dict(
+                item,
+                role="worker_child",
+                birth_lower=spawn_before,
+                attempt=intent["attempt"],
+                inferred=True,
+            )
             parent_client.rpc("identity", item=registered, intent=intent["id"])
             await_ancestors(parent_client, registered, fixture["operational_ns"])
             send(gate_parent, b"G", deadline=fixture["operational_ns"])
@@ -362,27 +537,43 @@ def outer_entry(root, anchor, fixture=None):
                             fds.frombytes(data)
                             incoming.extend(fds)
                     value = message["item"]
-                    active = sum(not select.select([d], [], [], 0)[0] for d in descriptors.values())
+                    active = sum(
+                        not select.select([d], [], [], 0)[0]
+                        for d in descriptors.values()
+                    )
                     if len(incoming) != 1 or active >= 64:
                         for d in incoming:
                             os.close(d)
                         raise RuntimeError("outer_registration_capacity")
                     actual = kernel(value["pid"])
                     known_parents = {i["pid"] for i in entries.values()}
-                    if actual["ticks"] != value["ticks"] or actual["ppid"] not in known_parents:
+                    if (
+                        actual["ticks"] != value["ticks"]
+                        or actual["ppid"] not in known_parents
+                    ):
                         os.close(incoming[0])
                         raise RuntimeError("outer_registration_identity")
                     entry_key = str(value["pid"]) + ":" + str(value["ticks"])
                     if entry_key in descriptors:
                         os.close(incoming[0])
                         raise RuntimeError("outer_registration_duplicate")
-                    entries[entry_key], descriptors[entry_key] = dict(value), incoming[0]
-                    here.send(json.dumps(dict(event="registered", key=entry_key)).encode())
+                    entries[entry_key], descriptors[entry_key] = (
+                        dict(value),
+                        incoming[0],
+                    )
+                    here.send(
+                        json.dumps(dict(event="registered", key=entry_key)).encode()
+                    )
                 elif kind == "ready":
                     if tick() > state["O"] or state["stop"] is not None:
                         raise RuntimeError("late_project_ready")
-                    state.update(ready=True, H=transition["D_val"] if fixture is None else h,
-                                 O=transition["D_val"] if fixture is None else fixture["operational_ns"])
+                    state.update(
+                        ready=True,
+                        H=transition["D_val"] if fixture is None else h,
+                        O=transition["D_val"]
+                        if fixture is None
+                        else fixture["operational_ns"],
+                    )
                 elif kind == "fatal":
                     stop(message["error"], message["at_ns"], message.get("C_end"))
                 elif kind == "project_done":
@@ -412,7 +603,9 @@ def outer_entry(root, anchor, fixture=None):
                     k = str(proc.pid) + ":" + str(actual["ticks"])
                     entries[k], descriptors[k] = actual, fd
                 except ProcessLookupError:
-                    events.append(dict(event="unregistered_direct_child_exited", at_ns=tick()))
+                    events.append(
+                        dict(event="unregistered_direct_child_exited", at_ns=tick())
+                    )
                 except OSError as exc:
                     stop("outer_unresolved_direct_handle:" + str(exc))
             if state["stop"] is None and not state["done"]:
@@ -421,10 +614,13 @@ def outer_entry(root, anchor, fixture=None):
                 guard = threading.Thread(target=cutoff, name="outer-cutoff")
                 guard.start()
             end = state["stop"]["C_end"] if state["stop"] else state["H"]
-            while tick() < end and any(not select.select([d], [], [], 0)[0] for d in descriptors.values()):
+            while tick() < end and any(
+                not select.select([d], [], [], 0)[0] for d in descriptors.values()
+            ):
                 time.sleep(0.005)
-            tail = (proc.pid in {i["pid"] for i in entries.values()}
-                    and all(select.select([d], [], [], 0)[0] for d in descriptors.values()))
+            tail = proc.pid in {i["pid"] for i in entries.values()} and all(
+                select.select([d], [], [], 0)[0] for d in descriptors.values()
+            )
             if not tail:
                 stop("outer_cleanup_deadline", end)
             try:
@@ -443,7 +639,7 @@ def outer_entry(root, anchor, fixture=None):
         joined = guard is None or not guard.is_alive()
         sample_done.set()
         if sampler is not None:
-            sampler.join(max(0, (state["H"]-tick())/1e9))
+            sampler.join(max(0, (state["H"] - tick()) / 1e9))
             joined = joined and not sampler.is_alive()
         if not sampling["valid"]:
             stop("outer_measurement_invalid")
@@ -454,7 +650,9 @@ def outer_entry(root, anchor, fixture=None):
                 current = kernel(int(path.parent.name))
             except FileNotFoundError:
                 continue
-            if (current["pgid"], current["session"]) in groups and current["state"] != "Z":
+            if (current["pgid"], current["session"]) in groups and current[
+                "state"
+            ] != "Z":
                 scans.append(dict(current, at_ns=tick()))
         if scans:
             tail = False
@@ -490,29 +688,54 @@ def outer_entry(root, anchor, fixture=None):
         if fixture is None and gap > 60_000_000_000:
             stop("outer_gap_exceeded")
         cleanup_ok = not state["stop"] or tick() <= state["stop"]["C_end"]
-        result = dict(state=state, events=events, entries=entries, physical_tail_known=tail,
-                      cleanup_within_deadline=cleanup_ok,
-                      measurement_valid=sampling["valid"] if sampler is not None else None,
-                      sampling=sampling, group_scans=scans,
-                      threads_joined=joined, at_ns=tick(), v=v,
-                      g_ns=gap, final_chat_return="unmeasured")
+        result = dict(
+            state=state,
+            events=events,
+            entries=entries,
+            physical_tail_known=tail,
+            cleanup_within_deadline=cleanup_ok,
+            measurement_valid=sampling["valid"] if sampler is not None else None,
+            sampling=sampling,
+            group_scans=scans,
+            threads_joined=joined,
+            at_ns=tick(),
+            v=v,
+            g_ns=gap,
+            final_chat_return="unmeasured",
+        )
         result["fixture"] = fixture
-        (directory / "outer-result.json").write_text(json.dumps(result, indent=2)+"\n")
-        stop_path = directory / ("STOP.json" if fixture is None else "fixture-STOP.json")
+        (directory / "outer-result.json").write_text(
+            json.dumps(result, indent=2) + "\n"
+        )
+        stop_path = directory / (
+            "STOP.json" if fixture is None else "fixture-STOP.json"
+        )
         if state["stop"] and not stop_path.exists():
             with stop_path.open("x") as stream:
                 json.dump(state["stop"], stream, indent=2)
         if fixture is not None and registered is not None:
-            parent_client.rpc("exited", item=registered,
-                              at_ns=entries[key].get("first_exit_observed_ns", tick()))
+            parent_client.rpc(
+                "exited",
+                item=registered,
+                at_ns=entries[key].get("first_exit_observed_ns", tick()),
+            )
     if fixture is not None:
         expected = fixture["expected"]
         reason = state["stop"]["reason"] if state["stop"] else None
-        qualified = (reason in expected and tail and joined and sampling["valid"]
-                     and cleanup_ok)
+        qualified = (
+            reason in expected and tail and joined and sampling["valid"] and cleanup_ok
+        )
         parent_client.rpc("channel_closing")
         return 0 if qualified else 1
-    return 0 if state["done"] and state["stop"] is None and tail and joined and sampling["valid"] else 1
+    return (
+        0
+        if state["done"]
+        and state["stop"] is None
+        and tail
+        and joined
+        and sampling["valid"]
+        else 1
+    )
 
 
 # The host and the earliest project exception boundary need stdlib only.
@@ -524,7 +747,11 @@ if __name__ == "__main__" and len(sys.argv) > 1:
     if sys.argv[1] == "--outer-fixture":
         raise SystemExit(outer_entry(Path(sys.argv[2]), None, sys.argv[3]))
     if sys.argv[1] == "--protected-fixture":
-        raise SystemExit(protected_project(Path(sys.argv[2]), int(sys.argv[3]), json.loads(sys.argv[4])))
+        raise SystemExit(
+            protected_project(
+                Path(sys.argv[2]), int(sys.argv[3]), json.loads(sys.argv[4])
+            )
+        )
 
 import pytest  # noqa: E402
 
@@ -607,7 +834,9 @@ def admission_reason(header, job, tick, *, stopped=False, pending=False):
     return None
 
 
-def bootstrap_header(root, channel, bootstrap, *, actual_boot, root_stat, expected_root=None):
+def bootstrap_header(
+    root, channel, bootstrap, *, actual_boot, root_stat, expected_root=None
+):
     """Pure validation also used by frozen refusal-only V06 views."""
     lines = channel["output"].splitlines()
     if len(lines) != 3:
@@ -638,7 +867,9 @@ def bootstrap_header(root, channel, bootstrap, *, actual_boot, root_stat, expect
     if bootstrap["root"] != str(root):
         raise RuntimeError("bootstrap_root")
     canonical(str(root), root)
-    if expected_root is not None and (root_stat.st_dev, root_stat.st_ino) != tuple(expected_root):
+    if expected_root is not None and (root_stat.st_dev, root_stat.st_ino) != tuple(
+        expected_root
+    ):
         raise RuntimeError("bootstrap_root_identity")
     swap = {}
     for line in bootstrap["swap_raw"]:
@@ -669,10 +900,16 @@ def bootstrap_header(root, channel, bootstrap, *, actual_boot, root_stat, expect
 def adopt(root, manifest):
     root = Path(root)
     canonical(str(root), root)
-    if any((root / p).exists() for p in (
-        "header.json", "authority-start.json", "attempt-index.json", "STOP.json",
-        "DONE.json",
-    )):
+    if any(
+        (root / p).exists()
+        for p in (
+            "header.json",
+            "authority-start.json",
+            "attempt-index.json",
+            "STOP.json",
+            "DONE.json",
+        )
+    ):
         raise RuntimeError("root_already_consumed")
     d = root.parent.parent
     if digest(d / "g0-tool-repair-followup-plan-v2.md") != PLAN_HASH:
@@ -683,23 +920,35 @@ def adopt(root, manifest):
     bootstrap = read(root / "bootstrap.json")
     if bootstrap["t_r"] != manifest["t_new"]:
         raise RuntimeError("bootstrap_time_binding")
-    if hashlib.sha256(channel["cmd"].encode()).hexdigest() != manifest["bootstrap_command_sha256"]:
+    if (
+        hashlib.sha256(channel["cmd"].encode()).hexdigest()
+        != manifest["bootstrap_command_sha256"]
+    ):
         raise RuntimeError("bootstrap_command_binding")
     budget = read(root / "budget.json")
     if budget.get("stop") or budget.get("state") != "SEALED":
         raise RuntimeError("root_already_consumed")
     command = channel["cmd"]
-    if not all(s in command for s in (
-        "/usr/bin/timeout --signal=TERM --kill-after=1s 29s",
-        "/usr/bin/python3 -I -S -c", str(root), AUTHORIZATION,
-    )):
+    if not all(
+        s in command
+        for s in (
+            "/usr/bin/timeout --signal=TERM --kill-after=1s 29s",
+            "/usr/bin/python3 -I -S -c",
+            str(root),
+            AUTHORIZATION,
+        )
+    ):
         raise RuntimeError("bootstrap_command")
     header = bootstrap_header(
-        root, channel, bootstrap,
+        root,
+        channel,
+        bootstrap,
         actual_boot=Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
         root_stat=root.stat(),
-        expected_root=(read(root / "bootstrap-adoption-audit.json")["root_device"],
-                       read(root / "bootstrap-adoption-audit.json")["root_inode"]),
+        expected_root=(
+            read(root / "bootstrap-adoption-audit.json")["root_device"],
+            read(root / "bootstrap-adoption-audit.json")["root_inode"],
+        ),
     )
     for path, expected in manifest["binaries"].items():
         if digest(path) != expected:
@@ -718,8 +967,10 @@ def adopt(root, manifest):
 
 
 def latch_stop(previous, reason, tick):
-    return previous if previous is not None else dict(
-        reason=reason, at_ns=tick, received_ns=clock()
+    return (
+        previous
+        if previous is not None
+        else dict(reason=reason, at_ns=tick, received_ns=clock())
     )
 
 
@@ -735,13 +986,21 @@ class StopCell:
         with self.lock:
             first = self.value is None
             if first:
-                self.value = dict(reason=reason, at_ns=tick, first_reason_at_ns=tick,
-                                  received_ns=clock())
+                self.value = dict(
+                    reason=reason,
+                    at_ns=tick,
+                    first_reason_at_ns=tick,
+                    received_ns=clock(),
+                )
             else:
                 self.later.append(dict(reason=reason, at_ns=tick, received_ns=clock()))
                 self.value["at_ns"] = min(self.value["at_ns"], tick)
-            end = min(tick+20*NS, hard-10*NS, hard if ancestor is None else ancestor)
-            self.value["ancestor_end_ns"] = min(self.value.get("ancestor_end_ns", end), end)
+            end = min(
+                tick + 20 * NS, hard - 10 * NS, hard if ancestor is None else ancestor
+            )
+            self.value["ancestor_end_ns"] = min(
+                self.value.get("ancestor_end_ns", end), end
+            )
             return first, self.value
 
 
@@ -799,8 +1058,14 @@ class Resources:
             stop()
             if thread.ident is not None:
                 thread.join(max(0, (deadline - clock()) / NS))
-            self.events.append(dict(event="thread_join", name=thread.name,
-                                    alive=thread.is_alive(), at_ns=clock()))
+            self.events.append(
+                dict(
+                    event="thread_join",
+                    name=thread.name,
+                    alive=thread.is_alive(),
+                    at_ns=clock(),
+                )
+            )
         joined = all(not thread.is_alive() for thread, _ in self.threads)
         if joined:
             for name, close in reversed(self.closers):
@@ -815,8 +1080,16 @@ class Resources:
 
 
 INITIALIZATION_STAGES = (
-    "capability", "lease", "selector", "monitor", "fd", "writer",
-    "sampler_started", "thread", "cutoff_thread", "client",
+    "capability",
+    "lease",
+    "selector",
+    "monitor",
+    "fd",
+    "writer",
+    "sampler_started",
+    "thread",
+    "cutoff_thread",
+    "client",
 )
 
 
@@ -828,8 +1101,9 @@ def initialize_resources(owner, operations, fail_after=None):
         raise RuntimeError("initialization_fault_not_frozen")
     for stage, operation in operations.items():
         setattr(owner, stage, operation())
-        owner.resources.events.append(dict(event="initialization_stage", stage=stage,
-                                          at_ns=clock()))
+        owner.resources.events.append(
+            dict(event="initialization_stage", stage=stage, at_ns=clock())
+        )
         if fail_after == stage:
             raise RuntimeError("injected_initialization_after:" + stage)
 
@@ -876,7 +1150,9 @@ def finite_initialization_fixture(directory, fault):
     def trip(reason, at_ns=None):
         with cause_lock:
             if not cause:
-                cause.append(dict(reason=reason, at_ns=clock() if at_ns is None else at_ns))
+                cause.append(
+                    dict(reason=reason, at_ns=clock() if at_ns is None else at_ns)
+                )
 
     def capability():
         if fault == "capability_call":
@@ -886,16 +1162,30 @@ def finite_initialization_fixture(directory, fault):
     def lease():
         if fault == "lease_open":
             raise OSError("injected_lease_open_failure")
-        value = state.resources.acquire("fixture_lease", lambda: (directory / "fixture.lock").open("x"), lambda v: v.close())
+        value = state.resources.acquire(
+            "fixture_lease",
+            lambda: (directory / "fixture.lock").open("x"),
+            lambda v: v.close(),
+        )
         fcntl.flock(value, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return value
 
     def monitor():
-        value = state.resources.acquire("fixture_monitor", lambda: RealMonitor(
-            directory, Client.current().header, trip, autostart=False),
-            lambda v: v.close_descriptors())
-        value.register(dict(identity(os.getpid()), role="fixture_observer",
-                            birth_lower=clock(), observation_only=True))
+        value = state.resources.acquire(
+            "fixture_monitor",
+            lambda: RealMonitor(
+                directory, Client.current().header, trip, autostart=False
+            ),
+            lambda v: v.close_descriptors(),
+        )
+        value.register(
+            dict(
+                identity(os.getpid()),
+                role="fixture_observer",
+                birth_lower=clock(),
+                observation_only=True,
+            )
+        )
         return value
 
     def channel():
@@ -915,6 +1205,7 @@ def finite_initialization_fixture(directory, fault):
 
     def wire_loop():
         import select
+
         try:
             while not wire_done.is_set():
                 if not select.select([state.server], [], [], 0.005)[0]:
@@ -939,25 +1230,53 @@ def finite_initialization_fixture(directory, fault):
         def stop_writer():
             done.set()
             blocked.set()
-        return state.resources.start("fixture-writer", lambda: journal_loop(
-            logs, done, directory / "fixture-journal.jsonl", trip, errors.append,
-            blocker=blocked if fault == "writer_ack_block" else None,
-            opener=broken_opener if fault == "writer_io" else None,
-        ), stop_writer)
+
+        return state.resources.start(
+            "fixture-writer",
+            lambda: journal_loop(
+                logs,
+                done,
+                directory / "fixture-journal.jsonl",
+                trip,
+                errors.append,
+                blocker=blocked if fault == "writer_ack_block" else None,
+                opener=broken_opener if fault == "writer_io" else None,
+            ),
+            stop_writer,
+        )
 
     try:
-        initialize_resources(state, dict(
-            capability=capability, lease=lease,
-            selector=lambda: state.resources.acquire("fixture_selector", selectors.DefaultSelector, lambda v: v.close()),
-            monitor=monitor, fd=channel, writer=writer,
-            sampler_started=lambda: state.monitor.start(),
-            thread=lambda: state.resources.start("fixture-wire", wire_loop, wire_done.set),
-            cutoff_thread=lambda: state.resources.start("fixture-cutoff", lambda: cutoff_done.wait(max(0, (context["operational_ns"] - clock()) / NS)), cutoff_done.set),
-            client=lambda: Client(state.fd),
-        ), fail_after=fault if fault in INITIALIZATION_STAGES else None)
+        initialize_resources(
+            state,
+            dict(
+                capability=capability,
+                lease=lease,
+                selector=lambda: state.resources.acquire(
+                    "fixture_selector", selectors.DefaultSelector, lambda v: v.close()
+                ),
+                monitor=monitor,
+                fd=channel,
+                writer=writer,
+                sampler_started=lambda: state.monitor.start(),
+                thread=lambda: state.resources.start(
+                    "fixture-wire", wire_loop, wire_done.set
+                ),
+                cutoff_thread=lambda: state.resources.start(
+                    "fixture-cutoff",
+                    lambda: cutoff_done.wait(
+                        max(0, (context["operational_ns"] - clock()) / NS)
+                    ),
+                    cutoff_done.set,
+                ),
+                client=lambda: Client(state.fd),
+            ),
+            fail_after=fault if fault in INITIALIZATION_STAGES else None,
+        )
         if fault in {"writer_io", "writer_ack_block"}:
             ack = threading.Event()
-            logs.put_nowait((dict(kind="fixture_actual_write", nonce=frozen["nonce"]), ack))
+            logs.put_nowait(
+                (dict(kind="fixture_actual_write", nonce=frozen["nonce"]), ack)
+            )
             if not ack.wait(0.05):
                 trip("persistence_ack_timeout")
             if fault == "writer_io":
@@ -979,16 +1298,28 @@ def finite_initialization_fixture(directory, fault):
         complete = state.resources.close(end)
         after_fds = set(os.listdir("/proc/self/fd"))
         after_threads = {t.ident for t in threading.enumerate()}
-        result = dict(cause=cause, errors=errors, resources=state.resources.events,
-                      rollback_complete=complete, c=c, C_end=end, at_ns=clock(),
-                      fd_set_restored=before_fds == after_fds,
-                      threads_restored=before_threads == after_threads,
-                      fault=fault, nonce=frozen["nonce"],
-                      scope="production resource transaction, no root initialization or business license")
+        result = dict(
+            cause=cause,
+            errors=errors,
+            resources=state.resources.events,
+            rollback_complete=complete,
+            c=c,
+            C_end=end,
+            at_ns=clock(),
+            fd_set_restored=before_fds == after_fds,
+            threads_restored=before_threads == after_threads,
+            fault=fault,
+            nonce=frozen["nonce"],
+            scope="production resource transaction, no root initialization or business license",
+        )
         save(directory / "fixture-rollback.json", result)
-    if not (result["rollback_complete"] and result["fd_set_restored"]
-            and result["threads_restored"] and result["at_ns"] <= end
-            and cause[0]["reason"] == frozen["expected"]):
+    if not (
+        result["rollback_complete"]
+        and result["fd_set_restored"]
+        and result["threads_restored"]
+        and result["at_ns"] <= end
+        and cause[0]["reason"] == frozen["expected"]
+    ):
         raise RuntimeError("initialization_fixture_rejected:" + json.dumps(result))
     return result
 
@@ -1032,6 +1363,7 @@ class Authority:
         self.domain_cells = {}
         self.control_done = threading.Event()
         try:
+
             def capability():
                 value = capability_check(root)
                 save(self.root / "project-capability.json", value)
@@ -1039,7 +1371,8 @@ class Authority:
 
             def lease():
                 value = self.resources.acquire(
-                    "lease", lambda: (self.root / "authority.lock").open("x"),
+                    "lease",
+                    lambda: (self.root / "authority.lock").open("x"),
                     lambda item: item.close(),
                 )
                 fcntl.flock(value, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1052,57 +1385,96 @@ class Authority:
                 self.resources.closers.append(("startup_fd", lambda: os.close(value)))
                 return value
 
-            initialize_resources(self, dict(
-                capability=capability, lease=lease,
-                selector=lambda: self.resources.acquire(
-                    "selector", selectors.DefaultSelector, lambda value: value.close()),
-                monitor=lambda: self.resources.acquire(
-                    "monitor", lambda: RealMonitor(
-                        self.root, header, self.stop, authority=self,
-                        root_monitor=True, autostart=False),
-                    lambda value: value.close_descriptors()),
-                fd=channel,
-                writer=lambda: self.resources.start("root-writer", self.write_loop,
-                                                     self.writer_done.set),
-                sampler_started=lambda: self.monitor.start(),
-                thread=lambda: self.resources.start("root-control", self.safe_loop,
-                                                     self.control_done.set),
-                cutoff_thread=lambda: self.resources.start("root-cutoff", self.safe_cutoff,
-                                                            self.cutoff_done.set),
-                client=lambda: Client(self.fd),
-            ))
+            initialize_resources(
+                self,
+                dict(
+                    capability=capability,
+                    lease=lease,
+                    selector=lambda: self.resources.acquire(
+                        "selector",
+                        selectors.DefaultSelector,
+                        lambda value: value.close(),
+                    ),
+                    monitor=lambda: self.resources.acquire(
+                        "monitor",
+                        lambda: RealMonitor(
+                            self.root,
+                            header,
+                            self.stop,
+                            authority=self,
+                            root_monitor=True,
+                            autostart=False,
+                        ),
+                        lambda value: value.close_descriptors(),
+                    ),
+                    fd=channel,
+                    writer=lambda: self.resources.start(
+                        "root-writer", self.write_loop, self.writer_done.set
+                    ),
+                    sampler_started=lambda: self.monitor.start(),
+                    thread=lambda: self.resources.start(
+                        "root-control", self.safe_loop, self.control_done.set
+                    ),
+                    cutoff_thread=lambda: self.resources.start(
+                        "root-cutoff", self.safe_cutoff, self.cutoff_done.set
+                    ),
+                    client=lambda: Client(self.fd),
+                ),
+            )
         except BaseException as exc:
             self.stop("initialization:" + type(exc).__name__ + ":" + str(exc))
-            end = min(self.header["init_hard_ns"] - 10 * NS,
-                      self.stop_value["at_ns"] + 20 * NS)
+            end = min(
+                self.header["init_hard_ns"] - 10 * NS,
+                self.stop_value["at_ns"] + 20 * NS,
+            )
             if self.monitor is not None:
                 self.monitor.finish(end)
             self.resources.close(end)
-            save(self.root / "initialization-rollback.json", dict(
-                events=self.resources.events, stop=self.stop_value,
-                complete=self.resources.closed, at_ns=clock(), C_end=end,
-            ))
+            save(
+                self.root / "initialization-rollback.json",
+                dict(
+                    events=self.resources.events,
+                    stop=self.stop_value,
+                    complete=self.resources.closed,
+                    at_ns=clock(),
+                    C_end=end,
+                ),
+            )
             raise
 
     def notify_outer(self, value, descriptor=None, ack=False):
         if self.outer is None:
             raise RuntimeError("missing_outer_guard")
         import select
+
         end = min(clock() + 100_000_000, self.header["D_val"])
-        if not self.outer_lock.acquire(timeout=max(0, (end-clock()) / NS)):
+        if not self.outer_lock.acquire(timeout=max(0, (end - clock()) / NS)):
             raise RuntimeError("outer_lock_timeout")
         try:
-            if not select.select([], [self.outer], [], max(0, (end-clock()) / NS))[1]:
+            if not select.select([], [self.outer], [], max(0, (end - clock()) / NS))[1]:
                 raise RuntimeError("outer_send_timeout")
-            ancillary = [] if descriptor is None else [(
-                socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", [descriptor])
-            )]
+            ancillary = (
+                []
+                if descriptor is None
+                else [
+                    (
+                        socket.SOL_SOCKET,
+                        socket.SCM_RIGHTS,
+                        array.array("i", [descriptor]),
+                    )
+                ]
+            )
             self.outer.sendmsg([json.dumps(value).encode()], ancillary)
             if ack:
-                if not select.select([self.outer], [], [], max(0, (end-clock()) / NS))[0]:
+                if not select.select(
+                    [self.outer], [], [], max(0, (end - clock()) / NS)
+                )[0]:
                     raise RuntimeError("outer_ack_timeout")
                 response = json.loads(self.outer.recv(65536))
-                if response != dict(event="registered", key=str(value["item"]["pid"]) + ":" + str(value["item"]["ticks"])):
+                if response != dict(
+                    event="registered",
+                    key=str(value["item"]["pid"]) + ":" + str(value["item"]["ticks"]),
+                ):
                     raise RuntimeError("outer_ack_identity")
         finally:
             self.outer_lock.release()
@@ -1127,25 +1499,37 @@ class Authority:
         while not self.cutoff_done.is_set():
             tick = clock()
             case = self.case
-            if case is not None and (tick >= case["hard_ns"] or ((case["spec"]["owner_required"] or case["spec"]["steps"]) and tick >= case["operational_ns"])):
+            if case is not None and (
+                tick >= case["hard_ns"]
+                or (
+                    (case["spec"]["owner_required"] or case["spec"]["steps"])
+                    and tick >= case["operational_ns"]
+                )
+            ):
                 self.stop("case_deadline", tick)
             if self.collection is not None and tick >= self.collection_o:
                 self.stop("collection_operational_deadline", tick)
             if self.stop_value is not None and self.collection is not None:
-                end = min(self.stop_value["at_ns"] + 20 * NS,
-                          self.collection_h - 10 * NS,
-                          self.stop_value.get("ancestor_end_ns", self.collection_h))
+                end = min(
+                    self.stop_value["at_ns"] + 20 * NS,
+                    self.collection_h - 10 * NS,
+                    self.stop_value.get("ancestor_end_ns", self.collection_h),
+                )
                 for key, fd in list(self.monitor.descriptors.items()):
                     item = self.monitor.entries[key]
                     if item.get("observation_only"):
                         continue
                     if not select.select([fd], [], [], 0)[0]:
-                        sig = signal.SIGKILL if tick >= min(
-                            self.stop_value["at_ns"] + 150_000_000, end - NS
-                        ) else signal.SIGTERM
+                        sig = (
+                            signal.SIGKILL
+                            if tick
+                            >= min(self.stop_value["at_ns"] + 150_000_000, end - NS)
+                            else signal.SIGTERM
+                        )
                         try:
-                            signal_fixed(item, fd, sig, self.cutoff_events,
-                                         self.cutoff_sent)
+                            signal_fixed(
+                                item, fd, sig, self.cutoff_events, self.cutoff_sent
+                            )
                         except Exception:
                             self.evidence_error = "root_signal_failure"
             time.sleep(0.005)
@@ -1163,7 +1547,9 @@ class Authority:
         tick = at_ns if at_ns is not None else clock()
         with self.stop_lock:
             hard = self.case["hard_ns"] if self.case else self.collection_h
-            first, self.stop_value = self.stop_cell.trip(reason, tick, hard, ancestor_end_ns)
+            first, self.stop_value = self.stop_cell.trip(
+                reason, tick, hard, ancestor_end_ns
+            )
             self.state = "STOP"
             self.stop_followups = self.stop_cell.later
             value = dict(self.stop_value)
@@ -1174,8 +1560,14 @@ class Authority:
             except queue.Full:
                 self.evidence_error = "authority_queue_full"
             try:
-                self.notify_outer(dict(event="fatal", error=reason, at_ns=tick,
-                                       C_end=value["ancestor_end_ns"]))
+                self.notify_outer(
+                    dict(
+                        event="fatal",
+                        error=reason,
+                        at_ns=tick,
+                        C_end=value["ancestor_end_ns"],
+                    )
+                )
             except Exception:
                 self.evidence_error = "outer_stop_notification_failed"
         return value
@@ -1183,8 +1575,14 @@ class Authority:
     def write_loop(self):
         def failed(reason):
             self.evidence_error = reason
-        journal_loop(self.logs, self.writer_done, self.root / "authority.jsonl",
-                     self.stop, failed)
+
+        journal_loop(
+            self.logs,
+            self.writer_done,
+            self.root / "authority.jsonl",
+            self.stop,
+            failed,
+        )
 
     def durable(self, kind, **data):
         ack = self.record(kind, **data)
@@ -1199,8 +1597,13 @@ class Authority:
             server.setblocking(False)
             self.selector.register(server, selectors.EVENT_READ)
             self.channels[server.fileno()] = dict(
-                socket=server, role=role, parent=parent_pid, attempt=attempt,
-                pid=None, ticks=None, sequence=0,
+                socket=server,
+                role=role,
+                parent=parent_pid,
+                attempt=attempt,
+                pid=None,
+                ticks=None,
+                sequence=0,
             )
             self.resources.closers.append(("authority_socket", server.close))
             return child.detach()
@@ -1247,12 +1650,15 @@ class Authority:
         if not collection and self.case.get("child_stop"):
             raise RuntimeError("child_domain_stopped")
         path = canonical(data["directory"], self.root)
-        if not collection and not Path(path).is_relative_to(Path(self.case["spec"]["directory"])):
+        if not collection and not Path(path).is_relative_to(
+            Path(self.case["spec"]["directory"])
+        ):
             raise RuntimeError("wrong_case_directory")
         if path in self.paths:
             raise RuntimeError("attempt_already_used")
         pending = [
-            n for n in self.nodes.values()
+            n
+            for n in self.nodes.values()
             if n["state"] == "PENDING" and n["parent"] == parent
         ]
         if pending:
@@ -1260,7 +1666,11 @@ class Authority:
         if not collection:
             parent_node = self.nodes[parent]
             nested = not parent_node["data"].get("job", {}).get("collection")
-            allowed = parent_node["step"].get("children", []) if nested else self.case["spec"]["steps"]
+            allowed = (
+                parent_node["step"].get("children", [])
+                if nested
+                else self.case["spec"]["steps"]
+            )
             position = parent_node.get("child_step", 0) if nested else self.case["step"]
             if position >= len(allowed):
                 raise RuntimeError("step_already_consumed")
@@ -1272,8 +1682,14 @@ class Authority:
             else:
                 self.case["step"] += 1
         else:
-            step = dict(op="attempt", fault=None, expected=None,
-                        fault_nonce=self.manifest["collections"][self.collection - 1]["fault_nonce"])
+            step = dict(
+                op="attempt",
+                fault=None,
+                expected=None,
+                fault_nonce=self.manifest["collections"][self.collection - 1][
+                    "fault_nonce"
+                ],
+            )
         check_sources(self.manifest["sources"])
         if op == "attempt":
             job = data["job"]
@@ -1300,9 +1716,16 @@ class Authority:
         self.serial += 1
         key = str(self.serial)
         node = dict(
-            id=key, kind=op, parent=parent, state="PENDING", owner=ch["pid"],
-            directory=path, case=self.case["nodeid"] if self.case else None,
-            step=step, data=data, start_ns=clock(),
+            id=key,
+            kind=op,
+            parent=parent,
+            state="PENDING",
+            owner=ch["pid"],
+            directory=path,
+            case=self.case["nodeid"] if self.case else None,
+            step=step,
+            data=data,
+            start_ns=clock(),
         )
         self.nodes[key] = node
         self.paths.add(path)
@@ -1318,14 +1741,20 @@ class Authority:
             ancestors.append(parent)
             parent = self.nodes[parent]["parent"]
         required = ancestors if item["role"] not in {"S", "W"} else ancestors[1:]
-        item = dict(item, ancestor_nodes=ancestors, controller_nodes=required,
-                    controller_acknowledged=previous.get("controller_acknowledged", []),
-                    acknowledged=previous.get("acknowledged", []))
+        item = dict(
+            item,
+            ancestor_nodes=ancestors,
+            controller_nodes=required,
+            controller_acknowledged=previous.get("controller_acknowledged", []),
+            acknowledged=previous.get("acknowledged", []),
+        )
         self.identities[key] = item
         if key not in self.outer_registered:
             descriptor = pidfd_open(item["pid"])
             try:
-                self.notify_outer(dict(event="register", item=item), descriptor, ack=True)
+                self.notify_outer(
+                    dict(event="register", item=item), descriptor, ack=True
+                )
                 self.outer_registered.add(key)
             finally:
                 os.close(descriptor)
@@ -1364,27 +1793,45 @@ class Authority:
                 sources[next(iter(sources))] = "0" * 64
                 check_sources(sources)
             elif variant in {"budget_equal", "budget_one_ns", "expired"}:
-                header = dict(self.header, D_work=31 * NS, D_total=631 * NS,
-                              D_val=31 * NS)
-                job = dict(stage="G0", start_ns=NS, operational_ns=6 * NS,
-                           hard_ns=31 * NS, parent_operational_ns=31 * NS,
-                           budget=str(self.root / "header.json"),
-                           batch_directory=str(self.root))
+                header = dict(
+                    self.header, D_work=31 * NS, D_total=631 * NS, D_val=31 * NS
+                )
+                job = dict(
+                    stage="G0",
+                    start_ns=NS,
+                    operational_ns=6 * NS,
+                    hard_ns=31 * NS,
+                    parent_operational_ns=31 * NS,
+                    budget=str(self.root / "header.json"),
+                    batch_directory=str(self.root),
+                )
                 if variant == "budget_one_ns":
                     header["D_work"] -= 1
-                reason = admission_reason(header, job, 6 * NS if variant == "expired" else NS)
+                reason = admission_reason(
+                    header, job, 6 * NS if variant == "expired" else NS
+                )
                 return dict(reason=reason, grants_spawn=False)
             else:
-                bootstrap_header(self.root, channel, bootstrap,
-                                 actual_boot=self.header["boot_id"], root_stat=stat,
-                                 expected_root=expected_root)
+                bootstrap_header(
+                    self.root,
+                    channel,
+                    bootstrap,
+                    actual_boot=self.header["boot_id"],
+                    root_stat=stat,
+                    expected_root=expected_root,
+                )
         except RuntimeError as exc:
             return dict(reason=str(exc), grants_spawn=False)
         return dict(reason=None, grants_spawn=False)
 
     def call(self, ch, request):
         op, data = request["op"], request.get("data", {})
-        if ch.get("closing") and op not in {"status", "close", "exited", "channel_closing"}:
+        if ch.get("closing") and op not in {
+            "status",
+            "close",
+            "exited",
+            "channel_closing",
+        }:
             raise RuntimeError("channel_business_closed")
         domain = self.domains.get(data.get("_domain"))
         if data.get("_domain") and op not in {"domain_start", "hello"}:
@@ -1394,20 +1841,31 @@ class Authority:
                 variant = data["variant"]
                 if variant != domain.get("event"):
                     raise RuntimeError("domain_event_not_frozen")
+
                 def trip(reason):
                     cell = self.domain_cells.setdefault(data["_domain"], StopCell())
                     _, domain["stop"] = cell.trip(reason, clock(), self.case["hard_ns"])
+
                 if variant == "queue_full":
-                    target = self.domain_queues.setdefault(data["_domain"], queue.Queue(maxsize=1))
+                    target = self.domain_queues.setdefault(
+                        data["_domain"], queue.Queue(maxsize=1)
+                    )
                     enqueue_or_stop(target, dict(value=1), trip)
                     enqueue_or_stop(target, dict(value=2), trip)
                 elif variant == "persist_fail":
+
                     def broken(path, mode):
                         raise OSError("EXPECTED_PERSISTENCE_FAILURE")
-                    persist_row(self.root / "unused-domain-row", {}, trip, opener=broken)
+
+                    persist_row(
+                        self.root / "unused-domain-row", {}, trip, opener=broken
+                    )
                 elif variant in {"duplicate_stop", "lost_ack"}:
                     trip("domain_first_stop")
-                    threads = [threading.Thread(target=trip, args=("domain_late_stop",)) for _ in range(2)]
+                    threads = [
+                        threading.Thread(target=trip, args=("domain_late_stop",))
+                        for _ in range(2)
+                    ]
                     for thread in threads:
                         thread.start()
                     for thread in threads:
@@ -1424,14 +1882,23 @@ class Authority:
                     raise RuntimeError("domain_stopped")
                 raise RuntimeError("domain_has_no_spawn_grant")
             if op in {"attempt", "diagnose"}:
-                raise RuntimeError("domain_stopped" if domain.get("stop") else "domain_has_no_spawn_grant")
+                raise RuntimeError(
+                    "domain_stopped"
+                    if domain.get("stop")
+                    else "domain_has_no_spawn_grant"
+                )
             if op == "stop":
-                expected_reason = domain.get("reason") or ("pytest_" + domain["phase"] + "_failure")
+                expected_reason = domain.get("reason") or (
+                    "pytest_" + domain["phase"] + "_failure"
+                )
                 proof = domain.get("injection")
                 allowed = [expected_reason] + domain.get("secondary_reasons", [])
-                if (data["reason"] not in allowed or proof is None
-                        or data.get("nonce") != domain["nonce"]
-                        or data.get("marker") != proof["marker"]):
+                if (
+                    data["reason"] not in allowed
+                    or proof is None
+                    or data.get("nonce") != domain["nonce"]
+                    or data.get("marker") != proof["marker"]
+                ):
                     self.stop("unexpected_domain_failure:" + data["reason"])
                     raise RuntimeError("unexpected_domain_failure")
                 domain.setdefault("stop", dict(reason=data["reason"], at_ns=clock()))
@@ -1451,16 +1918,30 @@ class Authority:
                 domain["position"] += 1
                 return True
             if op == "session_context":
-                return dict(nodeids=domain["nodeids"], domain=True,
-                            marker=domain["marker"], nonce=domain["nonce"],
-                            expected_collection_failure=bool(domain.get("injection")
-                                and domain.get("stop", {}).get("reason") == "pytest_collection_failure"))
+                return dict(
+                    nodeids=domain["nodeids"],
+                    domain=True,
+                    marker=domain["marker"],
+                    nonce=domain["nonce"],
+                    expected_collection_failure=bool(
+                        domain.get("injection")
+                        and domain.get("stop", {}).get("reason")
+                        == "pytest_collection_failure"
+                    ),
+                )
             if op == "domain_injection":
-                if (domain.get("injection") or data["marker"] != domain["marker"]
-                        or data["nonce"] != domain["nonce"]):
+                if (
+                    domain.get("injection")
+                    or data["marker"] != domain["marker"]
+                    or data["nonce"] != domain["nonce"]
+                ):
                     raise RuntimeError("domain_injection_not_frozen")
                 domain["injection"] = dict(data, at_ns=clock(), pid=ch["pid"])
-                self.durable("domain_injection", domain=data["_domain"], proof=domain["injection"])
+                self.durable(
+                    "domain_injection",
+                    domain=data["_domain"],
+                    proof=domain["injection"],
+                )
                 return True
         self.record("request", op=op, pid=ch["pid"], data=data)
         if op == "domain_start":
@@ -1470,52 +1951,93 @@ class Authority:
             key = data.get("_domain")
             if not specification or key != node["id"] or key in self.domains:
                 raise RuntimeError("domain_not_frozen")
-            self.domains[key] = dict(attempt=node["id"], nodeids=specification["nodeids"],
-                                     phase=specification.get("phase"), reason=specification.get("reason"),
-                                     event=specification.get("event"),
-                                     marker=specification.get("marker"),
-                                     nonce=specification["nonce"],
-                                     secondary_reasons=specification.get("secondary_reasons", []),
-                                     position=0, active=None)
+            self.domains[key] = dict(
+                attempt=node["id"],
+                nodeids=specification["nodeids"],
+                phase=specification.get("phase"),
+                reason=specification.get("reason"),
+                event=specification.get("event"),
+                marker=specification.get("marker"),
+                nonce=specification["nonce"],
+                secondary_reasons=specification.get("secondary_reasons", []),
+                position=0,
+                active=None,
+            )
             return True
         if op == "session_context":
-            return dict(nodeids=[c["nodeid"] for c in self.manifest["collections"][self.collection - 1]["cases"]], domain=False)
+            return dict(
+                nodeids=[
+                    c["nodeid"]
+                    for c in self.manifest["collections"][self.collection - 1]["cases"]
+                ],
+                domain=False,
+            )
         if op == "hello":
             if data.get("_domain"):
                 ch["domain"] = data["_domain"]
             return self.header
         if op == "channel_closing":
             ch["closing"] = True
-            self.durable("channel_business_closed", pid=ch["pid"], attempt=ch["attempt"])
+            self.durable(
+                "channel_business_closed", pid=ch["pid"], attempt=ch["attempt"]
+            )
             return True
         if op == "death_intent":
             fault = self.case["spec"].get("owner_fault") if self.case else None
             if fault != data["fault"]:
                 raise RuntimeError("death_not_frozen")
             target = data["target"]
-            item = next((i for i in self.identities.values() if i["pid"] == target["pid"] and i["ticks"] == target["ticks"]), None)
+            item = next(
+                (
+                    i
+                    for i in self.identities.values()
+                    if i["pid"] == target["pid"] and i["ticks"] == target["ticks"]
+                ),
+                None,
+            )
             if item is None or self.nodes[item["attempt"]]["owner"] != ch["pid"]:
                 raise RuntimeError("death_owner")
             node = self.nodes[item["attempt"]]
             if data.get("nonce") != node["step"]["fault_nonce"]:
                 raise RuntimeError("death_nonce")
-            node["injection"] = dict(kind="owner_death", nonce=data["nonce"],
-                                     target=target, at_ns=data["at_ns"], barrier=fault["barrier"])
-            node["expected_trigger"] = dict(reason=node["step"]["expected"], at_ns=data["at_ns"])
+            node["injection"] = dict(
+                kind="owner_death",
+                nonce=data["nonce"],
+                target=target,
+                at_ns=data["at_ns"],
+                barrier=fault["barrier"],
+            )
+            node["expected_trigger"] = dict(
+                reason=node["step"]["expected"], at_ns=data["at_ns"]
+            )
             for channel in self.channels.values():
                 if channel["pid"] == target["pid"]:
                     channel["closing"] = True
-            self.durable("expected_death_intent", target=target, fault=fault, original_ns=data["at_ns"])
+            self.durable(
+                "expected_death_intent",
+                target=target,
+                fault=fault,
+                original_ns=data["at_ns"],
+            )
             return True
         if op == "status":
             return dict(
-                stop=self.stop_value, identities=[i for i in list(self.identities.values())
-                            if self.nodes[i["attempt"]]["state"] == "PENDING"],
-                intents=[i for i in self.intents.values()
-                         if self.nodes[i["attempt"]]["state"] == "PENDING"],
-                expected_triggers={key: value["expected_trigger"] for key, value
-                                   in self.nodes.items() if value["state"] == "PENDING"
-                                   and value.get("expected_trigger")},
+                stop=self.stop_value,
+                identities=[
+                    i
+                    for i in list(self.identities.values())
+                    if self.nodes[i["attempt"]]["state"] == "PENDING"
+                ],
+                intents=[
+                    i
+                    for i in self.intents.values()
+                    if self.nodes[i["attempt"]]["state"] == "PENDING"
+                ],
+                expected_triggers={
+                    key: value["expected_trigger"]
+                    for key, value in self.nodes.items()
+                    if value["state"] == "PENDING" and value.get("expected_trigger")
+                },
             )
         if op == "stop":
             return self.stop(data["reason"], data.get("at_ns"))
@@ -1528,9 +2050,17 @@ class Authority:
             if current["ticks"] != item["ticks"] or current["ppid"] != ch["pid"]:
                 raise RuntimeError("registration_identity")
             key = str(item["pid"]) + ":" + str(item["ticks"])
-            previous = next((i for i in self.identities.values()
-                             if (i["pid"], i["ticks"]) == (item["pid"], item["ticks"])), None)
-            if previous is not None and not (previous.get("inferred") or previous.get("provisional")):
+            previous = next(
+                (
+                    i
+                    for i in self.identities.values()
+                    if (i["pid"], i["ticks"]) == (item["pid"], item["ticks"])
+                ),
+                None,
+            )
+            if previous is not None and not (
+                previous.get("inferred") or previous.get("provisional")
+            ):
                 raise RuntimeError("duplicate_identity")
             if len(self.monitor.active()) >= 64:
                 self.stop("identity_capacity")
@@ -1543,17 +2073,29 @@ class Authority:
         if op == "controller_ack":
             item = self.identities[str(data["pid"]) + ":" + str(data["ticks"])]
             ancestor = data["ancestor"]
-            if ch["role"] != "S" or ch["attempt"] != ancestor or ancestor not in item["controller_nodes"]:
+            if (
+                ch["role"] != "S"
+                or ch["attempt"] != ancestor
+                or ancestor not in item["controller_nodes"]
+            ):
                 raise RuntimeError("controller_owner")
             if ancestor not in item["controller_acknowledged"]:
-                self.durable("controller_watchdog_ack", ancestor=ancestor, pid=item["pid"], ticks=item["ticks"])
+                self.durable(
+                    "controller_watchdog_ack",
+                    ancestor=ancestor,
+                    pid=item["pid"],
+                    ticks=item["ticks"],
+                )
                 item["controller_acknowledged"].append(ancestor)
             return True
         if op == "ancestor_ack":
             key = str(data["pid"]) + ":" + str(data["ticks"])
             item = self.identities[key]
             ancestor = data["ancestor"]
-            if ancestor not in item["ancestor_nodes"] or self.nodes[ancestor]["owner"] != ch["pid"]:
+            if (
+                ancestor not in item["ancestor_nodes"]
+                or self.nodes[ancestor]["owner"] != ch["pid"]
+            ):
                 raise RuntimeError("ancestor_owner")
             if ancestor not in item["acknowledged"]:
                 self.durable("ancestor_ack", ancestor=ancestor, item=key)
@@ -1565,11 +2107,20 @@ class Authority:
             if self.nodes[item["attempt"]]["owner"] != ch["pid"]:
                 raise RuntimeError("independent_owner")
             current = identity(item["pid"])
-            parent = next((i for i in self.identities.values() if i["pid"] == current["ppid"] and i["attempt"] == item["attempt"]), None)
+            parent = next(
+                (
+                    i
+                    for i in self.identities.values()
+                    if i["pid"] == current["ppid"] and i["attempt"] == item["attempt"]
+                ),
+                None,
+            )
             if current["ticks"] != item["ticks"] or parent is None:
                 raise RuntimeError("independent_owner_parent")
             self.monitor.register(dict(item, owner_only=True))
-            self.durable("independent_owner_observation", item=item, grants_tool_membership=False)
+            self.durable(
+                "independent_owner_observation", item=item, grants_tool_membership=False
+            )
             return True
         if op == "owner_identity":
             if self.case is None and ch["role"] != "startup":
@@ -1581,14 +2132,25 @@ class Authority:
             while parent is not None:
                 chain.append(parent)
                 parent = self.nodes[parent]["parent"]
-            known_parent = any(i["pid"] == current["ppid"] and i["attempt"] in chain for i in self.identities.values())
+            known_parent = any(
+                i["pid"] == current["ppid"] and i["attempt"] in chain
+                for i in self.identities.values()
+            )
             if current["ticks"] != item["ticks"] or not known_parent:
                 raise RuntimeError("owner_identity")
             previous = self.identities.get(str(item["pid"]) + ":" + str(item["ticks"]))
-            provisional = self.prepare_identity(dict(item, provisional=previous is None or previous.get("provisional", False)))
+            provisional = self.prepare_identity(
+                dict(
+                    item,
+                    provisional=previous is None or previous.get("provisional", False),
+                )
+            )
             self.monitor.register(provisional)
             ancestor = data["ancestor"]
-            if self.nodes[ancestor]["owner"] != ch["pid"] or ancestor not in provisional["ancestor_nodes"]:
+            if (
+                self.nodes[ancestor]["owner"] != ch["pid"]
+                or ancestor not in provisional["ancestor_nodes"]
+            ):
                 raise RuntimeError("ancestor_owner")
             if ancestor not in provisional["acknowledged"]:
                 provisional["acknowledged"].append(ancestor)
@@ -1597,18 +2159,31 @@ class Authority:
         if op == "static_context":
             if self.collection != 3 or ch["role"] != "worker":
                 raise RuntimeError("static_scope")
-            return dict(job=self.nodes[ch["attempt"]]["data"]["job"], commands=self.manifest["static_commands"])
+            return dict(
+                job=self.nodes[ch["attempt"]]["data"]["job"],
+                commands=self.manifest["static_commands"],
+            )
         if op == "static_intent":
             self.check()
             if self.collection != 3 or ch["role"] != "worker":
                 raise RuntimeError("static_scope")
             node = self.nodes[ch["attempt"]]
             index = node.get("static_position", 0)
-            if data["index"] != index or data["command"] != self.manifest["static_commands"][index]:
+            if (
+                data["index"] != index
+                or data["command"] != self.manifest["static_commands"][index]
+            ):
                 raise RuntimeError("static_order")
             node["static_position"] = index + 1
             key = str(len(self.intents) + 1)
-            value = dict(id=key, attempt=ch["attempt"], role="worker_child", parent_pid=ch["pid"], at_ns=clock(), resolved=None)
+            value = dict(
+                id=key,
+                attempt=ch["attempt"],
+                role="worker_child",
+                parent_pid=ch["pid"],
+                at_ns=clock(),
+                resolved=None,
+            )
             self.intents[key] = value
             self.durable("static_intent", intent=value)
             return dict(id=key, attempt=ch["attempt"])
@@ -1618,23 +2193,38 @@ class Authority:
                 raise RuntimeError("fixture_parent")
             frozen = self.case["spec"].get("outer_fixture")
             node = self.nodes[ch["attempt"]]
-            if (not frozen or frozen["mode"] != data["mode"]
-                    or frozen["nonce"] != data["nonce"] or node.get("fixture_used")):
+            if (
+                not frozen
+                or frozen["mode"] != data["mode"]
+                or frozen["nonce"] != data["nonce"]
+                or node.get("fixture_used")
+            ):
                 raise RuntimeError("fixture_not_frozen_or_consumed")
             node["fixture_used"] = True
-            key = str(len(self.intents)+1)
-            value = dict(id=key, attempt=node["id"], role="worker_child",
-                         parent_pid=ch["pid"], at_ns=clock(), resolved=None)
+            key = str(len(self.intents) + 1)
+            value = dict(
+                id=key,
+                attempt=node["id"],
+                role="worker_child",
+                parent_pid=ch["pid"],
+                at_ns=clock(),
+                resolved=None,
+            )
             self.intents[key] = value
             self.durable("finite_fixture_intent", intent=value, nonce=data["nonce"])
             return dict(id=key, attempt=node["id"])
         if op in {"owner_fixture_failure", "owner_fixture_probe"}:
             self.check()
-            specification = self.case["spec"].get("owner_fixture") if self.case else None
-            if (ch["role"] != "worker" or not specification
-                    or specification["nonce"] != data["nonce"]):
+            specification = (
+                self.case["spec"].get("owner_fixture") if self.case else None
+            )
+            if (
+                ch["role"] != "worker"
+                or not specification
+                or specification["nonce"] != data["nonce"]
+            ):
                 raise RuntimeError("owner_fixture_not_frozen")
-            key = "owner:"+ch["attempt"]
+            key = "owner:" + ch["attempt"]
             if op == "owner_fixture_probe":
                 if key in self.domains:
                     raise RuntimeError("owner_fixture_stopped")
@@ -1642,18 +2232,34 @@ class Authority:
             if key in self.domains or data["reason"] != specification["expected"]:
                 self.stop("unexpected_owner_fixture_failure")
                 raise RuntimeError("unexpected_owner_fixture_failure")
-            self.domains[key] = dict(state="STOP", reason=data["reason"],
-                                     at_ns=data["at_ns"], received_ns=clock(),
-                                     nonce=data["nonce"], business_grants=False)
+            self.domains[key] = dict(
+                state="STOP",
+                reason=data["reason"],
+                at_ns=data["at_ns"],
+                received_ns=clock(),
+                nonce=data["nonce"],
+                business_grants=False,
+            )
             self.durable("finite_owner_failure", proof=self.domains[key])
             return True
         if op == "aux_intent":
             self.check()
-            if self.case is None or not self.case["spec"].get("auxiliary") or self.case.get("aux_used"):
+            if (
+                self.case is None
+                or not self.case["spec"].get("auxiliary")
+                or self.case.get("aux_used")
+            ):
                 raise RuntimeError("auxiliary_not_frozen")
             self.case["aux_used"] = True
             key = str(len(self.intents) + 1)
-            value = dict(id=key, attempt=ch["attempt"], role="unrelated", parent_pid=ch["pid"], at_ns=clock(), resolved=None)
+            value = dict(
+                id=key,
+                attempt=ch["attempt"],
+                role="unrelated",
+                parent_pid=ch["pid"],
+                at_ns=clock(),
+                resolved=None,
+            )
             self.intents[key] = value
             self.durable("auxiliary_intent", intent=value)
             return dict(id=key)
@@ -1661,7 +2267,11 @@ class Authority:
             self.check()
             node = self.nodes[data["attempt"]]
             role = data["role"]
-            valid = (role == "S" and node["owner"] == ch["pid"]) or (role in {"W", "C", "worker"} and ch["role"] == "S" and ch["attempt"] == node["id"])
+            valid = (role == "S" and node["owner"] == ch["pid"]) or (
+                role in {"W", "C", "worker"}
+                and ch["role"] == "S"
+                and ch["attempt"] == node["id"]
+            )
             if node["state"] != "PENDING" or node.get("expected_trigger") or not valid:
                 raise RuntimeError("intent_parent")
             used = node.setdefault("intent_roles", [])
@@ -1669,8 +2279,14 @@ class Authority:
                 raise RuntimeError("intent_consumed")
             used.append(role)
             key = str(len(self.intents) + 1)
-            value = dict(id=key, attempt=data["attempt"], role=data["role"],
-                         parent_pid=ch["pid"], at_ns=clock(), resolved=None)
+            value = dict(
+                id=key,
+                attempt=data["attempt"],
+                role=data["role"],
+                parent_pid=ch["pid"],
+                at_ns=clock(),
+                resolved=None,
+            )
             self.intents[key] = value
             self.durable("launch_intent", intent=value)
             return dict(id=key)
@@ -1682,14 +2298,27 @@ class Authority:
             if ch["pid"] != node["owner"] and ch["attempt"] != node["id"]:
                 raise RuntimeError("trigger_owner")
             expected = node["step"].get("expected")
-            allowed = expected if isinstance(expected, list) else [expected] if expected is not None else []
+            allowed = (
+                expected
+                if isinstance(expected, list)
+                else [expected]
+                if expected is not None
+                else []
+            )
             allowed = list(allowed) + node["step"].get("trigger_expected", [])
             matches = data["reason"] in allowed
             if not matches:
                 self.stop("unexpected_child_trigger:" + data["reason"], data["at_ns"])
             else:
-                node.setdefault("expected_trigger", dict(reason=data["reason"], at_ns=data["at_ns"]))
-            self.durable("child_trigger", attempt=node["id"], reason=data["reason"], original_ns=data["at_ns"])
+                node.setdefault(
+                    "expected_trigger", dict(reason=data["reason"], at_ns=data["at_ns"])
+                )
+            self.durable(
+                "child_trigger",
+                attempt=node["id"],
+                reason=data["reason"],
+                original_ns=data["at_ns"],
+            )
             return True
         if op == "fault_observed":
             node = self.nodes[data["attempt"]]
@@ -1700,7 +2329,9 @@ class Authority:
             if data["boundary"] not in node["step"].get("fault_boundaries", []):
                 self.stop("unfrozen_fault_boundary")
                 raise RuntimeError("unfrozen_fault_boundary")
-            if data["boundary"] == "worker_return" and data["evidence"]["returncode"] not in node["step"].get("worker_exit_codes", []):
+            if data["boundary"] == "worker_return" and data["evidence"][
+                "returncode"
+            ] not in node["step"].get("worker_exit_codes", []):
                 self.stop("unexpected_worker_exit_code")
                 raise RuntimeError("unexpected_worker_exit_code")
             records = node.setdefault("fault_observations", [])
@@ -1714,8 +2345,10 @@ class Authority:
             node = self.nodes[data["id"]]
             if node["owner"] != ch["pid"] or node["state"] != "PENDING":
                 raise RuntimeError("duplicate_close_or_owner")
-            if any(n["parent"] == node["id"] and n["state"] == "PENDING"
-                   for n in self.nodes.values()):
+            if any(
+                n["parent"] == node["id"] and n["state"] == "PENDING"
+                for n in self.nodes.values()
+            ):
                 raise RuntimeError("unclosed_child")
             if node.get("child_step", 0) != len(node["step"].get("children", [])):
                 self.stop("child_steps_incomplete")
@@ -1728,19 +2361,32 @@ class Authority:
                 possibilities = expected if isinstance(expected, list) else [expected]
                 good = actual in possibilities
                 if node["kind"] == "attempt":
-                    good = good and result.get("tail_known") == node["step"].get("tail_known", True)
-                    good = good and result.get("parent_sampling_valid", result.get("sampling_valid"))
+                    good = good and result.get("tail_known") == node["step"].get(
+                        "tail_known", True
+                    )
+                    good = good and result.get(
+                        "parent_sampling_valid", result.get("sampling_valid")
+                    )
                     good = good and result.get("owner_complete")
                     good = good and result.get("cleanup_within_deadline")
-                    good = good and (node.get("fault_observations") or node.get("injection")
-                                     or node["step"].get("domain"))
+                    good = good and (
+                        node.get("fault_observations")
+                        or node.get("injection")
+                        or node["step"].get("domain")
+                    )
             if node["step"].get("domain"):
                 domain_spec = node["step"]["domain"]
-                observed = self.domains.get(node["id"], {}).get("stop", {}).get("reason")
-                required = domain_spec.get("reason") or ("pytest_" + domain_spec["phase"] + "_failure")
+                observed = (
+                    self.domains.get(node["id"], {}).get("stop", {}).get("reason")
+                )
+                required = domain_spec.get("reason") or (
+                    "pytest_" + domain_spec["phase"] + "_failure"
+                )
                 domain_result = self.domains.get(node["id"], {})
-                good = good and observed == required and bool(
-                    domain_result.get("injection") or domain_spec.get("event")
+                good = (
+                    good
+                    and observed == required
+                    and bool(domain_result.get("injection") or domain_spec.get("event"))
                 )
             if not good:
                 self.stop("unexpected_child_result")
@@ -1748,16 +2394,34 @@ class Authority:
                 for intent in self.intents.values():
                     if intent["attempt"] == node["id"] and not intent.get("resolved"):
                         owner = result.get("independent_owner") or {}
-                        known = [row["item"] for row in owner.get("events", []) if row["kind"] == "identity_ack" and row["item"]["role"] == intent["role"]]
+                        known = [
+                            row["item"]
+                            for row in owner.get("events", [])
+                            if row["kind"] == "identity_ack"
+                            and row["item"]["role"] == intent["role"]
+                        ]
                         fault = self.case["spec"].get("owner_fault", {})
-                        before = fault.get("barrier") == intent["role"] + "_before_spawn"
+                        before = (
+                            fault.get("barrier") == intent["role"] + "_before_spawn"
+                        )
                         if known or before:
-                            intent["outer_resolution"] = "known_owned_identity" if known else "owner_confirmed_not_created"
+                            intent["outer_resolution"] = (
+                                "known_owned_identity"
+                                if known
+                                else "owner_confirmed_not_created"
+                            )
                         else:
                             self.stop("unresolved_physical_intent")
                 self.case.setdefault("child_stop", dict(reason=actual, at_ns=clock()))
-            node.update(state="EXPECTED_REJECTION" if expected and good else
-                        "CLOSED" if good else "STOP", result=result, end_ns=clock())
+            node.update(
+                state="EXPECTED_REJECTION"
+                if expected and good
+                else "CLOSED"
+                if good
+                else "STOP",
+                result=result,
+                end_ns=clock(),
+            )
             self.durable("close", node=node)
             return good
         if op == "owner_closed":
@@ -1769,8 +2433,18 @@ class Authority:
             self.durable("owner_closed", evidence=data)
             return True
         if op == "diagnostic_summary":
-            children = [n for n in self.nodes.values() if n["parent"] == data["attempt"] and n["kind"] == "diagnose"]
-            return dict(applicable=bool(children), valid=all(n.get("result", {}).get("validation_complete") for n in children), ids=[n["id"] for n in children])
+            children = [
+                n
+                for n in self.nodes.values()
+                if n["parent"] == data["attempt"] and n["kind"] == "diagnose"
+            ]
+            return dict(
+                applicable=bool(children),
+                valid=all(
+                    n.get("result", {}).get("validation_complete") for n in children
+                ),
+                ids=[n["id"] for n in children],
+            )
         if op == "case_context":
             if not self.case:
                 raise RuntimeError("no_active_case")
@@ -1778,11 +2452,15 @@ class Authority:
         if op == "end_case":
             if self.case is None or self.case["nodeid"] != data["nodeid"]:
                 raise RuntimeError("case_identity")
-            if any(n["state"] == "PENDING" and n["case"] == data["nodeid"]
-                   for n in self.nodes.values()):
+            if any(
+                n["state"] == "PENDING" and n["case"] == data["nodeid"]
+                for n in self.nodes.values()
+            ):
                 self.stop("unclosed_case_attempt")
                 raise RuntimeError("unclosed_case_attempt")
-            if self.case["spec"].get("owner_required") and not self.case.get("owner_closed"):
+            if self.case["spec"].get("owner_required") and not self.case.get(
+                "owner_closed"
+            ):
                 self.stop("owner_join_missing")
                 raise RuntimeError("owner_join_missing")
             if self.case["step"] != len(self.case["spec"]["steps"]):
@@ -1822,25 +2500,33 @@ class Authority:
                 self.stop("case_budget")
                 raise RuntimeError("case_budget")
             self.used_cases.add(data["nodeid"])
-            self.case = dict(nodeid=data["nodeid"], spec=spec, step=0,
-                             start_ns=tick, operational_ns=tick + 5 * NS,
-                             hard_ns=tick + 30 * NS,
-                             parent_operational_ns=self.collection_o)
+            self.case = dict(
+                nodeid=data["nodeid"],
+                spec=spec,
+                step=0,
+                start_ns=tick,
+                operational_ns=tick + 5 * NS,
+                hard_ns=tick + 30 * NS,
+                parent_operational_ns=self.collection_o,
+            )
             return self.case
         if op in {"attempt", "diagnose"}:
             return self.issue(ch, op, data)
         if op == "bootstrap_view":
-            if self.case is None or data["name"] not in self.case["spec"].get("views", []):
+            if self.case is None or data["name"] not in self.case["spec"].get(
+                "views", []
+            ):
                 raise RuntimeError("view_not_frozen")
             outcome = self.bootstrap_view(data["variant"])
             self.durable("bootstrap_view", variant=data["variant"], outcome=outcome)
             return outcome
         if op == "view":
-            if self.case is None or data["name"] not in self.case["spec"].get("views", []):
+            if self.case is None or data["name"] not in self.case["spec"].get(
+                "views", []
+            ):
                 raise RuntimeError("view_not_frozen")
             # Refusal-only views call the live decision; no permit can be issued.
-            return dict(reason=admission_reason(**data["decision"]),
-                        grants_spawn=False)
+            return dict(reason=admission_reason(**data["decision"]), grants_spawn=False)
         raise RuntimeError("unknown_request")
 
     def loop(self):
@@ -1851,11 +2537,20 @@ class Authority:
                 try:
                     raw, ancillary, flags, _ = ch["socket"].recvmsg(65536, 1024)
                     if not raw:
-                        expected_domain_end = self.domains.get(ch.get("domain"), {}).get("stop")
-                        if ch["pid"] is not None and not ch.get("closing") and not expected_domain_end:
+                        expected_domain_end = self.domains.get(
+                            ch.get("domain"), {}
+                        ).get("stop")
+                        if (
+                            ch["pid"] is not None
+                            and not ch.get("closing")
+                            and not expected_domain_end
+                        ):
                             try:
                                 current = identity(ch["pid"])
-                                if current["ticks"] == ch["ticks"] and current["state"] != "Z":
+                                if (
+                                    current["ticks"] == ch["ticks"]
+                                    and current["state"] != "Z"
+                                ):
                                     self.stop("live_authority_channel_lost")
                             except FileNotFoundError:
                                 pass
@@ -1864,9 +2559,11 @@ class Authority:
                         continue
                     if flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC):
                         raise RuntimeError("message_capacity")
-                    credentials = [struct.unpack("3i", value) for level, kind, value
-                                   in ancillary if level == socket.SOL_SOCKET
-                                   and kind == socket.SCM_CREDENTIALS]
+                    credentials = [
+                        struct.unpack("3i", value)
+                        for level, kind, value in ancillary
+                        if level == socket.SOL_SOCKET and kind == socket.SCM_CREDENTIALS
+                    ]
                     if len(credentials) != 1:
                         raise RuntimeError("credentials")
                     pid = credentials[0][0]
@@ -1887,12 +2584,24 @@ class Authority:
                     except (RuntimeError, FileNotFoundError) as exc:
                         response = dict(seq=request["seq"], error=str(exc))
                     descriptors = []
-                    if isinstance(response.get("result"), dict) and "fd" in response["result"]:
+                    if (
+                        isinstance(response.get("result"), dict)
+                        and "fd" in response["result"]
+                    ):
                         descriptor = response["result"].pop("fd")
                         response["result"]["has_fd"] = True
-                        descriptors = [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
-                                        array.array("i", [descriptor]))]
-                    if response.get("result", {}).get("drop_reply") if isinstance(response.get("result"), dict) else False:
+                        descriptors = [
+                            (
+                                socket.SOL_SOCKET,
+                                socket.SCM_RIGHTS,
+                                array.array("i", [descriptor]),
+                            )
+                        ]
+                    if (
+                        response.get("result", {}).get("drop_reply")
+                        if isinstance(response.get("result"), dict)
+                        else False
+                    ):
                         continue
                     ch["socket"].sendmsg([json.dumps(response).encode()], descriptors)
                     if descriptors:
@@ -1911,13 +2620,22 @@ class Authority:
         joined = self.resources.close(deadline)
         if not joined or not sampling:
             self.stop("authority_tail_or_sampling")
-        save(self.root / "attempt-index.json", dict(
-            nodes=self.nodes, identities=self.identities, intents=self.intents,
-            stop=self.stop_value, subsequent_reasons=self.stop_followups,
-            state=self.state, threads_joined=joined, sampling_valid=sampling,
-            cutoff_events=self.cutoff_events, domains=self.domains,
-            resources=self.resources.events,
-        ))
+        save(
+            self.root / "attempt-index.json",
+            dict(
+                nodes=self.nodes,
+                identities=self.identities,
+                intents=self.intents,
+                stop=self.stop_value,
+                subsequent_reasons=self.stop_followups,
+                state=self.state,
+                threads_joined=joined,
+                sampling_valid=sampling,
+                cutoff_events=self.cutoff_events,
+                domains=self.domains,
+                resources=self.resources.events,
+            ),
+        )
         if self.stop_value and not (self.root / "STOP.json").exists():
             with (self.root / "STOP.json").open("x") as stream:
                 json.dump(self.stop_value, stream, indent=2)
@@ -1958,12 +2676,20 @@ def pytest_sessionstart(session):
     import takler
     import run_snapshot_no_services
 
-    event(Path(client.header["root"]) / "pytest-events.jsonl", "session_start",
-          executable=os.path.realpath(os.sys.executable), cwd=os.getcwd(),
-          takler=takler.__file__, control=__import__("run_snapshot_control").__file__,
-          plugin=__file__, fence=run_snapshot_no_services.__file__,
-          plugins=[dict(name=name, path=getattr(plugin, "__file__", None))
-                   for name, plugin in session.config.pluginmanager.list_name_plugin()])
+    event(
+        Path(client.header["root"]) / "pytest-events.jsonl",
+        "session_start",
+        executable=os.path.realpath(os.sys.executable),
+        cwd=os.getcwd(),
+        takler=takler.__file__,
+        control=__import__("run_snapshot_control").__file__,
+        plugin=__file__,
+        fence=run_snapshot_no_services.__file__,
+        plugins=[
+            dict(name=name, path=getattr(plugin, "__file__", None))
+            for name, plugin in session.config.pluginmanager.list_name_plugin()
+        ],
+    )
     if Path.cwd() != REPO:
         if os.environ.get("RUN_SNAPSHOT_DOMAIN_PHASE") == "wrong_cwd":
             marker = domain_injection()
@@ -1989,11 +2715,13 @@ def pytest_make_parametrize_id(config, val, argname):
     return argname + "_" + hashlib.sha256(raw.encode()).hexdigest()[:12]
 
 
-
 def pytest_generate_tests(metafunc):
-    if (os.environ.get("RUN_SNAPSHOT_DOMAIN_PHASE") == "collect"
-            and metafunc.function.__name__ == "_controlled_failure"):
+    if (
+        os.environ.get("RUN_SNAPSHOT_DOMAIN_PHASE") == "collect"
+        and metafunc.function.__name__ == "_controlled_failure"
+    ):
         raise RuntimeError(domain_injection())
+
 
 def pytest_collection_finish(session):
     if os.environ.get("RUN_SNAPSHOT_DOMAIN_PHASE") == "internal":
@@ -2004,8 +2732,13 @@ def pytest_collection_finish(session):
         return
     root = Path(os.environ["RUN_SNAPSHOT_REPAIR_ROOT"])
     suffix = os.environ.get("RUN_SNAPSHOT_TEST_DOMAIN", "root")
-    event(root / "collection-nodeids.jsonl", "collection", domain=suffix,
-          expected=context["nodeids"], actual=actual)
+    event(
+        root / "collection-nodeids.jsonl",
+        "collection",
+        domain=suffix,
+        expected=context["nodeids"],
+        actual=actual,
+    )
     if not actual:
         if os.environ.get("RUN_SNAPSHOT_DOMAIN_PHASE") == "empty":
             marker = domain_injection()
@@ -2025,9 +2758,13 @@ def pytest_collection_modifyitems(session, config, items):
     actual = [item.nodeid for item in items]
     if context.get("expected_collection_failure") and not actual:
         return
-    event(Path(os.environ["RUN_SNAPSHOT_REPAIR_ROOT"]) / "collection-order.jsonl",
-          "predeclared_order", actual=actual, expected=expected,
-          domain=os.environ.get("RUN_SNAPSHOT_TEST_DOMAIN"))
+    event(
+        Path(os.environ["RUN_SNAPSHOT_REPAIR_ROOT"]) / "collection-order.jsonl",
+        "predeclared_order",
+        actual=actual,
+        expected=expected,
+        domain=os.environ.get("RUN_SNAPSHOT_TEST_DOMAIN"),
+    )
     if len(actual) != len(set(actual)) or set(actual) != set(expected):
         plugin_stop("collection_mismatch")
         raise RuntimeError("collection_mismatch")
@@ -2043,7 +2780,6 @@ def tmp_path(request):
     return directory
 
 
-
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item):
     plugin_client().rpc("begin_case", nodeid=item.nodeid)
@@ -2051,8 +2787,10 @@ def pytest_runtest_setup(item):
 
 def pytest_runtest_logreport(report):
     if report.failed or report.skipped or hasattr(report, "wasxfail"):
-        plugin_stop("pytest_" + report.when + "_failure",
-                    str(report.longrepr) + str(getattr(report, "wasxfail", "")))
+        plugin_stop(
+            "pytest_" + report.when + "_failure",
+            str(report.longrepr) + str(getattr(report, "wasxfail", "")),
+        )
         if _SESSION is not None:
             _SESSION.shouldstop = "G0 first unexpected failure"
     if report.when == "teardown":
@@ -2068,14 +2806,21 @@ def pytest_internalerror(excrepr, excinfo):
     plugin_stop("pytest_internal_error", excrepr)
 
 
-
 def pytest_sessionfinish(session, exitstatus):
     root = Path(os.environ["RUN_SNAPSHOT_REPAIR_ROOT"])
-    modules = {name: str(value.__file__) for name, value in list(os.sys.modules.items())
-               if getattr(value, "__file__", None)}
-    event(root / "import-paths.jsonl", "session_finish", modules=modules,
-          exitstatus=int(exitstatus), executable=os.sys.executable,
-          domain=os.environ.get("RUN_SNAPSHOT_TEST_DOMAIN"))
+    modules = {
+        name: str(value.__file__)
+        for name, value in list(os.sys.modules.items())
+        if getattr(value, "__file__", None)
+    }
+    event(
+        root / "import-paths.jsonl",
+        "session_finish",
+        modules=modules,
+        exitstatus=int(exitstatus),
+        executable=os.sys.executable,
+        domain=os.environ.get("RUN_SNAPSHOT_TEST_DOMAIN"),
+    )
     plugin_client().rpc("channel_closing")
 
 
@@ -2104,8 +2849,11 @@ def loaded_environment(root, manifest, phase):
         loaded[path] = actual
         if expected.get(path) != actual:
             raise RuntimeError("unsealed_loaded_native:" + path)
-    modules = {name: str(value.__file__) for name, value in list(sys.modules.items())
-               if getattr(value, "__file__", None)}
+    modules = {
+        name: str(value.__file__)
+        for name, value in list(sys.modules.items())
+        if getattr(value, "__file__", None)
+    }
     for path in set(modules.values()):
         actual_path = Path(path).resolve()
         actual = digest(actual_path)
@@ -2117,29 +2865,57 @@ def loaded_environment(root, manifest, phase):
                     break
         if bound != actual:
             raise RuntimeError("unsealed_loaded_module:" + str(actual_path))
-    event(Path(root) / "actual-environment.jsonl", "loaded_environment", phase=phase,
-          executable=sys.executable, real_executable=os.path.realpath(sys.executable),
-          version=sys.version, maps=maps, loaded_native=loaded, modules=modules,
-          environment={key: os.environ.get(key) for key in manifest["environment"]})
+    event(
+        Path(root) / "actual-environment.jsonl",
+        "loaded_environment",
+        phase=phase,
+        executable=sys.executable,
+        real_executable=os.path.realpath(sys.executable),
+        version=sys.version,
+        maps=maps,
+        loaded_native=loaded,
+        modules=modules,
+        environment={key: os.environ.get(key) for key in manifest["environment"]},
+    )
     return loaded
 
 
 def validate_manifest(manifest):
     if len(manifest["collections"]) != 3:
         raise RuntimeError("collection_count")
-    for number, (entry, (o, h)) in enumerate(zip(manifest["collections"], LIMITS, strict=True), 1):
+    for number, (entry, (o, h)) in enumerate(
+        zip(manifest["collections"], LIMITS, strict=True), 1
+    ):
         if (entry["operational_s"], entry["hard_s"]) != (o, h):
             raise RuntimeError("collection_limits")
         if number < 3:
             argv = entry["argv"]
-            prefix = [manifest["project_python"], "-m", "pytest", "-x", "--maxfail=1",
-                      "-p", "run_snapshot_g0", "-p", "run_snapshot_no_services"]
-            suffix = ["-o", "cache_dir="+str(Path(manifest["root"])/"pytest-cache"), "-vv"]
+            prefix = [
+                manifest["project_python"],
+                "-m",
+                "pytest",
+                "-x",
+                "--maxfail=1",
+                "-p",
+                "run_snapshot_g0",
+                "-p",
+                "run_snapshot_no_services",
+            ]
+            suffix = [
+                "-o",
+                "cache_dir=" + str(Path(manifest["root"]) / "pytest-cache"),
+                "-vv",
+            ]
             if number == 2:
-                suffix += ["-k", "not test_server_start_rejects_async_hook_before_restore_or_network"]
+                suffix += [
+                    "-k",
+                    "not test_server_start_rejects_async_hook_before_restore_or_network",
+                ]
             if argv != prefix + suffix + entry["selectors"]:
                 raise RuntimeError("pytest_arguments")
-            if not entry["cases"] or len({c["nodeid"] for c in entry["cases"]}) != len(entry["cases"]):
+            if not entry["cases"] or len({c["nodeid"] for c in entry["cases"]}) != len(
+                entry["cases"]
+            ):
                 raise RuntimeError("case_manifest")
         elif entry["cases"]:
             raise RuntimeError("static_collection_cases")
@@ -2150,7 +2926,13 @@ def run_static(root):
     import subprocess
     import sys
     import signal
-    from run_snapshot_control import SCRIPT, await_ancestors, send, pidfd_signal, members
+    from run_snapshot_control import (
+        SCRIPT,
+        await_ancestors,
+        send,
+        pidfd_signal,
+        members,
+    )
 
     root = Path(root)
     client = Client.current()
@@ -2173,15 +2955,32 @@ def run_static(root):
         try:
             birth = clock()
             proc = subprocess.Popen(
-                [sys.executable, SCRIPT, "role", "worker", str(directory),
-                 str(child.fileno()), json.dumps(job)],
-                stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                pass_fds=(child.fileno(),), start_new_session=True, cwd=REPO,
+                [
+                    sys.executable,
+                    SCRIPT,
+                    "role",
+                    "worker",
+                    str(directory),
+                    str(child.fileno()),
+                    json.dumps(job),
+                ],
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                pass_fds=(child.fileno(),),
+                start_new_session=True,
+                cwd=REPO,
             )
             fd = pidfd_open(proc.pid)
-            item = dict(identity(proc.pid), role="worker_child", birth_lower=birth,
-                        spawn_before_ns=birth, spawn_after_ns=clock(), inferred=True,
-                        attempt=intent["attempt"])
+            item = dict(
+                identity(proc.pid),
+                role="worker_child",
+                birth_lower=birth,
+                spawn_before_ns=birth,
+                spawn_after_ns=clock(),
+                inferred=True,
+                attempt=intent["attempt"],
+            )
             client.rpc("identity", item=item, intent=intent["id"])
             await_ancestors(client, item, original["operational_ns"])
             send(here, b"G", deadline=original["operational_ns"])
@@ -2190,12 +2989,22 @@ def run_static(root):
                     observed = clock()
                     client.rpc("exited", item=item, at_ns=observed)
                     code = proc.poll()
-                    event(root / "static-steps.jsonl", "command_end", index=index,
-                          command=command, cwd=str(REPO), start_ns=begin,
-                          first_exit_observed_ns=observed, reaped_ns=clock(),
-                          returncode=code, output=str(directory / "worker.log"))
+                    event(
+                        root / "static-steps.jsonl",
+                        "command_end",
+                        index=index,
+                        command=command,
+                        cwd=str(REPO),
+                        start_ns=begin,
+                        first_exit_observed_ns=observed,
+                        reaped_ns=clock(),
+                        returncode=code,
+                        output=str(directory / "worker.log"),
+                    )
                     if code:
-                        trigger = client.rpc("stop", reason="static_check_failed", at_ns=observed)
+                        trigger = client.rpc(
+                            "stop", reason="static_check_failed", at_ns=observed
+                        )
                         return False
                     break
                 state = client.rpc("status")
@@ -2205,36 +3014,53 @@ def run_static(root):
                 raise RuntimeError("static_hard_tail")
         except BaseException as exc:
             c = clock()
-            trigger = client.rpc("stop", reason="static:"+type(exc).__name__, at_ns=c)
+            trigger = client.rpc("stop", reason="static:" + type(exc).__name__, at_ns=c)
             raise
         finally:
             here.close()
             child.close()
             if proc is not None and proc.returncode is None:
                 c = trigger["at_ns"] if trigger else clock()
-                end = min(c+20*NS, original["hard_ns"]-10*NS,
-                          trigger.get("ancestor_end_ns", original["hard_ns"]) if trigger else original["hard_ns"])
+                end = min(
+                    c + 20 * NS,
+                    original["hard_ns"] - 10 * NS,
+                    trigger.get("ancestor_end_ns", original["hard_ns"])
+                    if trigger
+                    else original["hard_ns"],
+                )
                 if fd is not None:
                     pidfd_signal(fd, signal.SIGTERM)
                     while not select.select([fd], [], [], 0.005)[0] and clock() < end:
-                        if clock() >= end-NS:
+                        if clock() >= end - NS:
                             pidfd_signal(fd, signal.SIGKILL)
                     if item is not None and select.select([fd], [], [], 0)[0]:
                         item.setdefault("first_exit_observed_ns", clock())
-                        client.rpc("exited", item=item, at_ns=item["first_exit_observed_ns"])
+                        client.rpc(
+                            "exited", item=item, at_ns=item["first_exit_observed_ns"]
+                        )
                 try:
-                    proc.wait(timeout=max(0, (end-clock())/NS))
+                    proc.wait(timeout=max(0, (end - clock()) / NS))
                 except subprocess.TimeoutExpired:
                     client.rpc("stop", reason="static_unreaped_tail", at_ns=c)
-                event(root / "static-steps.jsonl", "cleanup", index=index, c=c,
-                      C_end=end, H=original["hard_ns"], item=item,
-                      reaped_ns=clock() if proc.returncode is not None else None,
-                      group_scan_ns=clock(), group_live=members(item) if item else None,
-                      cleanup_within_deadline=clock() <= end and proc.returncode is not None)
+                event(
+                    root / "static-steps.jsonl",
+                    "cleanup",
+                    index=index,
+                    c=c,
+                    C_end=end,
+                    H=original["hard_ns"],
+                    item=item,
+                    reaped_ns=clock() if proc.returncode is not None else None,
+                    group_scan_ns=clock(),
+                    group_live=members(item) if item else None,
+                    cleanup_within_deadline=clock() <= end
+                    and proc.returncode is not None,
+                )
             if fd is not None:
                 os.close(fd)
             output.close()
     return True
+
 
 def execute(root, outer=None):
     # v is written by the seal transition, before any validation-only work.
@@ -2258,8 +3084,8 @@ def execute(root, outer=None):
         authority.check()
         authority.notify_outer(dict(event="ready", at_ns=clock()))
     except BaseException as exc:
-        authority.stop("post_initialization:"+type(exc).__name__)
-        authority.close(min(v+20*NS, authority.stop_value["ancestor_end_ns"]))
+        authority.stop("post_initialization:" + type(exc).__name__)
+        authority.close(min(v + 20 * NS, authority.stop_value["ancestor_end_ns"]))
         raise
     os.environ.update(
         RUN_SNAPSHOT_AUTH_FD=str(authority.fd),
@@ -2274,10 +3100,13 @@ def execute(root, outer=None):
         for number, entry in enumerate(manifest["collections"], 1):
             s = clock()
             gap += s - previous
-            remaining = sum(h for _, h in LIMITS[number - 1:]) * NS
-            if (gap > 30 * NS or s + remaining + 60 * NS - gap > header["D_val"]
-                    or s + entry["hard_s"] * NS > header["D_work"]
-                    or s + entry["hard_s"] * NS + 600 * NS > header["D_total"]):
+            remaining = sum(h for _, h in LIMITS[number - 1 :]) * NS
+            if (
+                gap > 30 * NS
+                or s + remaining + 60 * NS - gap > header["D_val"]
+                or s + entry["hard_s"] * NS > header["D_work"]
+                or s + entry["hard_s"] * NS + 600 * NS > header["D_total"]
+            ):
                 authority.stop("collection_budget_refused")
                 break
             authority.check()
@@ -2287,11 +3116,18 @@ def execute(root, outer=None):
             authority.collection_h = s + entry["hard_s"] * NS
             os.environ["RUN_SNAPSHOT_COLLECTION"] = str(number)
             job = dict(
-                stage="G0", start_ns=s, operational_ns=authority.collection_o,
-                hard_ns=s + entry["hard_s"] * NS, command=entry["argv"],
-                sources=manifest["sources"], budget=str(root / "header.json"),
-                batch_directory=str(root), collection=True, cwd=str(REPO),
-                fault=None, coordinator_mode="normal",
+                stage="G0",
+                start_ns=s,
+                operational_ns=authority.collection_o,
+                hard_ns=s + entry["hard_s"] * NS,
+                command=entry["argv"],
+                sources=manifest["sources"],
+                budget=str(root / "header.json"),
+                batch_directory=str(root),
+                collection=True,
+                cwd=str(REPO),
+                fault=None,
+                coordinator_mode="normal",
             )
             result = run_owned(root / f"collection-{number}", job)
             full_source_audit(manifest)
@@ -2299,11 +3135,20 @@ def execute(root, outer=None):
                 authority.stop("collection_audit_hard_tail")
             results.append(result)
             previous = clock()
-            event(root / "validation-ledger.jsonl", "collection_end", number=number,
-                  start_ns=s, end_ns=previous, gap_ns=gap)
+            event(
+                root / "validation-ledger.jsonl",
+                "collection_end",
+                number=number,
+                start_ns=s,
+                end_ns=previous,
+                gap_ns=gap,
+            )
             save(root / "collection-results.json", results)
-            if (not result["success"] or authority.stop_value
-                    or authority.case_position != len(entry["cases"])):
+            if (
+                not result["success"]
+                or authority.stop_value
+                or authority.case_position != len(entry["cases"])
+            ):
                 authority.stop("collection_failed")
                 break
             authority.collection = None
@@ -2312,20 +3157,37 @@ def execute(root, outer=None):
     finally:
         close_deadline = min(header["D_val"], previous + max(0, 30 * NS - gap))
         if authority.stop_value is not None:
-            close_deadline = min(close_deadline, authority.stop_value["ancestor_end_ns"])
+            close_deadline = min(
+                close_deadline, authority.stop_value["ancestor_end_ns"]
+            )
         close_ok = authority.close(close_deadline)
         gap += clock() - previous
-        event(root / "validation-ledger.jsonl", "validation_end",
-              gap_ns=gap, end_ns=clock(), threads_closed=close_ok,
-              reserved_outer_tail_ns=30 * NS)
-    good = (len(results) == 3 and all(r["success"] for r in results)
-            and not authority.stop_value and close_ok and gap <= 60 * NS
-            and clock() <= header["D_val"])
+        event(
+            root / "validation-ledger.jsonl",
+            "validation_end",
+            gap_ns=gap,
+            end_ns=clock(),
+            threads_closed=close_ok,
+            reserved_outer_tail_ns=30 * NS,
+        )
+    good = (
+        len(results) == 3
+        and all(r["success"] for r in results)
+        and not authority.stop_value
+        and close_ok
+        and gap <= 60 * NS
+        and clock() <= header["D_val"]
+    )
     if good:
-        save(root / "VALIDATION-COMPLETE.json", dict(at_ns=clock(), state="REVIEWING", authorizes_G1=False))
+        save(
+            root / "VALIDATION-COMPLETE.json",
+            dict(at_ns=clock(), state="REVIEWING", authorizes_G1=False),
+        )
     elif not (root / "STOP.json").exists():
-        save(root / "STOP.json", authority.stop_value or dict(
-            reason="final_gate", at_ns=clock()))
+        save(
+            root / "STOP.json",
+            authority.stop_value or dict(reason="final_gate", at_ns=clock()),
+        )
     return good
 
 
@@ -2334,4 +3196,6 @@ if __name__ == "__main__":
     parser.add_argument("--static", action="store_true")
     parser.add_argument("root", type=Path)
     args = parser.parse_args()
-    raise SystemExit(0 if (run_static(args.root) if args.static else execute(args.root)) else 1)
+    raise SystemExit(
+        0 if (run_static(args.root) if args.static else execute(args.root)) else 1
+    )

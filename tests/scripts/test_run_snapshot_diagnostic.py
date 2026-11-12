@@ -1,6 +1,7 @@
 """G0 T4: the actual six-snapshot entry on an explicit 250-task fixture."""
 
 import hashlib
+import os
 from pathlib import Path
 import sys
 
@@ -13,6 +14,10 @@ from takler.core import Bunch, Task
 from takler.serialization.registry import TypeRegistry
 
 CONFIG = dict(stage="G0", tasks=250)
+REPAIR_ROOT = os.environ.get("RUN_SNAPSHOT_REPAIR_ROOT")
+requires_g0 = pytest.mark.skipif(
+    not REPAIR_ROOT, reason="requires the G0 validation runner"
+)
 
 
 def original_objects():
@@ -27,6 +32,7 @@ def original_objects():
     )
 
 
+@requires_g0
 def test_six_sample_actual_entry_and_partition(tmp_path):
     before = original_objects()
     result = diagnostic.diagnose(tmp_path, CONFIG)
@@ -56,6 +62,7 @@ def test_six_sample_actual_entry_and_partition(tmp_path):
     assert not (tmp_path / "unused.check").exists()
 
 
+@requires_g0
 @pytest.mark.parametrize(
     "fault",
     ["clock", "stack", "expression", "none", "structure", "restore", "fingerprint"],
@@ -86,6 +93,7 @@ def test_invalid_entry_stops_and_restores(tmp_path, fault):
         diagnostic.diagnose(tmp_path, CONFIG)
 
 
+@requires_g0
 def test_real_deepcopy_exception_is_swallowed_but_not_valid(tmp_path, monkeypatch):
     calls = []
 
@@ -101,6 +109,7 @@ def test_real_deepcopy_exception_is_swallowed_but_not_valid(tmp_path, monkeypatc
     assert len(result["samples"]) == 1
 
 
+@requires_g0
 def test_capacity_invalid_is_sticky_through_snapshot_catch(tmp_path):
     result = diagnostic.diagnose(tmp_path, CONFIG | dict(interval_limit=30))
     assert not result["success"] and len(result["samples"]) == 3
@@ -147,6 +156,7 @@ def test_future_g1_expired_admission_refused_before_fixture(tmp_path, monkeypatc
     assert not (tmp_path / "attempt.json").exists()
 
 
+@requires_g0
 def test_product_sources_remain_identical(tmp_path):
     root = Path(__file__).resolve().parents[2] / "src"
     before = {
@@ -159,8 +169,10 @@ def test_product_sources_remain_identical(tmp_path):
     }
 
 
-CLI_SCOPES = diagnostic.json.loads(
-    (Path(__import__("os").environ["RUN_SNAPSHOT_REPAIR_ROOT"]) / "scope-table.json").read_text()
+CLI_SCOPES = (
+    diagnostic.json.loads((Path(REPAIR_ROOT) / "scope-table.json").read_text())
+    if REPAIR_ROOT
+    else []
 )
 
 
@@ -179,7 +191,8 @@ def cli_owner(tmp_path):
         result = owner.finish(context["hard_ns"])
         control._OWNER = previous
         control.Client.current().rpc(
-            "owner_closed", complete=result["complete"],
+            "owner_closed",
+            complete=result["complete"],
             thread_alive=result["thread_alive"],
             evidence=str(owner.directory / "independent-owner.json"),
         )
@@ -194,14 +207,20 @@ def test_cli_scope(tmp_path, scope, cli_owner):
     context = client.rpc("case_context")
     step = context["spec"]["steps"][0]
     job = dict(
-        stage="G0", start_ns=context["start_ns"],
-        operational_ns=context["operational_ns"], hard_ns=context["hard_ns"],
+        stage="G0",
+        start_ns=context["start_ns"],
+        operational_ns=context["operational_ns"],
+        hard_ns=context["hard_ns"],
         parent_operational_ns=context["parent_operational_ns"],
         budget=str(Path(client.header["root"]) / "header.json"),
         batch_directory=client.header["root"],
         sources=control.read(Path(client.header["root"]) / "manifest.json")["sources"],
-        cwd=step["cwd"], command=step["command"],
-        fault=None, view=None, coordinator_mode="normal", pss=False,
+        cwd=step["cwd"],
+        command=step["command"],
+        fault=None,
+        view=None,
+        coordinator_mode="normal",
+        pss=False,
         owner_fd=cli_owner.child_channel.fileno(),
     )
     result = control.run_owned(tmp_path / "entry", job)

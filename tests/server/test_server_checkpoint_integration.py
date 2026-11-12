@@ -53,8 +53,11 @@ def _mock_services(server: TaklerServer, calls: List[str]) -> None:
     server.scheduler.start.side_effect = lambda: calls.append("scheduler.start")
     server.scheduler.stop.side_effect = lambda: calls.append("scheduler.stop")
     server.scheduler.begin_shutdown = mock.MagicMock()
-    server.scheduler.query_service.full_snapshots.close = mock.MagicMock(
-        side_effect=lambda: calls.append("snapshots.close")
+    server.scheduler.query_service.close = mock.MagicMock(
+        side_effect=lambda: calls.append("query_service.close")
+    )
+    server.scheduler.version_store.rebuild = mock.MagicMock(
+        side_effect=lambda **kwargs: calls.append("version_store.rebuild")
     )
 
     server.grpc_transport = mock.AsyncMock()
@@ -123,6 +126,7 @@ def test_start_restores_before_the_scheduler_starts(tmp_path: Path) -> None:
 
     assert calls == [
         "checkpoint.restore",
+        "version_store.rebuild",
         "scheduler.start",
         "network.start",
         "checkpoint.start",
@@ -177,7 +181,7 @@ def test_shutdown_stops_the_checkpoint_manager_last(tmp_path: Path) -> None:
     assert calls == [
         "network.stop",
         "scheduler.stop",
-        "snapshots.close",
+        "query_service.close",
         "checkpoint.stop",
     ]
 

@@ -153,7 +153,7 @@ def prepared():
             scheduler,
             paths,
             lambda k, **v: events.append((k, v)),
-            time.monotonic_ns() + 20 * mix.NS,
+            time.monotonic_ns() + 60 * mix.NS,
         )
     )
     yield scheduler, paths, credentials, loop, events

@@ -318,11 +318,11 @@ def _collector_case(directory, case):
     """Controlled child helper; its collector stays in the parent's owned group."""
     with tempfile.TemporaryDirectory(prefix="mix-receipt-") as sockets:
         address = str(Path(sockets) / "events.sock")
+        # The helper represents both coordination roles for this IPC test.
+        helper_pid = os.getpid()
         mix.save(
             directory / "config.json",
-            dict(
-                socket=address, coordinator_pid=os.getpid(), supervisor_pid=os.getppid()
-            ),
+            dict(socket=address, coordinator_pid=helper_pid, supervisor_pid=helper_pid),
         )
         mix.save(
             directory / "registry.json",

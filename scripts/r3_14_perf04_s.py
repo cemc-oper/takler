@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import sys
 import tempfile
 import time
 from types import SimpleNamespace
@@ -754,7 +755,7 @@ class SClosure:
         self.proof_release = self.verifier.close()
         self.loop.run_until_complete(self.observation.close())
         self.observation = None
-        self.emitter_final = self.emitter.close()
+        self.emitter_final = self.emitter.close(drain=self.drain_observation)
         self.drain_final_observation()
         expect_collector_stop()
         self.collector_closed = True
@@ -839,7 +840,9 @@ class SClosure:
                     ),
                 )
             if self.emitter and not getattr(self, "emitter_final", None):
-                self.emitter_final = cleanup("L_sender", self.emitter.close)
+                self.emitter_final = cleanup(
+                    "L_sender", lambda: self.emitter.close(drain=self.drain_observation)
+                )
                 cleanup("L_drain", self.drain_final_observation)
             if self.audit:
                 cleanup(
@@ -860,11 +863,12 @@ class SClosure:
                 cleanup("collector_directory", self.socket_dir.cleanup)
             if self.verifier and self.handler.dispatch != self.verifier.original:
                 self.proof_release = cleanup("private_proofs", self.verifier.close)
+            shutdown_options = {"timeout": 1} if sys.version_info >= (3, 12) else {}
             cleanup(
                 "default_executor",
                 lambda: self.loop.run_until_complete(
                     asyncio.wait_for(
-                        self.loop.shutdown_default_executor(timeout=1), 1.5
+                        self.loop.shutdown_default_executor(**shutdown_options), 1.5
                     )
                 ),
             )

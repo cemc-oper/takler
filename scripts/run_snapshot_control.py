@@ -33,12 +33,18 @@ def pidfd_backend():
         library.pidfd_open.argtypes = [ctypes.c_int, ctypes.c_uint]
         library.pidfd_open.restype = ctypes.c_int
         library.pidfd_send_signal.argtypes = [
-            ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_uint,
         ]
         library.pidfd_send_signal.restype = ctypes.c_int
         library.prctl.argtypes = [
-            ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
-            ctypes.c_ulong, ctypes.c_ulong
+            ctypes.c_int,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_ulong,
         ]
         library.prctl.restype = ctypes.c_int
         _LIBC = library
@@ -91,8 +97,10 @@ def capability_check(directory):
         pair[1].setsockopt(socket.SOL_SOCKET, socket.SO_PASSCRED, 1)
         for channel in pair:
             channel.setblocking(False)
-        pair[0].sendmsg([b"capability"], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
-                                         array.array("i", [descriptor]))])
+        pair[0].sendmsg(
+            [b"capability"],
+            [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", [descriptor]))],
+        )
         raw, anc, flags, _ = pair[1].recvmsg(128, 1024)
         credentials = []
         for level, kind, value in anc:
@@ -110,11 +118,16 @@ def capability_check(directory):
         row = sample["processes"][0]
         if row.get("unavailable") or min(row["cpu"], row["rss"]) < 0:
             raise RuntimeError("capability_sampling")
-        return dict(backend="libc-named-pidfd", library=LIBC_PATH,
-                    identity=first, sample=sample, at_ns=now(),
-                    monotonic_ns=time.clock_gettime_ns(time.CLOCK_MONOTONIC),
-                    clock_correlation=[clock_before, clock_middle, clock_after],
-                    boot_id=Path("/proc/sys/kernel/random/boot_id").read_text().strip())
+        return dict(
+            backend="libc-named-pidfd",
+            library=LIBC_PATH,
+            identity=first,
+            sample=sample,
+            at_ns=now(),
+            monotonic_ns=time.clock_gettime_ns(time.CLOCK_MONOTONIC),
+            clock_correlation=[clock_before, clock_middle, clock_after],
+            boot_id=Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+        )
     finally:
         for fd in received:
             os.close(fd)
@@ -149,8 +162,12 @@ def event(path, kind, **values):
 def identity(pid):
     fields = Path(f"/proc/{pid}/stat").read_text().rpartition(")")[2].split()
     return dict(
-        pid=pid, ppid=int(fields[1]), pgid=int(fields[2]),
-        session=int(fields[3]), ticks=int(fields[19]), state=fields[0],
+        pid=pid,
+        ppid=int(fields[1]),
+        pgid=int(fields[2]),
+        session=int(fields[3]),
+        ticks=int(fields[19]),
+        state=fields[0],
     )
 
 
@@ -259,19 +276,28 @@ def sample_process(item):
     begin = now()
     try:
         first = identity(item["pid"])
-        fields = Path(f"/proc/{item['pid']}/stat").read_text().rpartition(")")[2].split()
+        fields = (
+            Path(f"/proc/{item['pid']}/stat").read_text().rpartition(")")[2].split()
+        )
         rss = int(Path(f"/proc/{item['pid']}/statm").read_text().split()[1])
         last = identity(item["pid"])
         return dict(
-            last, role=item["role"], rss=rss * os.sysconf("SC_PAGE_SIZE"),
+            last,
+            role=item["role"],
+            rss=rss * os.sysconf("SC_PAGE_SIZE"),
             cpu=(int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK"),
-            read_begin_ns=begin, read_end_ns=now(),
-            identity_before=first["ticks"], identity_after=last["ticks"],
+            read_begin_ns=begin,
+            read_end_ns=now(),
+            identity_before=first["ticks"],
+            identity_after=last["ticks"],
         )
     except (OSError, ValueError):
         return dict(
-            pid=item["pid"], role=item["role"], unavailable=True,
-            read_begin_ns=begin, read_end_ns=now(),
+            pid=item["pid"],
+            role=item["role"],
+            unavailable=True,
+            read_begin_ns=begin,
+            read_end_ns=now(),
         )
 
 
@@ -294,9 +320,12 @@ def owned_processes(roots):
             if item["ticks"] < parent["ticks"]:
                 raise RuntimeError("descendant_identity")
             known[pid] = dict(
-                item, role=parent["role"] + "_child",
-                birth_lower=parent["birth_lower"], inferred=True,
-                spawn_before_ns=parent["birth_lower"], spawn_after_ns=now(),
+                item,
+                role=parent["role"] + "_child",
+                birth_lower=parent["birth_lower"],
+                inferred=True,
+                spawn_before_ns=parent["birth_lower"],
+                spawn_after_ns=now(),
                 attempt=parent["attempt"],
             )
             added = True
@@ -318,21 +347,30 @@ class Samples:
         raise RuntimeError(reason)
 
     def accept(self, value, expected, *, track_total=True):
-        if (value["mem_available"] < 4 * GIB or value["disk_free"] < 20 * GIB
-                or value["swap_used"] - self.swap_start > GIB
-                or value["evidence_bytes"] > 256 * 1024**2
-                or value["batch_bytes"] > 2 * GIB):
+        if (
+            value["mem_available"] < 4 * GIB
+            or value["disk_free"] < 20 * GIB
+            or value["swap_used"] - self.swap_start > GIB
+            or value["evidence_bytes"] > 256 * 1024**2
+            or value["batch_bytes"] > 2 * GIB
+        ):
             self.fail("resource_stop")
         rows = {r["pid"]: r for r in value["processes"]}
         total = 0
         for item in expected:
             row = rows.get(item["pid"])
-            if (row is None or row.get("unavailable")
-                    or "cpu" not in row or "rss" not in row):
+            if (
+                row is None
+                or row.get("unavailable")
+                or "cpu" not in row
+                or "rss" not in row
+            ):
                 self.fail("sample_unavailable")
-            if (row["ticks"] != item["ticks"]
-                    or row.get("identity_before", row["ticks"]) != item["ticks"]
-                    or row.get("identity_after", row["ticks"]) != item["ticks"]):
+            if (
+                row["ticks"] != item["ticks"]
+                or row.get("identity_before", row["ticks"]) != item["ticks"]
+                or row.get("identity_after", row["ticks"]) != item["ticks"]
+            ):
                 self.fail("sample_identity")
             if min(row["cpu"], row["rss"]) < 0:
                 self.fail("negative_sample")
@@ -390,12 +428,20 @@ def host_sample(directory, entries, batch_directory):
 
     entry_bytes = size(directory)
     if Path(directory) == Path(batch_directory):
-        entry_bytes = max([size(Path(directory) / ("collection-" + str(i))) + size(Path(directory) / ("collection-" + str(i) + "-cases")) for i in (1, 2, 3)])
+        entry_bytes = max(
+            [
+                size(Path(directory) / ("collection-" + str(i)))
+                + size(Path(directory) / ("collection-" + str(i) + "-cases"))
+                for i in (1, 2, 3)
+            ]
+        )
     return dict(
-        at_ns=now(), mem_available=memory["MemAvailable"],
+        at_ns=now(),
+        mem_available=memory["MemAvailable"],
         disk_free=shutil.disk_usage(directory).free,
         swap_used=memory["SwapTotal"] - memory["SwapFree"],
-        evidence_bytes=entry_bytes, batch_bytes=size(batch_directory),
+        evidence_bytes=entry_bytes,
+        batch_bytes=size(batch_directory),
         processes=[sample_process(i) for i in entries],
     )
 
@@ -413,8 +459,11 @@ class MeasurementView:
         self.raw_first = None
         self.reported = False
         self.virtual = RealMonitor(
-            directory, dict(swap_start=swap_start, root=str(directory)),
-            self.failed, autostart=False, measurement_only=True,
+            directory,
+            dict(swap_start=swap_start, root=str(directory)),
+            self.failed,
+            autostart=False,
+            measurement_only=True,
         )
 
     def failed(self, reason, at_ns):
@@ -436,7 +485,12 @@ class MeasurementView:
         if kind == "first" and self.sequence == 1:
             at = NS + amount
         if kind == "adjacent" and self.sequence >= 2:
-            at = self.virtual.guard.last[generation(next(i for i in entries if i["role"] == "worker"))][0] + amount
+            at = (
+                self.virtual.guard.last[
+                    generation(next(i for i in entries if i["role"] == "worker"))
+                ][0]
+                + amount
+            )
         for item in entries:
             item["birth_lower"] = NS
             self.virtual.entries.setdefault(generation(item), item)
@@ -450,7 +504,9 @@ class MeasurementView:
         if kind == "points":
             if self.sequence > amount:
                 selected = [i for i in entries if i["role"] != "worker"]
-                value["processes"] = [i for i in value["processes"] if i["role"] != "worker"]
+                value["processes"] = [
+                    i for i in value["processes"] if i["role"] != "worker"
+                ]
         elif kind == "read_span" and self.sequence == 1:
             for row in value["processes"]:
                 row.update(read_begin_ns=NS, read_end_ns=NS + amount)
@@ -468,17 +524,31 @@ class MeasurementView:
             elif kind == "negative_rss":
                 target["rss"] = -1
             elif kind == "cpu_regression":
-                target["cpu"] = self.virtual.guard.last[generation(next(i for i in entries if i["role"] == "worker"))][2] - 1
+                target["cpu"] = (
+                    self.virtual.guard.last[
+                        generation(next(i for i in entries if i["role"] == "worker"))
+                    ][2]
+                    - 1
+                )
             elif kind == "resource":
                 value[self.spec["field"]] = amount
             elif kind == "role_rss":
-                next(row for row in value["processes"] if row["role"] == self.spec["role"])["rss"] = amount
+                next(
+                    row
+                    for row in value["processes"]
+                    if row["role"] == self.spec["role"]
+                )["rss"] = amount
             elif kind == "rss_sum":
-                target["rss"] = amount - sum(row["rss"] for row in value["processes"] if row is not target)
+                target["rss"] = amount - sum(
+                    row["rss"] for row in value["processes"] if row is not target
+                )
                 if self.spec.get("recover") and self.sequence >= 3:
                     target["rss"] = 1024
             elif kind == "swap_cumulative":
-                value["swap_used"] = self.virtual.guard.swap_start + (600 if self.sequence == 2 else 1200) * 1024**2
+                value["swap_used"] = (
+                    self.virtual.guard.swap_start
+                    + (600 if self.sequence == 2 else 1200) * 1024**2
+                )
         self.rows.append(dict(raw=raw, view=value, sequence=self.sequence))
         self.virtual.accept_return(value, selected)
 
@@ -490,8 +560,14 @@ class MeasurementView:
         if self.spec["kind"] == "exit" and item["role"] == "worker":
             tick += self.spec["amount"]
         self.virtual.observe_exit(item, tick, "injected_exit:" + source)
-        self.rows.append(dict(exit_identity=item, original_exit_ns=original_tick,
-                              view_exit_ns=tick, source=source))
+        self.rows.append(
+            dict(
+                exit_identity=item,
+                original_exit_ns=original_tick,
+                view_exit_ns=tick,
+                source=source,
+            )
+        )
 
     def finish(self, deadline):
         if self.sequence == 0:
@@ -500,22 +576,43 @@ class MeasurementView:
         self.virtual.close_descriptors()
         self.invalid = self.invalid or not valid
         self.finished = True
-        event(self.directory / "injected-resources.jsonl", "child_view",
-              spec=self.spec, raw=self.raw_first, view_rows=self.rows,
-              error=self.error, invalid=self.invalid,
-              verdicts=[dict(pid=k[0], ticks=k[1], valid=v)
-                        for k, v in self.virtual.verdicts.items()],
-              swap_start=self.virtual.guard.swap_start, host_deadlines_changed=False,
-              boundary="RealMonitor.accept_return/observe_exit/finish")
+        event(
+            self.directory / "injected-resources.jsonl",
+            "child_view",
+            spec=self.spec,
+            raw=self.raw_first,
+            view_rows=self.rows,
+            error=self.error,
+            invalid=self.invalid,
+            verdicts=[
+                dict(pid=k[0], ticks=k[1], valid=v)
+                for k, v in self.virtual.verdicts.items()
+            ],
+            swap_start=self.virtual.guard.swap_start,
+            host_deadlines_changed=False,
+            boundary="RealMonitor.accept_return/observe_exit/finish",
+        )
         return valid
 
 
 class RealMonitor:
     """Independent real stream; synthetic views never enter this guard."""
 
-    def __init__(self, directory, header, trigger, *, authority=None,
-                 root_monitor=False, attempt=None, discovered=None, view=None,
-                 autostart=True, measurement_only=False, fault_nonce=None):
+    def __init__(
+        self,
+        directory,
+        header,
+        trigger,
+        *,
+        authority=None,
+        root_monitor=False,
+        attempt=None,
+        discovered=None,
+        view=None,
+        autostart=True,
+        measurement_only=False,
+        fault_nonce=None,
+    ):
         self.directory, self.header = Path(directory), header
         self.trigger, self.authority = trigger, authority
         self.root_monitor, self.attempt = root_monitor, attempt
@@ -532,7 +629,9 @@ class RealMonitor:
         self.identity_log = self.directory / (
             "injected-identities.jsonl" if measurement_only else "identities.jsonl"
         )
-        self.view = MeasurementView(directory, view, header["swap_start"]) if view else None
+        self.view = (
+            MeasurementView(directory, view, header["swap_start"]) if view else None
+        )
         self.observation_start_ns = now()
         self.thread = threading.Thread(target=self.loop, name="real-proc-sampler")
         self.closed = False
@@ -540,13 +639,21 @@ class RealMonitor:
         self.finished_result = None
         try:
             if root_monitor:
-                item = dict(identity(os.getpid()), role="startup",
-                            birth_lower=self.observation_start_ns,
-                            observation_only=True, attempt="root")
+                item = dict(
+                    identity(os.getpid()),
+                    role="startup",
+                    birth_lower=self.observation_start_ns,
+                    observation_only=True,
+                    attempt="root",
+                )
                 self.register(item)
-                outer = dict(identity(os.getppid()), role="outer",
-                             birth_lower=now(), observation_only=True,
-                             attempt="root")
+                outer = dict(
+                    identity(os.getppid()),
+                    role="outer",
+                    birth_lower=now(),
+                    observation_only=True,
+                    attempt="root",
+                )
                 self.register(outer)
             if autostart:
                 self.start()
@@ -586,8 +693,11 @@ class RealMonitor:
                 pidfd_signal(fd, 0)
                 event(self.identity_log, "registered", item=item)
                 value = host_sample(self.directory, [item], self.header["root"])
-                event(self.directory / "real-resources.jsonl", "registration_sample",
-                      sample=value)
+                event(
+                    self.directory / "real-resources.jsonl",
+                    "registration_sample",
+                    sample=value,
+                )
                 self.guard.accept(value, [item], track_total=False)
             except BaseException as exc:
                 self.guard.invalid = True
@@ -605,8 +715,9 @@ class RealMonitor:
             self.trigger(reason, now())
             if not self.root_monitor and not self.measurement_only:
                 try:
-                    Client.current().rpc("stop", reason="real_sampling:" + reason,
-                                         at_ns=now())
+                    Client.current().rpc(
+                        "stop", reason="real_sampling:" + reason, at_ns=now()
+                    )
                 except Exception:
                     self.error = reason + ":root_notification_failed"
 
@@ -625,8 +736,11 @@ class RealMonitor:
             entry.setdefault("first_exit_observed_ns", tick)
             entry.setdefault("first_exit_source", source)
             try:
-                self.guard.exited(entry, entry["first_exit_observed_ns"],
-                                  worker=entry["role"] == "worker")
+                self.guard.exited(
+                    entry,
+                    entry["first_exit_observed_ns"],
+                    worker=entry["role"] == "worker",
+                )
                 valid = True
             except RuntimeError as exc:
                 valid = False
@@ -634,9 +748,13 @@ class RealMonitor:
             self.verdicts[key] = valid and not self.guard.invalid
             if self.view is not None:
                 self.view.observe_exit(entry, entry["first_exit_observed_ns"], source)
-            event(self.identity_log, "finalize_identity",
-                  item=entry, sampling_valid=valid,
-                  cpu_points=self.guard.count.get(key, 0))
+            event(
+                self.identity_log,
+                "finalize_identity",
+                item=entry,
+                sampling_valid=valid,
+                cpu_points=self.guard.count.get(key, 0),
+            )
 
     def loop(self):
         while not self.stopping.is_set():
@@ -657,8 +775,16 @@ class RealMonitor:
                     if live:
                         # Root discovery is confined to registered controlled
                         # subtrees. The pre-existing startup host is not a root.
-                        roots = [i for i in live if not i.get("observation_only") and not i.get("owner_only")]
-                        found = owned_processes(roots) if roots and self.root_monitor else []
+                        roots = [
+                            i
+                            for i in live
+                            if not i.get("observation_only") and not i.get("owner_only")
+                        ]
+                        found = (
+                            owned_processes(roots)
+                            if roots and self.root_monitor
+                            else []
+                        )
                         for item in found:
                             key = generation(item)
                             pending_parent = self.authority is not None and any(
@@ -667,7 +793,9 @@ class RealMonitor:
                                 for intent in list(self.authority.intents.values())
                             )
                             owner_only = self.entries.get(key, {}).get("owner_only")
-                            if (key not in self.entries or owner_only) and not pending_parent:
+                            if (
+                                key not in self.entries or owner_only
+                            ) and not pending_parent:
                                 self.register(item)
                                 if owner_only:
                                     self.entries[key]["owner_only"] = False
@@ -678,18 +806,35 @@ class RealMonitor:
                         live = self.active()
                         value = host_sample(self.directory, live, self.header["root"])
                         self.sequence += 1
-                        event(self.directory / "real-resources.jsonl", "sample",
-                              sequence=self.sequence, sample=value)
+                        event(
+                            self.directory / "real-resources.jsonl",
+                            "sample",
+                            sequence=self.sequence,
+                            sample=value,
+                        )
                         self.guard.accept(value, live)
-                        ready = any(i["role"] == "worker" and self.guard.count.get(generation(i), 0) >= 2 for i in live)
-                        if self.view and ready and self.view.phase_ready and not self.view.finished:
+                        ready = any(
+                            i["role"] == "worker"
+                            and self.guard.count.get(generation(i), 0) >= 2
+                            for i in live
+                        )
+                        if (
+                            self.view
+                            and ready
+                            and self.view.phase_ready
+                            and not self.view.finished
+                        ):
                             self.view.run(value, live)
                             if self.view.sequence and not self.view_proof:
                                 Client.current().rpc(
-                                    "fault_observed", attempt=self.attempt,
-                                    nonce=self.fault_nonce, boundary="monitor_read_return",
-                                    original_ns=now(), evidence=dict(
-                                        view=self.view.spec, physical_sequence=self.sequence,
+                                    "fault_observed",
+                                    attempt=self.attempt,
+                                    nonce=self.fault_nonce,
+                                    boundary="monitor_read_return",
+                                    original_ns=now(),
+                                    evidence=dict(
+                                        view=self.view.spec,
+                                        physical_sequence=self.sequence,
                                         raw_at_ns=value["at_ns"],
                                     ),
                                 )
@@ -697,14 +842,19 @@ class RealMonitor:
                             if self.view.error and not self.view.reported:
                                 self.view.reported = True
                                 detected = now()
-                                Client.current().rpc("child_trigger", attempt=self.attempt, reason=self.view.error, at_ns=detected)
+                                Client.current().rpc(
+                                    "child_trigger",
+                                    attempt=self.attempt,
+                                    reason=self.view.error,
+                                    at_ns=detected,
+                                )
                                 self.trigger(self.view.error, detected)
             except Exception as exc:
                 self.fail(type(exc).__name__ + ":" + str(exc))
             self.stopping.wait(max(0, (start + 100_000_000 - now()) / NS))
 
     def finish(self, deadline):
-        if not self.finish_lock.acquire(timeout=max(0, (deadline-now())/NS)):
+        if not self.finish_lock.acquire(timeout=max(0, (deadline - now()) / NS)):
             self.fail("finish_lock_deadline")
             return False
         try:
@@ -736,8 +886,13 @@ class RealMonitor:
                 except RuntimeError as exc:
                     self.fail(str(exc))
                     self.verdicts[generation(item)] = False
-                event(self.identity_log, "observation_end",
-                      item=item, end_ns=now(), begin_ns=self.observation_start_ns)
+                event(
+                    self.identity_log,
+                    "observation_end",
+                    item=item,
+                    end_ns=now(),
+                    begin_ns=self.observation_start_ns,
+                )
         if self.view is not None:
             self.view.finish(deadline)
         self.stopping.set()
@@ -745,10 +900,13 @@ class RealMonitor:
             self.thread.join(max(0, (deadline - now()) / NS))
         if self.thread.is_alive():
             self.fail("sampler_thread_tail")
-        good = (self.error is None and not self.guard.invalid
-                and not self.thread.is_alive()
-                and set(self.verdicts) == set(self.entries)
-                and all(self.verdicts.values()))
+        good = (
+            self.error is None
+            and not self.guard.invalid
+            and not self.thread.is_alive()
+            and set(self.verdicts) == set(self.entries)
+            and all(self.verdicts.values())
+        )
         return good
 
 
@@ -763,11 +921,19 @@ def finite_monitor_fixture(directory, variant):
     directory.mkdir()
     failures, rows = [], []
     original = host_sample
-    monitor = RealMonitor(directory, client.header,
-                          lambda reason, at: failures.append(dict(reason=reason, at_ns=at)),
-                          autostart=False, measurement_only=True)
-    item = dict(identity(os.getpid()), role="fixture_observer", birth_lower=now(),
-                observation_only=True)
+    monitor = RealMonitor(
+        directory,
+        client.header,
+        lambda reason, at: failures.append(dict(reason=reason, at_ns=at)),
+        autostart=False,
+        measurement_only=True,
+    )
+    item = dict(
+        identity(os.getpid()),
+        role="fixture_observer",
+        birth_lower=now(),
+        observation_only=True,
+    )
 
     def injected(*args, **kwargs):
         raw = original(*args, **kwargs)
@@ -789,11 +955,18 @@ def finite_monitor_fixture(directory, variant):
         if variant == "finish_race":
             monitor.register(item)
             results = []
-            threads = [threading.Thread(target=lambda: results.append(monitor.finish(context["operational_ns"]))) for _ in range(2)]
+            threads = [
+                threading.Thread(
+                    target=lambda: results.append(
+                        monitor.finish(context["operational_ns"])
+                    )
+                )
+                for _ in range(2)
+            ]
             for thread in threads:
                 thread.start()
             for thread in threads:
-                thread.join(max(0, (context["operational_ns"]-now())/NS))
+                thread.join(max(0, (context["operational_ns"] - now()) / NS))
             assert results == [True, True] and not any(t.is_alive() for t in threads)
         else:
             try:
@@ -805,25 +978,40 @@ def finite_monitor_fixture(directory, variant):
             first = monitor.error
             assert monitor.guard.invalid and first == frozen["expected"]
             host_sample = original
-            monitor.accept_return(original(directory, [item], client.header["root"]), [item])
+            monitor.accept_return(
+                original(directory, [item], client.header["root"]), [item]
+            )
             assert monitor.guard.invalid and monitor.error == first
             assert monitor.finish(context["operational_ns"]) is False
     finally:
         host_sample = original
         monitor.finish(context["operational_ns"])
         monitor.close_descriptors()
-        save(directory / "monitor-boundary.json", dict(
-            variant=variant, nonce=frozen["nonce"], rows=rows, failures=failures,
-            invalid=monitor.guard.invalid, result=monitor.finished_result,
-            verdicts=[dict(pid=k[0], ticks=k[1], valid=v) for k, v in monitor.verdicts.items()],
-            actual_entry="RealMonitor.register/accept_return/finish", at_ns=now(),
-        ))
+        save(
+            directory / "monitor-boundary.json",
+            dict(
+                variant=variant,
+                nonce=frozen["nonce"],
+                rows=rows,
+                failures=failures,
+                invalid=monitor.guard.invalid,
+                result=monitor.finished_result,
+                verdicts=[
+                    dict(pid=k[0], ticks=k[1], valid=v)
+                    for k, v in monitor.verdicts.items()
+                ],
+                actual_entry="RealMonitor.register/accept_return/finish",
+                at_ns=now(),
+            ),
+        )
 
 
 def diagnostic_permit(directory, config, fault=None):
     if config.get("stage") != "G0" or config.get("tasks") != 250:
         raise RuntimeError("G0_only_no_100k_authorization")
-    return Client.current().rpc("diagnose", directory=str(directory), config=config, fault=fault)
+    return Client.current().rpc(
+        "diagnose", directory=str(directory), config=config, fault=fault
+    )
 
 
 def diagnostic_closed(ticket, result):
@@ -831,9 +1019,14 @@ def diagnostic_closed(ticket, result):
 
 
 def fault_observed(job, boundary, **evidence):
-    Client.current().rpc("fault_observed", attempt=job["attempt"],
-                         nonce=job["fault_nonce"], boundary=boundary,
-                         original_ns=now(), evidence=evidence)
+    Client.current().rpc(
+        "fault_observed",
+        attempt=job["attempt"],
+        nonce=job["fault_nonce"],
+        boundary=boundary,
+        original_ns=now(),
+        evidence=evidence,
+    )
 
 
 def admit(directory, job):
@@ -848,17 +1041,20 @@ def admit(directory, job):
     return client.rpc("attempt", directory=str(directory), job=job)
 
 
-
 def await_ancestors(client, item, operational_ns):
     end = min(now() + 100_000_000, operational_ns)
     while now() < end:
         state = client.rpc("status", _deadline_ns=end)
         if state["stop"]:
             raise RuntimeError("root_stopped")
-        found = next((i for i in state["identities"]
-                      if generation(i) == generation(item)), None)
-        if (found is not None and set(found["ancestor_nodes"]) <= set(found["acknowledged"])
-                and set(found["controller_nodes"]) <= set(found["controller_acknowledged"])):
+        found = next(
+            (i for i in state["identities"] if generation(i) == generation(item)), None
+        )
+        if (
+            found is not None
+            and set(found["ancestor_nodes"]) <= set(found["acknowledged"])
+            and set(found["controller_nodes"]) <= set(found["controller_acknowledged"])
+        ):
             return
         time.sleep(0.001)
     raise RuntimeError("ancestor_ack_timeout")
@@ -884,9 +1080,11 @@ def send(channel, message, *, descriptor=None, deadline=None):
     raw = json.dumps(envelope).encode()
     if len(raw) > 65536:
         raise RuntimeError("message_capacity")
-    anc = [] if descriptor is None else [
-        (socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", [descriptor]))
-    ]
+    anc = (
+        []
+        if descriptor is None
+        else [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array("i", [descriptor]))]
+    )
     channel.sendmsg([raw], anc)
     return state["sent"]
 
@@ -924,12 +1122,16 @@ def notify(channel, message, deadline, descriptor=None):
 
 def shrink(trigger, incoming, hard):
     """Retain the first cause and independently tighten every cleanup bound."""
-    end = min(incoming["at_ns"] + 20 * NS, hard - 10 * NS,
-              incoming.get("ancestor_end_ns", hard),
-              incoming.get("cleanup_deadline_ns", hard))
+    end = min(
+        incoming["at_ns"] + 20 * NS,
+        hard - 10 * NS,
+        incoming.get("ancestor_end_ns", hard),
+        incoming.get("cleanup_deadline_ns", hard),
+    )
     if trigger is None:
-        return dict(incoming, cleanup_deadline_ns=end,
-                    first_reason_at_ns=incoming["at_ns"])
+        return dict(
+            incoming, cleanup_deadline_ns=end, first_reason_at_ns=incoming["at_ns"]
+        )
     trigger["at_ns"] = min(trigger["at_ns"], incoming["at_ns"])
     trigger["cleanup_deadline_ns"] = min(trigger["cleanup_deadline_ns"], end)
     return trigger
@@ -941,8 +1143,15 @@ def signal_fixed(item, descriptor, sig, events, sent):
         return
     try:
         pidfd_signal(descriptor, sig)
-        events.append(dict(kind="signal", at_ns=now(), pid=item["pid"],
-                           ticks=item["ticks"], signal=int(sig)))
+        events.append(
+            dict(
+                kind="signal",
+                at_ns=now(),
+                pid=item["pid"],
+                ticks=item["ticks"],
+                signal=int(sig),
+            )
+        )
         sent.add(key)
     except ProcessLookupError:
         pass
@@ -967,8 +1176,9 @@ def watchdog(channel, job):
         if len(retired) > 1024:
             raise RuntimeError("watchdog_history_capacity")
         if tick >= job["operational_ns"]:
-            trigger = shrink(trigger, dict(reason="operational_deadline",
-                                          at_ns=tick), job["hard_ns"])
+            trigger = shrink(
+                trigger, dict(reason="operational_deadline", at_ns=tick), job["hard_ns"]
+            )
         for _ in range(64):
             if not select.select([channel], [], [], 0)[0]:
                 break
@@ -989,17 +1199,20 @@ def watchdog(channel, job):
                     trigger = shrink(trigger, message["trigger"], job["hard_ns"])
                     done = message["op"] == "complete"
             except Exception:
-                trigger = shrink(trigger, dict(reason="supervisor_lost",
-                                              at_ns=now()), job["hard_ns"])
+                trigger = shrink(
+                    trigger, dict(reason="supervisor_lost", at_ns=now()), job["hard_ns"]
+                )
                 break
         if trigger:
             tick = now()
             end = trigger["cleanup_deadline_ns"]
             for item, fd in list(cache.values()):
                 if not select.select([fd], [], [], 0)[0]:
-                    sig = signal.SIGKILL if tick >= min(
-                        trigger["at_ns"] + 150_000_000, end - NS
-                    ) else signal.SIGTERM
+                    sig = (
+                        signal.SIGKILL
+                        if tick >= min(trigger["at_ns"] + 150_000_000, end - NS)
+                        else signal.SIGTERM
+                    )
                     signal_fixed(item, fd, sig, events, sent)
             if all(select.select([fd], [], [], 0)[0] for _, fd in cache.values()):
                 break
@@ -1008,7 +1221,9 @@ def watchdog(channel, job):
         time.sleep(0.005)
     for _, fd in cache.values():
         os.close(fd)
-    return dict(events=events, trigger=trigger, complete=done, retired=retired, end_ns=now())
+    return dict(
+        events=events, trigger=trigger, complete=done, retired=retired, end_ns=now()
+    )
 
 
 def role_main(role, directory, descriptor, job):
@@ -1090,14 +1305,22 @@ def supervise(directory, parent_fd):
 
     def term_handler(signum, frame):
         nonlocal trigger
-        trigger = shrink(trigger, dict(reason="operational_deadline" if now() >= job["operational_ns"] else "supervisor_term", at_ns=now()), job["hard_ns"])
+        trigger = shrink(
+            trigger,
+            dict(
+                reason="operational_deadline"
+                if now() >= job["operational_ns"]
+                else "supervisor_term",
+                at_ns=now(),
+            ),
+            job["hard_ns"],
+        )
 
     signal.signal(signal.SIGTERM, term_handler)
     become_subreaper()
 
     def barrier(name, item=None):
-        notify(parent, dict(op="barrier", name=name, item=item),
-               job["operational_ns"])
+        notify(parent, dict(op="barrier", name=name, item=item), job["operational_ns"])
 
     def launch(role):
         if now() >= job["operational_ns"]:
@@ -1125,19 +1348,38 @@ def supervise(directory, parent_fd):
         begin = now()
         try:
             proc = subprocess.Popen(
-                [sys.executable, SCRIPT, "role", role, str(directory),
-                 str(child.fileno()), json.dumps(job)],
-                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                start_new_session=True, pass_fds=(auth, child.fileno(),
-                                                *([job["owner_fd"]] if "owner_fd" in job else [])),
-                env=environment, cwd=job["cwd"],
+                [
+                    sys.executable,
+                    SCRIPT,
+                    "role",
+                    role,
+                    str(directory),
+                    str(child.fileno()),
+                    json.dumps(job),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                pass_fds=(
+                    auth,
+                    child.fileno(),
+                    *([job["owner_fd"]] if "owner_fd" in job else []),
+                ),
+                env=environment,
+                cwd=job["cwd"],
             )
             handles[role] = [proc, fd, output]
             fd = pidfd_open(proc.pid)
             handles[role][1] = fd
-            item = dict(identity(proc.pid), role=role, birth_lower=begin,
-                        spawn_before_ns=begin, spawn_after_ns=now(),
-                        attempt=job["attempt"])
+            item = dict(
+                identity(proc.pid),
+                role=role,
+                birth_lower=begin,
+                spawn_before_ns=begin,
+                spawn_after_ns=now(),
+                attempt=job["attempt"],
+            )
             cache[generation(item)] = item
             channels[role] = here
             # Owner sees the real post-Popen identity before production ACK.
@@ -1148,16 +1390,24 @@ def supervise(directory, parent_fd):
                 await_ancestors(client, item, job["operational_ns"])
                 barrier("W_before_ready", item)
                 send(here, b"R", deadline=job["operational_ns"])
-                raw, _ = receive(here, min(now() + 100_000_000,
-                                          job["operational_ns"]))
+                raw, _ = receive(here, min(now() + 100_000_000, job["operational_ns"]))
                 if not json.loads(raw).get("ready"):
                     raise RuntimeError("watchdog_not_ready")
                 barrier("W_ready", item)
                 events.append(dict(kind="watchdog_ready", at_ns=now(), pid=item["pid"]))
             else:
-                notify(channels["W"], dict(op="identity", item=item),
-                       job["operational_ns"], fd)
-                client.rpc("controller_ack", pid=item["pid"], ticks=item["ticks"], ancestor=job["attempt"])
+                notify(
+                    channels["W"],
+                    dict(op="identity", item=item),
+                    job["operational_ns"],
+                    fd,
+                )
+                client.rpc(
+                    "controller_ack",
+                    pid=item["pid"],
+                    ticks=item["ticks"],
+                    ancestor=job["attempt"],
+                )
                 await_ancestors(client, item, job["operational_ns"])
                 barrier(role + "_registered", item)
                 if role == "worker" and job.get("fault") == "registration":
@@ -1170,8 +1420,9 @@ def supervise(directory, parent_fd):
                 if client.rpc("status")["stop"] or now() >= job["operational_ns"]:
                     raise RuntimeError("release_refused")
                 send(here, b"G", deadline=job["operational_ns"])
-                events.append(dict(kind="released", role=role, pid=proc.pid,
-                                   at_ns=now()))
+                events.append(
+                    dict(kind="released", role=role, pid=proc.pid, at_ns=now())
+                )
         finally:
             child.close()
             os.close(auth)
@@ -1195,9 +1446,17 @@ def supervise(directory, parent_fd):
         while trigger is None:
             tick = now()
             if tick >= job["operational_ns"]:
-                fault_observed(job, "operational_deadline", O=job["operational_ns"], observed_ns=tick)
-                trigger = shrink(trigger, dict(reason="operational_deadline",
-                                              at_ns=tick), job["hard_ns"])
+                fault_observed(
+                    job,
+                    "operational_deadline",
+                    O=job["operational_ns"],
+                    observed_ns=tick,
+                )
+                trigger = shrink(
+                    trigger,
+                    dict(reason="operational_deadline", at_ns=tick),
+                    job["hard_ns"],
+                )
                 break
             if not active_barrier and tick >= business_start + 200_000_000:
                 barrier("business_active")
@@ -1207,7 +1466,11 @@ def supervise(directory, parent_fd):
                     send(parent, b"{", deadline=job["operational_ns"])
                 elif job.get("fault") == "identity_capacity":
                     fault_observed(job, "S_registry_return_capacity")
-                    send(parent, dict(op="registry_snapshot", entries=list(cache.values()) * 22), deadline=job["operational_ns"])
+                    send(
+                        parent,
+                        dict(op="registry_snapshot", entries=list(cache.values()) * 22),
+                        deadline=job["operational_ns"],
+                    )
                 if job.get("coordinator_mode") == "early_exit":
                     send(channels["C"], b"E", deadline=job["operational_ns"])
             state = client.rpc("status")
@@ -1225,7 +1488,10 @@ def supervise(directory, parent_fd):
                     trigger = shrink(trigger, message["trigger"], job["hard_ns"])
                     break
             for item in state["identities"]:
-                if job["attempt"] not in item.get("ancestor_nodes", []) or item["pid"] == os.getpid():
+                if (
+                    job["attempt"] not in item.get("ancestor_nodes", [])
+                    or item["pid"] == os.getpid()
+                ):
                     continue
                 if job.get("fault") == "omit_descendant":
                     continue
@@ -1233,17 +1499,33 @@ def supervise(directory, parent_fd):
                     fd = pidfd_open(item["pid"])
                     cache[generation(item)] = item
                     extra_fds[generation(item)] = fd
-                    notify(channels["W"], dict(op="identity", item=item),
-                           job["operational_ns"], fd)
-                    notify(parent, dict(op="identity", item=item),
-                           job["operational_ns"])
-                    if job["attempt"] in item.get("controller_nodes", []) and job["attempt"] not in item.get("controller_acknowledged", []):
-                        client.rpc("controller_ack", pid=item["pid"], ticks=item["ticks"], ancestor=job["attempt"])
+                    notify(
+                        channels["W"],
+                        dict(op="identity", item=item),
+                        job["operational_ns"],
+                        fd,
+                    )
+                    notify(
+                        parent, dict(op="identity", item=item), job["operational_ns"]
+                    )
+                    if job["attempt"] in item.get("controller_nodes", []) and job[
+                        "attempt"
+                    ] not in item.get("controller_acknowledged", []):
+                        client.rpc(
+                            "controller_ack",
+                            pid=item["pid"],
+                            ticks=item["ticks"],
+                            ancestor=job["attempt"],
+                        )
             for key, fd in list(extra_fds.items()):
                 value = cache[key]
-                if select.select([fd], [], [], 0)[0] and not value.get("first_exit_observed_ns"):
+                if select.select([fd], [], [], 0)[0] and not value.get(
+                    "first_exit_observed_ns"
+                ):
                     value["first_exit_observed_ns"] = now()
-                    client.rpc("exited", item=value, at_ns=value["first_exit_observed_ns"])
+                    client.rpc(
+                        "exited", item=value, at_ns=value["first_exit_observed_ns"]
+                    )
                     notify(parent, dict(op="exited", item=value), job["hard_ns"])
             for role in ("W", "worker", "C"):
                 proc = handles[role][0]
@@ -1255,55 +1537,99 @@ def supervise(directory, parent_fd):
                     raise RuntimeError("watchdog_lost")
                 if role == "worker" and not finished:
                     if proc.returncode:
-                        fault_observed(job, "worker_return", returncode=proc.returncode,
-                                       item=item)
+                        fault_observed(
+                            job, "worker_return", returncode=proc.returncode, item=item
+                        )
                         raise RuntimeError("worker_failed")
-                    if any(not select.select([fd], [], [], 0)[0] for fd in extra_fds.values()):
-                        fault_observed(job, "leader_exit_with_live_registered_descendant", item=item)
+                    if any(
+                        not select.select([fd], [], [], 0)[0]
+                        for fd in extra_fds.values()
+                    ):
+                        fault_observed(
+                            job,
+                            "leader_exit_with_live_registered_descendant",
+                            item=item,
+                        )
                         raise RuntimeError("descendant_tail")
                     finished = True
                     send(channels["C"], b"F", deadline=job["operational_ns"])
                 if role == "C":
                     if not finished or proc.returncode:
-                        fault_observed(job, "coordinator_return", returncode=proc.returncode,
-                                       item=item)
+                        fault_observed(
+                            job,
+                            "coordinator_return",
+                            returncode=proc.returncode,
+                            item=item,
+                        )
                         raise RuntimeError("coordinator_early_exit")
-                    trigger = shrink(trigger, dict(reason="completed", at_ns=tick),
-                                     job["hard_ns"])
+                    trigger = shrink(
+                        trigger, dict(reason="completed", at_ns=tick), job["hard_ns"]
+                    )
             time.sleep(0.005)
     except Exception as exc:
         error = str(exc)
         if isinstance(exc, ControlStop):
             trigger = shrink(trigger, exc.trigger, job["hard_ns"])
-            events.append(dict(kind="ancestor_stop_during_ack", at_ns=now(),
-                               exception=str(exc), original=exc.trigger))
+            events.append(
+                dict(
+                    kind="ancestor_stop_during_ack",
+                    at_ns=now(),
+                    exception=str(exc),
+                    original=exc.trigger,
+                )
+            )
             error = exc.trigger["reason"]
-        if (str(exc) in {"channel_eof_or_capacity", "channel_receive_timeout",
-                         "channel_send_timeout", "channel_ack", "watchdog_lost"}
-                and "W" in handles and handles["W"][1] is not None
-                and select.select([handles["W"][1]], [], [], 0)[0]):
-            events.append(dict(kind="watchdog_exit_cause", at_ns=now(), exception=str(exc)))
+        if (
+            str(exc)
+            in {
+                "channel_eof_or_capacity",
+                "channel_receive_timeout",
+                "channel_send_timeout",
+                "channel_ack",
+                "watchdog_lost",
+            }
+            and "W" in handles
+            and handles["W"][1] is not None
+            and select.select([handles["W"][1]], [], [], 0)[0]
+        ):
+            events.append(
+                dict(kind="watchdog_exit_cause", at_ns=now(), exception=str(exc))
+            )
             error = "watchdog_lost"
         trigger = shrink(trigger, dict(reason=error, at_ns=now()), job["hard_ns"])
     finally:
-        trigger = trigger or shrink(None, dict(reason="supervisor_failure",
-                                              at_ns=now()), job["hard_ns"])
+        trigger = trigger or shrink(
+            None, dict(reason="supervisor_failure", at_ns=now()), job["hard_ns"]
+        )
         if trigger["reason"] != "completed":
             try:
-                client.rpc("child_trigger", attempt=job["attempt"], reason=trigger["reason"], at_ns=trigger["at_ns"])
+                client.rpc(
+                    "child_trigger",
+                    attempt=job["attempt"],
+                    reason=trigger["reason"],
+                    at_ns=trigger["at_ns"],
+                )
             except Exception:
                 error = error or "root_trigger_notification_failed"
         try:
-            notify(parent, dict(op="barrier", name="cleanup_started", item=None,
-                                trigger=trigger), job["hard_ns"])
+            notify(
+                parent,
+                dict(op="barrier", name="cleanup_started", item=None, trigger=trigger),
+                job["hard_ns"],
+            )
         except ControlStop as exc:
             trigger = shrink(trigger, exc.trigger, job["hard_ns"])
         except Exception:
             pass
         if "W" in channels:
             try:
-                send(channels["W"], dict(op="complete" if trigger["reason"] ==
-                                        "completed" else "stop", trigger=trigger))
+                send(
+                    channels["W"],
+                    dict(
+                        op="complete" if trigger["reason"] == "completed" else "stop",
+                        trigger=trigger,
+                    ),
+                )
             except Exception:
                 pass
         last_sent_end = None
@@ -1342,10 +1668,15 @@ def supervise(directory, parent_fd):
                 if not ended:
                     active = True
                     if role != "W":
-                        sig = signal.SIGKILL if now() >= min(
-                            trigger["at_ns"] + 150_000_000,
-                            trigger["cleanup_deadline_ns"] - NS,
-                        ) else signal.SIGTERM
+                        sig = (
+                            signal.SIGKILL
+                            if now()
+                            >= min(
+                                trigger["at_ns"] + 150_000_000,
+                                trigger["cleanup_deadline_ns"] - NS,
+                            )
+                            else signal.SIGTERM
+                        )
                         signal_fixed(item, fd, sig, events, sent)
             for key, fd in list(extra_fds.items()):
                 value = cache[key]
@@ -1353,13 +1684,27 @@ def supervise(directory, parent_fd):
                     if not value.get("first_exit_observed_ns"):
                         value["first_exit_observed_ns"] = now()
                         try:
-                            client.rpc("exited", item=value, at_ns=value["first_exit_observed_ns"])
-                            notify(parent, dict(op="exited", item=value), job["hard_ns"])
+                            client.rpc(
+                                "exited",
+                                item=value,
+                                at_ns=value["first_exit_observed_ns"],
+                            )
+                            notify(
+                                parent, dict(op="exited", item=value), job["hard_ns"]
+                            )
                         except Exception as exc:
                             error = error or str(exc)
                 else:
                     active = True
-                    sig = signal.SIGKILL if now() >= min(trigger["at_ns"] + 150_000_000, trigger["cleanup_deadline_ns"] - NS) else signal.SIGTERM
+                    sig = (
+                        signal.SIGKILL
+                        if now()
+                        >= min(
+                            trigger["at_ns"] + 150_000_000,
+                            trigger["cleanup_deadline_ns"] - NS,
+                        )
+                        else signal.SIGTERM
+                    )
                     signal_fixed(value, fd, sig, events, sent)
             if not active:
                 break
@@ -1374,22 +1719,37 @@ def supervise(directory, parent_fd):
                 pid = 0
             if pid:
                 item.update(reaped=True, reaped_ns=now(), wait_status=status)
-        error = error or (trigger["reason"] if trigger["reason"] != "completed" else None)
+        error = error or (
+            trigger["reason"] if trigger["reason"] != "completed" else None
+        )
         tail = all(proc.poll() is not None for proc, _, _ in handles.values())
         tail = tail and all(not i["group_live"] for i in cache.values())
         result = dict(
             success=error is None and trigger["reason"] == "completed" and tail,
-            error=error, trigger=trigger, entries=[i for i in cache.values() if any(i["pid"] == proc.pid for proc, _, _ in handles.values())], events=events,
-            tail_known=tail, cleanup_deadline_ns=trigger["cleanup_deadline_ns"],
-            observed_descendants=descendants, end_ns=now(),
+            error=error,
+            trigger=trigger,
+            entries=[
+                i
+                for i in cache.values()
+                if any(i["pid"] == proc.pid for proc, _, _ in handles.values())
+            ],
+            events=events,
+            tail_known=tail,
+            cleanup_deadline_ns=trigger["cleanup_deadline_ns"],
+            observed_descendants=descendants,
+            end_ns=now(),
             cleanup_within_deadline=now() <= trigger["cleanup_deadline_ns"] and tail,
             physical_tail_known=tail,
-            evidence_complete=all(value.get("first_exit_observed_ns")
-                                  and value.get("reaped_ns")
-                                  for value in cache.values()),
+            evidence_complete=all(
+                value.get("first_exit_observed_ns") and value.get("reaped_ns")
+                for value in cache.values()
+            ),
         )
-        result["success"] = bool(result["success"] and result["cleanup_within_deadline"]
-                                 and result["evidence_complete"])
+        result["success"] = bool(
+            result["success"]
+            and result["cleanup_within_deadline"]
+            and result["evidence_complete"]
+        )
         barrier("result_before") if now() < job["operational_ns"] else None
         if job.get("fault") == "persist_fail":
             fault_observed(job, "S_result_write_failure")
@@ -1400,8 +1760,14 @@ def supervise(directory, parent_fd):
                 time.sleep(0.005)
         save(directory / "result.json", result)
         try:
-            count = sum(1 for value in cache.values() if value["attempt"] == job["attempt"]) + (1 if job.get("fault") == "outer_unknown" else 0)
-            notify(parent, dict(op="result_written", final_registry_count=count), job["hard_ns"])
+            count = sum(
+                1 for value in cache.values() if value["attempt"] == job["attempt"]
+            ) + (1 if job.get("fault") == "outer_unknown" else 0)
+            notify(
+                parent,
+                dict(op="result_written", final_registry_count=count),
+                job["hard_ns"],
+            )
         except Exception:
             pass
         for fd in extra_fds.values():
@@ -1467,9 +1833,11 @@ def run_owned(directory, job):
                         item.setdefault("first_exit_observed_ns", tick)
                         item.setdefault("first_exit_source", "startup_cutoff_pidfd")
                     else:
-                        sig = signal.SIGKILL if tick >= min(
-                            trigger[0]["at_ns"] + 150_000_000, end - NS
-                        ) else signal.SIGTERM
+                        sig = (
+                            signal.SIGKILL
+                            if tick >= min(trigger[0]["at_ns"] + 150_000_000, end - NS)
+                            else signal.SIGTERM
+                        )
                         try:
                             signal_fixed(item, fd, sig, events, sent)
                         except Exception as exc:
@@ -1487,12 +1855,24 @@ def run_owned(directory, job):
         birth = now()
         try:
             proc = subprocess.Popen(
-                [sys.executable, SCRIPT, "supervise", str(directory),
-                 str(child.fileno())],
-                stdout=output, stderr=subprocess.STDOUT, start_new_session=True,
-                stdin=subprocess.DEVNULL, pass_fds=(auth, child.fileno(),
-                                                     *([job["owner_fd"]] if "owner_fd" in job else [])),
-                env=environment, cwd=job["cwd"],
+                [
+                    sys.executable,
+                    SCRIPT,
+                    "supervise",
+                    str(directory),
+                    str(child.fileno()),
+                ],
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                pass_fds=(
+                    auth,
+                    child.fileno(),
+                    *([job["owner_fd"]] if "owner_fd" in job else []),
+                ),
+                env=environment,
+                cwd=job["cwd"],
             )
         finally:
             child.close()
@@ -1500,27 +1880,38 @@ def run_owned(directory, job):
             auth = None
         # Every operation after Popen is inside the same cleanup protection.
         descriptor = pidfd_open(proc.pid)
-        item = dict(identity(proc.pid), role="S", birth_lower=birth,
-                    spawn_before_ns=birth, spawn_after_ns=now(),
-                    attempt=ticket["id"])
+        item = dict(
+            identity(proc.pid),
+            role="S",
+            birth_lower=birth,
+            spawn_before_ns=birth,
+            spawn_after_ns=now(),
+            attempt=ticket["id"],
+        )
         cache[generation(item)] = (item, descriptor)
         guard = threading.Thread(target=cutoff, name="startup-cutoff")
         guard.start()
         if owner is not None:
             owner.register(item)
         client.rpc("identity", item=item, intent=intent["id"])
-        monitor = RealMonitor(directory, header, stop, attempt=ticket["id"],
-                              discovered=discovered, view=job.get("view"),
-                              fault_nonce=job["fault_nonce"])
+        monitor = RealMonitor(
+            directory,
+            header,
+            stop,
+            attempt=ticket["id"],
+            discovered=discovered,
+            view=job.get("view"),
+            fault_nonce=job["fault_nonce"],
+        )
         monitor.register(item)
-        client.rpc("ancestor_ack", pid=item["pid"], ticks=item["ticks"],
-                   ancestor=ticket["id"])
+        client.rpc(
+            "ancestor_ack", pid=item["pid"], ticks=item["ticks"], ancestor=ticket["id"]
+        )
         await_ancestors(client, item, job["operational_ns"])
         if now() >= job["operational_ns"] or client.rpc("status")["stop"]:
             raise RuntimeError("release_refused")
         send(here, job, deadline=job["operational_ns"])
         while now() < job["hard_ns"]:
-            tick = now()
             if select.select([here], [], [], 0.005)[0]:
                 try:
                     raw, _ = receive(here, now())
@@ -1536,45 +1927,82 @@ def run_owned(directory, job):
                         send(here, b"A", deadline=job["hard_ns"])
                     elif message["op"] == "exited":
                         value = message["item"]
-                        monitor.observe_exit(value, value["first_exit_observed_ns"],
-                                             "S_notice")
+                        monitor.observe_exit(
+                            value, value["first_exit_observed_ns"], "S_notice"
+                        )
                         for entry, _ in cache.values():
                             if generation(entry) == generation(value):
-                                entry.setdefault("first_exit_observed_ns",
-                                                 value["first_exit_observed_ns"])
+                                entry.setdefault(
+                                    "first_exit_observed_ns",
+                                    value["first_exit_observed_ns"],
+                                )
                         send(here, b"A", deadline=job["hard_ns"])
                     elif message["op"] == "barrier":
                         if message["name"] == "cleanup_started":
                             value = message["trigger"]
-                            stop(value["reason"], value["at_ns"], value["cleanup_deadline_ns"])
-                        if message["name"] == "cleanup_started" and monitor.view is not None:
+                            stop(
+                                value["reason"],
+                                value["at_ns"],
+                                value["cleanup_deadline_ns"],
+                            )
+                        if (
+                            message["name"] == "cleanup_started"
+                            and monitor.view is not None
+                        ):
                             monitor.view.phase_ready = True
                         if owner is not None:
                             owner.barrier(message["name"], message.get("item"))
                             if owner.fired:
                                 fault = owner.context["spec"]["steps"][0]
                                 reason = fault["expected"]
-                                stop(reason[0] if isinstance(reason, list) else reason,
-                                     owner.trigger_ns, owner.cleanup_end_ns)
-                        killed_sender = bool(owner is not None and owner.fired
-                            and owner.context["spec"].get("owner_fault", {}).get("role") == "S"
-                            and owner.context["spec"]["owner_fault"]["barrier"] == message["name"])
+                                stop(
+                                    reason[0] if isinstance(reason, list) else reason,
+                                    owner.trigger_ns,
+                                    owner.cleanup_end_ns,
+                                )
+                        killed_sender = bool(
+                            owner is not None
+                            and owner.fired
+                            and owner.context["spec"].get("owner_fault", {}).get("role")
+                            == "S"
+                            and owner.context["spec"]["owner_fault"]["barrier"]
+                            == message["name"]
+                        )
                         if not killed_sender:
                             send(here, b"A", deadline=job["hard_ns"])
-                        if message["name"] == "business_active" and job.get("fault") == "ancestor_late":
+                        if (
+                            message["name"] == "business_active"
+                            and job.get("fault") == "ancestor_late"
+                        ):
                             fault_observed(job, "ancestor_stop_before_late_delivery")
                             detected = now()
                             stop("ancestor_stop", detected, detected + 1200_000_000)
                             time.sleep(0.005)
-                            send(here, dict(op="stop", trigger=trigger[0]), deadline=job["hard_ns"])
-                        if message["name"] == "business_active" and job.get("fault") == "startup_block":
+                            send(
+                                here,
+                                dict(op="stop", trigger=trigger[0]),
+                                deadline=job["hard_ns"],
+                            )
+                        if (
+                            message["name"] == "business_active"
+                            and job.get("fault") == "startup_block"
+                        ):
                             fault_observed(job, "startup_business_barrier_block")
-                            time.sleep(max(0, (job["operational_ns"] + 250_000_000 - now()) / NS))
+                            time.sleep(
+                                max(
+                                    0,
+                                    (job["operational_ns"] + 250_000_000 - now()) / NS,
+                                )
+                            )
                     elif message["op"] == "registry_snapshot":
                         if len(message["entries"]) > 64:
                             raise RuntimeError("outer_tail_unknown")
                     elif message["op"] == "result_written":
-                        if message.get("final_registry_count") != sum(1 for value, _ in cache.values() if value["attempt"] == ticket["id"] and value["role"] != "S"):
+                        if message.get("final_registry_count") != sum(
+                            1
+                            for value, _ in cache.values()
+                            if value["attempt"] == ticket["id"] and value["role"] != "S"
+                        ):
                             outer_error = "outer_tail_unknown"
                             stop(outer_error)
                         if owner is not None:
@@ -1583,8 +2011,11 @@ def run_owned(directory, job):
             state = client.rpc("status")
             expected_stop = state.get("expected_triggers", {}).get(ticket["id"])
             if expected_stop:
-                stop(expected_stop["reason"], expected_stop["at_ns"],
-                     expected_stop.get("cleanup_deadline_ns"))
+                stop(
+                    expected_stop["reason"],
+                    expected_stop["at_ns"],
+                    expected_stop.get("cleanup_deadline_ns"),
+                )
             if state["stop"]:
                 value = state["stop"]
                 stop(value["reason"], value["at_ns"], value.get("ancestor_end_ns"))
@@ -1595,10 +2026,23 @@ def run_owned(directory, job):
                     discovered(value)
                     monitor.register(value)
                     if ticket["id"] not in value.get("acknowledged", []):
-                        client.rpc("ancestor_ack", pid=value["pid"], ticks=value["ticks"],
-                                   ancestor=ticket["id"])
-            if trigger[0] and not reported_trigger and trigger[0]["reason"] != "completed":
-                client.rpc("child_trigger", attempt=ticket["id"], reason=trigger[0]["reason"], at_ns=trigger[0]["at_ns"])
+                        client.rpc(
+                            "ancestor_ack",
+                            pid=value["pid"],
+                            ticks=value["ticks"],
+                            ancestor=ticket["id"],
+                        )
+            if (
+                trigger[0]
+                and not reported_trigger
+                and trigger[0]["reason"] != "completed"
+            ):
+                client.rpc(
+                    "child_trigger",
+                    attempt=ticket["id"],
+                    reason=trigger[0]["reason"],
+                    at_ns=trigger[0]["at_ns"],
+                )
                 reported_trigger = True
             if trigger[0]:
                 try:
@@ -1625,18 +2069,29 @@ def run_owned(directory, job):
         if proc.poll() is None:
             stop("supervisor_hard_tail")
     except Exception as exc:
-        outer_error = "outer_tail_unknown" if isinstance(exc, json.JSONDecodeError) else str(exc)
+        outer_error = (
+            "outer_tail_unknown" if isinstance(exc, json.JSONDecodeError) else str(exc)
+        )
         stop(outer_error)
         try:
-            client.rpc("child_trigger", attempt=ticket["id"], reason=outer_error, at_ns=now())
+            client.rpc(
+                "child_trigger", attempt=ticket["id"], reason=outer_error, at_ns=now()
+            )
         except Exception:
             outer_error += ":trigger_notification_failed"
     finally:
         # Keep the cutoff and sampler running until every fixed pidfd is exited.
-        end = trigger[0]["cleanup_deadline_ns"] if trigger[0] else job["hard_ns"] - 10 * NS
+        end = (
+            trigger[0]["cleanup_deadline_ns"]
+            if trigger[0]
+            else job["hard_ns"] - 10 * NS
+        )
         while now() < end:
-            live = [(i, fd) for i, fd in cache.values()
-                    if not select.select([fd], [], [], 0)[0]]
+            live = [
+                (i, fd)
+                for i, fd in cache.values()
+                if not select.select([fd], [], [], 0)[0]
+            ]
             if not live:
                 break
             if trigger[0] is None:
@@ -1650,7 +2105,9 @@ def run_owned(directory, job):
             except subprocess.TimeoutExpired:
                 outer_error = outer_error or "supervisor_unreaped_tail"
         sampling_valid = monitor.finish(end) if monitor else False
-        if all(select.select([fd], [], [], 0)[0] for _, fd in cache.values()) and (proc is None or proc.returncode is not None):
+        if all(select.select([fd], [], [], 0)[0] for _, fd in cache.values()) and (
+            proc is None or proc.returncode is not None
+        ):
             complete.set()
         if guard is not None:
             guard.join(max(0, (job["hard_ns"] - now()) / NS))
@@ -1677,11 +2134,17 @@ def run_owned(directory, job):
         owner_complete = owner_result is not None and owner_result["complete"]
         if job.get("collection"):
             owner_complete = True
-        inner = result or dict(success=False, error=outer_error, tail_known=False,
-                               entries=[], observed_descendants=[])
+        inner = result or dict(
+            success=False,
+            error=outer_error,
+            tail_known=False,
+            entries=[],
+            observed_descendants=[],
+        )
         physical_outer_cache = outer_known
         outer_known = outer_known and all(
-            i.get("resolved") for i in client.rpc("status")["intents"]
+            i.get("resolved")
+            for i in client.rpc("status")["intents"]
             if i["attempt"] == ticket["id"]
         )
         parent_sampling_valid = sampling_valid
@@ -1694,25 +2157,50 @@ def run_owned(directory, job):
         physical_outer = physical_outer_cache and owner_complete
         outer_known = outer_known and outer_error is None
         tail = bool(inner["tail_known"] and outer_known and parent_sampling_valid)
-        cleanup_ok = bool(physical_outer and now() <= end
-                          and inner.get("cleanup_within_deadline", True))
-        result = dict(
-            inner, startup=dict(tail_known=bool(outer_known), identities=actual,
-                                events=events, end_ns=now()),
-            tail_known=tail, sampling_valid=sampling_valid,
-            parent_sampling_valid=parent_sampling_valid,
-            cleanup_complete=bool(outer_known), cleanup_within_deadline=cleanup_ok,
-            physical_tail_known=bool(outer_known and inner["tail_known"]),
-            measurement_valid=sampling_valid, evidence_complete=bool(monitor is not None
-                and not monitor.thread.is_alive() and all(i.get("first_exit_observed_ns")
-                and i.get("group_scan_ns") for i in actual)), owner_complete=owner_complete,
-            independent_owner=owner_result, hard_ns=job["hard_ns"],
-            operational_ns=job["operational_ns"], hard_breached=now() > job["hard_ns"],
-            end_ns=now(), diagnostic_valid=None,
+        cleanup_ok = bool(
+            physical_outer
+            and now() <= end
+            and inner.get("cleanup_within_deadline", True)
         )
-        result["success"] = bool(inner["success"] and tail and owner_complete and cleanup_ok
-                                 and result["evidence_complete"]
-                                 and not result["hard_breached"])
+        result = dict(
+            inner,
+            startup=dict(
+                tail_known=bool(outer_known),
+                identities=actual,
+                events=events,
+                end_ns=now(),
+            ),
+            tail_known=tail,
+            sampling_valid=sampling_valid,
+            parent_sampling_valid=parent_sampling_valid,
+            cleanup_complete=bool(outer_known),
+            cleanup_within_deadline=cleanup_ok,
+            physical_tail_known=bool(outer_known and inner["tail_known"]),
+            measurement_valid=sampling_valid,
+            evidence_complete=bool(
+                monitor is not None
+                and not monitor.thread.is_alive()
+                and all(
+                    i.get("first_exit_observed_ns") and i.get("group_scan_ns")
+                    for i in actual
+                )
+            ),
+            owner_complete=owner_complete,
+            independent_owner=owner_result,
+            hard_ns=job["hard_ns"],
+            operational_ns=job["operational_ns"],
+            hard_breached=now() > job["hard_ns"],
+            end_ns=now(),
+            diagnostic_valid=None,
+        )
+        result["success"] = bool(
+            inner["success"]
+            and tail
+            and owner_complete
+            and cleanup_ok
+            and result["evidence_complete"]
+            and not result["hard_breached"]
+        )
         summary = client.rpc("diagnostic_summary", attempt=ticket["id"])
         result["diagnostic_valid"] = summary["valid"] if summary["applicable"] else None
         result["diagnostic_sources"] = summary["ids"]
@@ -1727,8 +2215,10 @@ def run_owned(directory, job):
         if trigger[0]:
             result["startup_trigger"] = trigger[0]
         save(directory / "collection-result.json", result)
-        save(directory / "attempt.json", dict(ticket=ticket["id"],
-                                              closed=tail, end_ns=now()))
+        save(
+            directory / "attempt.json",
+            dict(ticket=ticket["id"], closed=tail, end_ns=now()),
+        )
         client.rpc("close", id=ticket["id"], result=result)
         if output is not None:
             output.close()
@@ -1750,5 +2240,11 @@ if __name__ == "__main__":
         supervise(Path(args.arguments[0]), int(args.arguments[1]))
         Client.current().rpc("channel_closing")
     else:
-        raise SystemExit(role_main(args.arguments[0], args.arguments[1],
-                                   int(args.arguments[2]), json.loads(args.arguments[3])))
+        raise SystemExit(
+            role_main(
+                args.arguments[0],
+                args.arguments[1],
+                int(args.arguments[2]),
+                json.loads(args.arguments[3]),
+            )
+        )

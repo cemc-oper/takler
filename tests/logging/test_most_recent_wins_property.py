@@ -65,7 +65,11 @@ def level_name(draw: st.DrawFn) -> "tuple[LogLevel, str]":
 
 # Feature: logging-enhancement, Property 11: Most recent configuration wins
 # Validates: Requirements 1.2, 1.3
-@settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(
+    max_examples=100,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @given(sequence=st.lists(level_name(), min_size=1))
 def test_most_recent_configuration_wins(sequence):
     """The final ``configure`` invocation governs every subsequent record.

@@ -9,6 +9,8 @@ def class_members(cls):
         for base in reversed(cls.__mro__)
         if base is not object
         for name, value in vars(base).items()
+        # Reading __annotations__ can create an empty dictionary on the class.
+        if not (name == "__annotations__" and type(value) is dict and not value)
         # copyreg caches slot discovery on ordinary classes during deepcopy.
         if not (
             name == "__slotnames__"

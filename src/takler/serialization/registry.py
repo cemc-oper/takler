@@ -260,18 +260,22 @@ def using_registry(registry):
         _current.reset(token)
 
 
-def builtin_registry():
+def _builtin_node_types():
     from takler.core import Bunch, Flow, NodeContainer, Task
     from takler.tasks.shell import ShellScriptTask
 
-    registry = TypeRegistry()
-    for cls, type_id, kind in (
+    return (
         (Bunch, "takler.bunch", "bunch"),
         (Flow, "takler.flow", "flow"),
         (NodeContainer, "takler.container", "container"),
         (Task, "takler.task", "task"),
         (ShellScriptTask, "takler.shell", "task"),
-    ):
+    )
+
+
+def builtin_registry():
+    registry = TypeRegistry()
+    for cls, type_id, kind in _builtin_node_types():
         registry.register(NodeRegistration(type_id, cls, kind), _builtin=True)
     return registry
 
@@ -354,6 +358,7 @@ _RUN_EFFECT_HELPERS = tuple(
     for name in (
         "get_registry",
         "builtin_registry",
+        "_builtin_node_types",
         "_current",
         "TypeRegistry",
         "NodeRegistration",
