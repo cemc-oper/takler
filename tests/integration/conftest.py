@@ -24,6 +24,7 @@ that thread rather than by an async test.
 from __future__ import annotations
 
 import asyncio
+from contextlib import ExitStack
 import socket
 import threading
 from pathlib import Path
@@ -53,20 +54,22 @@ TEST_SINGLE_TIMEOUT: float = 10.0
 TEST_RETRY_WINDOW: float = 10.0
 
 
-def free_port() -> int:
-    """Return a currently free TCP port.
+def free_ports(count: int) -> tuple[int, ...]:
+    """Pick distinct TCP ports by keeping all reservations open until selected."""
+    with ExitStack() as stack:
+        ports = []
+        for _ in range(count):
+            sock = stack.enter_context(
+                socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            )
+            sock.bind(("", 0))
+            ports.append(sock.getsockname()[1])
+        return tuple(ports)
 
-    Binding port 0 and reading back the assigned port is the portable way to
-    pick a port that is free *right now*; a hard-coded port would make the
-    suite fail whenever it happens to be taken (by a developer's own server,
-    or by another test running in parallel).
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-    finally:
-        s.close()
+
+def free_port() -> int:
+    """Return a currently free TCP port."""
+    return free_ports(1)[0]
 
 
 class ServerRunner:
@@ -211,6 +214,12 @@ def free_port_fixture():
     """The free-port picker, exposed as a fixture (the suite runs with
     ``--import-mode=importlib``, so sharing goes through fixtures)."""
     return free_port
+
+
+@pytest.fixture
+def free_ports_fixture():
+    """Expose the distinct-port picker for tests that start multiple listeners."""
+    return free_ports
 
 
 @pytest.fixture

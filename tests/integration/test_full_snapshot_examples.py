@@ -31,11 +31,11 @@ def go_snapshot_example(tmp_path_factory):
 @pytest.mark.parametrize("language", ["python", "go"])
 @pytest.mark.parametrize("transport", ["http", "grpc"])
 def test_documented_full_snapshot_examples(
-    language, transport, request, server_runner_factory, free_port_fixture
+    language, transport, request, server_runner_factory, free_ports_fixture
 ):
     if language == "go":
         go_snapshot_example = request.getfixturevalue("go_snapshot_example")
-    grpc_port, http_port = free_port_fixture(), free_port_fixture()
+    grpc_port, http_port = free_ports_fixture(2)
     runner = server_runner_factory(
         port=grpc_port,
         connect_config=ConnectConfig(

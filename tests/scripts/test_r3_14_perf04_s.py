@@ -160,6 +160,12 @@ def run_closure_case(folder, fault=None):
 
     folder.mkdir()
     args = [
+        # The ownership check includes writable thread stacks. Set the child
+        # stack limit before exec so libc does not use a runner-specific default.
+        "/bin/sh",
+        "-c",
+        'ulimit -S -s 4096 && exec "$@"',
+        "perf04-s",
         sys.executable,
         str(Path(__file__).resolve().parents[2] / "scripts/r3_14_perf04_s.py"),
         "--memory-only",
@@ -231,7 +237,10 @@ def test_s_same_entry_normal_and_recomputable_evidence_under_30s(tmp_path, fault
         if r["dimension"] == "role" and r["key"] == "W"
     )
     assert child["offered"] == child["sent"] == child["effective"] == 600
-    assert result["joint"]["tool_conjunction_pass"], result["joint"]
+    assert result["joint"]["tool_conjunction_pass"], (
+        result["joint"],
+        result["ownership"],
+    )
     assert (
         result["registry"]["service_launches"] == 0
         and not result["registry"]["live_registered"]
