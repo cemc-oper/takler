@@ -67,6 +67,8 @@ from takler.server.connect_config import (
     generate_connect_config,
 )
 
+pytestmark = pytest.mark.integration
+
 LOCALHOST = "127.0.0.1"
 
 FLOW_NAME = "flow1"

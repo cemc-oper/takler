@@ -85,6 +85,7 @@ def summary_fixture():
     return es, manifest
 
 
+@pytest.mark.extended
 def test_100k_fixture_has_exact_tree_and_no_extra_payload():
     from query_a_matrix_100k import make_tree
     from takler.core import NodeStatus

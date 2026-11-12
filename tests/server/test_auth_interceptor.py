@@ -93,6 +93,9 @@ from takler.server.connect_config import (
 from takler.server.protocol import takler_pb2
 from takler.server.protocol.takler_pb2_grpc import TaklerServerStub
 
+
+pytestmark = pytest.mark.integration
+
 #: Loopback only: no name resolution, no traffic leaving the machine.
 LOCALHOST = "127.0.0.1"
 

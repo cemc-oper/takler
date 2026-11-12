@@ -28,12 +28,17 @@ from pathlib import Path
 from typing import List
 from unittest import mock
 
+import pytest
+
 from takler.core import Flow
 from takler.server import TaklerServer
 from takler.server.checkpoint import (
     DEFAULT_CHECKPOINT_FILE,
     DEFAULT_CHECKPOINT_INTERVAL,
 )
+
+
+pytestmark = pytest.mark.integration
 
 
 def _make_server(tmp_path: Path, **kwargs) -> TaklerServer:

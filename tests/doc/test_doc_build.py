@@ -25,6 +25,7 @@ DOC_SOURCE = PROJECT_ROOT / "doc" / "source"
 
 
 @pytest.mark.slow
+@pytest.mark.integration
 def test_sphinx_build_html_strict(tmp_path: Path):
     """``sphinx-build -b html -W`` succeeds with no warnings treated as errors."""
     build_dir = tmp_path / "html"

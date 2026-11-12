@@ -89,6 +89,7 @@ def test_async_callable_hook_is_rejected_before_identity(monkeypatch):
     assert node.try_no == 0 and node.attempt_id is None
 
 
+@pytest.mark.integration
 def test_server_start_rejects_async_hook_before_restore_or_network(
     monkeypatch, tmp_path
 ):

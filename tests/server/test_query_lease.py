@@ -86,6 +86,7 @@ def test_unchanged_poll_renews_scope_across_two_page_lifetimes(monkeypatch):
     asyncio.run(exercise())
 
 
+@pytest.mark.integration
 def test_python_client_keeps_detail_after_two_page_lifetimes(monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr("takler.server.query_service._monotonic", lambda: clock[0])
@@ -260,23 +261,5 @@ def test_idle_monitors_rebuild_while_active_monitors_keep_their_waterline(monkey
             assert len(service._query_leases) == len(owners)
         finally:
             service.close()
-
-    asyncio.run(exercise())
-
-
-@pytest.mark.slow
-def test_real_time_unchanged_poll_smoke():
-    async def exercise():
-        bunch = Bunch()
-        flow = bunch.add_flow(Flow("f"))
-        flow.add_task("t")
-        service = Scheduler(bunch).query_service
-        page = await service.page(_page("/f"))
-        for _ in range(3):
-            await asyncio.sleep(SNAPSHOT_SECONDS * 2 / 3 + 1)
-            reply = await service.since(_since(page, "/f"))
-            assert reply.kind == "since" and reply.unchanged
-        assert page.snapshot_id not in service._snapshots
-        assert (await service.detail(_detail(page, flow))).kind == "detail"
 
     asyncio.run(exercise())

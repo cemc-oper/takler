@@ -32,6 +32,8 @@ def original_objects():
     )
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @requires_g0
 def test_six_sample_actual_entry_and_partition(tmp_path):
     before = original_objects()
@@ -62,6 +64,8 @@ def test_six_sample_actual_entry_and_partition(tmp_path):
     assert not (tmp_path / "unused.check").exists()
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @requires_g0
 @pytest.mark.parametrize(
     "fault",
@@ -93,6 +97,8 @@ def test_invalid_entry_stops_and_restores(tmp_path, fault):
         diagnostic.diagnose(tmp_path, CONFIG)
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @requires_g0
 def test_real_deepcopy_exception_is_swallowed_but_not_valid(tmp_path, monkeypatch):
     calls = []
@@ -109,6 +115,8 @@ def test_real_deepcopy_exception_is_swallowed_but_not_valid(tmp_path, monkeypatc
     assert len(result["samples"]) == 1
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @requires_g0
 def test_capacity_invalid_is_sticky_through_snapshot_catch(tmp_path):
     result = diagnostic.diagnose(tmp_path, CONFIG | dict(interval_limit=30))
@@ -156,6 +164,8 @@ def test_future_g1_expired_admission_refused_before_fixture(tmp_path, monkeypatc
     assert not (tmp_path / "attempt.json").exists()
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @requires_g0
 def test_product_sources_remain_identical(tmp_path):
     root = Path(__file__).resolve().parents[2] / "src"
@@ -199,6 +209,8 @@ def cli_owner(tmp_path):
         assert result["complete"], result
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @pytest.mark.parametrize("scope", CLI_SCOPES, ids=[s["id"] for s in CLI_SCOPES])
 def test_cli_scope(tmp_path, scope, cli_owner):
     import run_snapshot_control as control

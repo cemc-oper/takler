@@ -149,6 +149,8 @@ docs = [
 addopts = "--import-mode=importlib"
 markers = [
     "slow: tests that spawn real processes or otherwise take a long time to run",
+    "integration: tests that exercise interactions across components, transports or processes",
+    "extended: scale, long-running or dedicated-runner tests selected on demand",
 ]
 
 [tool.setuptools.packages.find]

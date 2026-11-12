@@ -589,6 +589,7 @@ def _serve_once(transport: HttpTransport) -> None:
     asyncio.run(main())
 
 
+@pytest.mark.integration
 def test_start_run_stop_serves_real_http() -> None:
     """The full uvicorn lifecycle: ``start`` binds, ``run`` serves until
     ``stop``, and a real socket round trip answers ping. Port 0 lets the OS
@@ -600,6 +601,7 @@ def test_start_run_stop_serves_real_http() -> None:
     _serve_once(transport)
 
 
+@pytest.mark.integration
 def test_start_with_a_taken_port_raises_instead_of_exiting() -> None:
     """uvicorn's own bind path answers a taken port with ``sys.exit``; this
     transport binds the socket itself, so the failure is an ordinary

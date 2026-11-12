@@ -621,6 +621,7 @@ def atomic_publication_case(folder):
         health.json.dump = original
 
 
+@pytest.mark.integration
 def test_concurrent_atomic_publication_has_twenty_second_wall_limit(tmp_path):
     result = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), "--atomic-case", str(tmp_path)],

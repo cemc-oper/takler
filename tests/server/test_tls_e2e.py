@@ -61,6 +61,9 @@ from takler.exceptions import ClientConnectionError
 from takler.server import TaklerServer
 
 
+pytestmark = pytest.mark.integration
+
+
 #: Loopback keeps the test hermetic: no name resolution, no traffic leaving the
 #: machine.
 LOCALHOST = "127.0.0.1"

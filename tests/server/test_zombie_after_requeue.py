@@ -66,6 +66,9 @@ from takler.server.connect_config import (
 from takler.server.zombie import ZombieCondition
 
 
+pytestmark = pytest.mark.integration
+
+
 #: Loopback keeps the CLI half hermetic: no name resolution, no traffic leaving
 #: the machine.
 LOCALHOST = "127.0.0.1"

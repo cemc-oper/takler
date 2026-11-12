@@ -52,6 +52,8 @@ def test_limit_missing_reservation_is_detected():
         check_limits(bunch)
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 def test_new_load_gate_accepts_unknown_unbegun_with_no_submission():
     from takler.protocol.commands import Command, LoadCommand
     from takler.server.handlers import CommandHandlers
@@ -227,6 +229,8 @@ def fixture_case(directory):
     asyncio.run(exercise())
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 def test_full_250_setup_write_proofs_and_checkpoint_boundaries_have_30s_limit(tmp_path):
     import subprocess
 
@@ -245,6 +249,8 @@ def test_full_250_setup_write_proofs_and_checkpoint_boundaries_have_30s_limit(tm
     assert (tmp_path / "fixture-result.json").exists()
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @pytest.mark.parametrize("kind", ["load", "replace", "batch_set", "batch_clear"])
 def test_structural_rounds_are_independent_and_versions_visible(kind):
     from takler.protocol.commands import Command, REQUEST_TYPE_BY_COMMAND
@@ -289,17 +295,22 @@ def test_structural_rounds_are_independent_and_versions_visible(kind):
     asyncio.run(exercise())
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize("state", ["submitted", "active", "unknown_submission"])
 def test_normal_handler_replace_protects_each_running_state(state):
+    from takler.core import Bunch, Flow
     from takler.protocol.commands import Command, InitCommand, ReplaceCommand
+    from takler.serialization import export_definition
     from takler.server.handlers import CommandHandlers
     from takler.server.scheduler import Scheduler
 
     async def exercise():
-        bunch, paths, *_ = make_fixture(10000, True)
+        bunch = Bunch()
+        flow = bunch.add_flow("f")
+        task = flow.add_task("t")
+        flow.begin()
         scheduler = Scheduler(bunch)
         handler = CommandHandlers(scheduler)
-        task = bunch.find_node(paths[0])
         task.run()
         if state == "active":
             assert (
@@ -319,9 +330,11 @@ def test_normal_handler_replace_protects_each_running_state(state):
         )
         scheduler.version_store.flush()
         before = scheduler.version_store.pin()
-        raw = structural_documents()["replace-A"].replace(b"flow009", b"flow000")
+        replacement = Flow("f")
+        replacement.add_task("replacement")
+        raw = export_definition(replacement).model_dump_json().encode()
         reply = await handler.handle(
-            Command.REPLACE, ReplaceCommand(target_path="/flow000", flow_bytes=raw)
+            Command.REPLACE, ReplaceCommand(target_path=flow.node_path, flow_bytes=raw)
         )
         assert reply.flag != 0 and scheduler.version_store.pin().index == before.index
 
@@ -333,6 +346,7 @@ if __name__ == "__main__":
     fixture_case(Path(sys.argv[2]))
 
 
+@pytest.mark.integration
 def test_checkpoint_archive_retains_sequence_and_bounds_roots(tmp_path):
     import time
     from takler.server.scheduler import Scheduler

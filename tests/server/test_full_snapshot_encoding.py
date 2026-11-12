@@ -154,6 +154,7 @@ def test_encoded_client_checks_complete_fixed_read_and_blob(payload):
 
 
 @pytest.mark.parametrize("transport", ["http", "grpc"])
+@pytest.mark.integration
 def test_transports_send_worker_bytes_without_reencoding(transport, monkeypatch):
     async def run():
         scheduler, _ = _service()

@@ -87,7 +87,12 @@ def test_busy_pool_out_of_order_response_and_loss_never_retry():
 
 
 @pytest.mark.parametrize(
-    "size,dispersed", [(1000, False), (10000, False), (10000, True)]
+    "size,dispersed",
+    [
+        (1000, False),
+        pytest.param(10000, False, marks=pytest.mark.extended),
+        pytest.param(10000, True, marks=pytest.mark.extended),
+    ],
 )
 def test_tree_exact_scale_limits_and_pool_distribution(size, dispersed):
     bunch, paths, sentinel, bound = make_fixture(size, dispersed)
@@ -113,6 +118,7 @@ def test_tree_exact_scale_limits_and_pool_distribution(size, dispersed):
     )
 
 
+@pytest.mark.integration
 def test_real_handlers_rotate_effectively_and_preserve_unknown_and_limits():
     from takler.protocol.commands import Command, REQUEST_TYPE_BY_COMMAND
     from takler.server.handlers import CommandHandlers
@@ -185,6 +191,8 @@ def test_real_handlers_rotate_effectively_and_preserve_unknown_and_limits():
     asyncio.run(exercise())
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 def test_structural_templates_bounded_load_growth_and_protected_replace():
     from takler.exceptions import FlowStateError
     from takler.protocol.commands import LoadCommand, ReplaceCommand

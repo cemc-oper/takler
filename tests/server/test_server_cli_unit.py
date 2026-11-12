@@ -98,6 +98,7 @@ def test_host_and_port_help_carry_the_restart_precondition():
         assert text in cli.PORT_HELP
 
 
+@pytest.mark.integration
 def test_python_dash_m_help_matches():
     """``python -m takler.server --help`` is the same CLI (requirement 15.3)."""
     completed = subprocess.run(

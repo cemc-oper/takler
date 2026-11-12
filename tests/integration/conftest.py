@@ -36,6 +36,11 @@ from takler.client.service_client import TaklerServiceClient
 from takler.server import TaklerServer
 
 
+def pytest_itemcollected(item: pytest.Item) -> None:
+    """Mark this directory's tests before pytest applies the marker selector."""
+    item.add_marker(pytest.mark.integration)
+
+
 #: Host the server announces and the client dials. Loopback keeps the test
 #: hermetic: no name resolution, no traffic leaving the machine.
 LOCALHOST: str = "127.0.0.1"

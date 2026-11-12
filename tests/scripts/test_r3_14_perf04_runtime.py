@@ -118,6 +118,7 @@ def drive(engine, pauses=()):
     return engine.finish()
 
 
+@pytest.mark.extended
 @pytest.mark.parametrize("delay", [0, 2 * NS])
 def test_real_engine_grid_and_two_distinct_rotation_commands(delay):
     engine = make_engine(delay=delay)
@@ -392,6 +393,7 @@ def test_grpc_actual_stub_boundary_and_private_run_handoff_without_network():
         worker.invoke(job, lambda: None, 10)
 
 
+@pytest.mark.integration
 def test_full_fixed_stream_uses_normal_query_engine_and_requires_cancel_ack(tmp_path):
     import asyncio
     import time

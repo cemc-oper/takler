@@ -50,7 +50,20 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 
 .. code-block:: console
 
-    $ uv run pytest
+    $ uv run pytest -m "not extended"
+
+日常 CI 用 ``not extended`` 同时选择单元测试和快速集成测试。
+``integration`` 标记跨组件、真实传输或进程的集成验证。
+``extended`` 标记按需执行的规模、长时或专用运行器验证。两个标记可同时使用。
+
+.. code-block:: console
+
+    $ uv run pytest -m "not integration and not extended"
+    $ uv run pytest -m "integration and not extended"
+    $ uv run pytest -m extended --durations=30
+
+直接运行 ``uv run pytest`` 会选择全部可收集的测试。G0 验证通过其
+专用运行器准备场景表和运行上下文。
 
 * pytest 必须以 ``--import-mode=importlib`` 运行，已在
   ``pyproject.toml`` 的 ``addopts`` 里固定。原因： ``tests/logging/``
@@ -72,26 +85,26 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 覆盖率门槛
 ----------
 
-本地 ``pyproject.toml`` **故意不设** ``fail_under`` —— 门槛只针对特
-定模块，且 ``pytest tests/some_file.py`` 这类局部运行不应因门槛失
-败。门槛在 CI （ ``.github/workflows/ci.yml`` ）的两个独立步骤里，
-复用 pytest 步骤写出的同一份覆盖率数据：
+覆盖率门槛在 CI （ ``.github/workflows/ci.yml`` ）中按范围检查。
+每个 Python 版本的门槛复用其默认 pytest 步骤写出的覆盖率数据。
 
-* ``takler/client/*`` 、 ``server/transport.py`` 、
+* ``takler/query.py`` 、 ``serialization/query.py`` 、 ``takler/client/*`` 、
+  ``server/transport.py`` 、
   ``server/grpc_transport.py`` 、 ``server/http_transport.py`` 、
   ``server/handlers.py`` 、
-  ``server/protocol/*`` 与 ``takler/protocol/*`` 合计不低于 ``85%`` ；
+  ``server/protocol/*`` 与 ``takler/protocol/*`` 合计不低于 ``85%`` 。
+* 序列化、schema 和 ``server/flow_replace.py`` 各自不低于 ``85%`` 。
 * ``server/auth.py`` / ``zombie.py`` / ``audit.py`` / ``tls.py`` **逐
-  模块** 不低于 ``85%`` —— 刻意不合并成一次检查：合计值会让高覆盖率
-  的小模块把退步的大模块托过线。
+  模块** 不低于 ``85%`` 。
+* TUI 不低于 ``60%`` 。
 
 本地复现：
 
 .. code-block:: console
 
-    $ uv run pytest --cov=takler --cov-report=term
+    $ uv run pytest --strict-markers -m "not extended" --cov=takler --cov-report=term --durations=30
     $ uv run coverage report \
-        --include="src/takler/client/*,src/takler/server/transport.py,src/takler/server/grpc_transport.py,src/takler/server/http_transport.py,src/takler/server/handlers.py,src/takler/server/protocol/*,src/takler/protocol/*" \
+        --include="src/takler/query.py,src/takler/serialization/query.py,src/takler/client/*,src/takler/server/transport.py,src/takler/server/grpc_transport.py,src/takler/server/http_transport.py,src/takler/server/handlers.py,src/takler/server/protocol/*,src/takler/protocol/*" \
         --fail-under=85
 
 版本号
@@ -149,11 +162,9 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 CI
 --
 
-``.github/workflows/ci.yml`` 在 Python 3.11 与 3.12 矩阵上执行：
-``uv sync --locked --all-groups`` 还原环境 → ``ruff check`` → ``ruff
-format --check`` → ``pytest --cov`` → 两道覆盖率门。所有命令都走
-``uv run`` ，与本地完全一致 —— 本地按本页命令跑过， CI 就不会给出不
-同的结论。
+``.github/workflows/ci.yml`` 在 Python 3.11 与 3.12 矩阵上以
+``uv sync --locked --all-groups`` 还原环境。每个版本运行 Ruff 检查、
+默认测试及覆盖率门槛，并输出最耗时的 30 个测试阶段。
 
 Paired repository CI
 ~~~~~~~~~~~~~~~~~~~~

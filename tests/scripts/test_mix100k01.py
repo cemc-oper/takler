@@ -160,6 +160,8 @@ def prepared():
     loop.close()
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 def test_normal_handler_identity_and_wire_meter(prepared):
     from takler.protocol.commands import Command
     from takler.server.protocol.adapter import request_to_pb2, request_from_pb2
@@ -200,6 +202,8 @@ def test_normal_handler_identity_and_wire_meter(prepared):
     assert len(mix.pool_state(scheduler.bunch, paths)) == 250
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @pytest.mark.parametrize("scoped", [False, True])
 def test_complete_public_stream_link_and_cancel(prepared, tmp_path, scoped):
     from takler.client.full_snapshot import FullSnapshotClient, FullSnapshotComplete
@@ -268,6 +272,8 @@ def test_query_wire_deadline_before_boundary(tmp_path):
     assert not events
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 def test_checkpoint_restore_own_fixed_version(prepared, tmp_path):
     scheduler, paths, _, _, _ = prepared
     root = scheduler.version_store.pin()
@@ -278,6 +284,7 @@ def test_checkpoint_restore_own_fixed_version(prepared, tmp_path):
     assert result["equivalent"] and result["nodes"] == 1002
 
 
+@pytest.mark.integration
 def test_registry_watchdog_cleanup_hard_bounded(tmp_path):
     # Outer supervisor enforces a hard 20s including helper cleanup, below 30s.
     helper = """

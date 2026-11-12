@@ -15,6 +15,9 @@ from takler.server import TaklerServer
 from takler.server.checkpoint import CheckpointRestoreError
 
 
+pytestmark = pytest.mark.integration
+
+
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "checkpoint_v3.json"
 
 

@@ -50,6 +50,7 @@ import contextlib
 import socket
 from unittest import mock
 
+import pytest
 from hypothesis import given, settings, HealthCheck
 from hypothesis import strategies as st
 
@@ -458,6 +459,7 @@ def _run_start_then_stop(server: TaklerServer):
     suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
 )
 @given(flow_names=_unique_names(min_size=0, max_size=2))
+@pytest.mark.integration
 def test_stop_shuts_down_cleanly_without_raising(flow_names, tmp_path):
     """``TaklerServer.stop()`` cleanly stops scheduler and network service.
 

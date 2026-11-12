@@ -20,7 +20,7 @@ from takler.tui.query_view import QueryTuiView
 from takler.tui.widgets.node_tree import NodeTree, _label_for
 from textual.widgets import Static
 
-from .conftest import FakeTuiService, text_of, wait_until
+from .conftest import FakeTuiService, move_tree_cursor, text_of, wait_until
 
 
 def compact_snapshot(bunch, scope_path="/", depth=None) -> QuerySnapshot:
@@ -118,6 +118,7 @@ class DeltaQueryFakeService(QueryFakeService):
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_loads_detail_only_for_selection(rich_bunch) -> None:
     service = QueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)
@@ -130,9 +131,7 @@ async def test_query_tui_loads_detail_only_for_selection(rich_bunch) -> None:
         app._tree._path_nodes["/flow1"].expand()
         await wait_until(lambda: "/flow1/family1" in app._tree._path_nodes, pilot)
         app._tree._path_nodes["/flow1/family1"].expand()
-        await wait_until(lambda: "/flow1/family1/task1" in app._tree._path_nodes, pilot)
-        app._tree.focus()
-        app._tree.select_path("/flow1/family1/task1")
+        await move_tree_cursor(pilot, app._tree, "/flow1/family1/task1")
         await pilot.press("enter")
         await wait_until(lambda: len(service.detail_calls) == 2, pilot)
         await wait_until(
@@ -175,6 +174,7 @@ async def test_query_tui_loads_detail_only_for_selection(rich_bunch) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_subtree_keeps_root_service_status(rich_bunch) -> None:
     service = QueryFakeService(rich_bunch)
     app = TaklerTuiApp(service, scope_path="/flow1/family1")
@@ -193,6 +193,7 @@ async def test_query_tui_subtree_keeps_root_service_status(rich_bunch) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_marks_failed_refresh_stale_and_keeps_view(rich_bunch) -> None:
     service = QueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)
@@ -309,6 +310,7 @@ def test_query_view_pages_flat_root_rows() -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_no_change_skips_tree_and_detail(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)
@@ -328,6 +330,7 @@ async def test_query_tui_no_change_skips_tree_and_detail(rich_bunch) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_root_delta_refreshes_service_without_selection(
     rich_bunch,
 ) -> None:
@@ -353,6 +356,7 @@ async def test_query_tui_root_delta_refreshes_service_without_selection(
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_sparse_delta_updates_only_visible_row(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)
@@ -389,6 +393,7 @@ async def test_query_tui_sparse_delta_updates_only_visible_row(rich_bunch) -> No
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_removal_keeps_other_rows_and_clears_selection(
     rich_bunch,
 ) -> None:
@@ -432,6 +437,7 @@ async def test_query_tui_removal_keeps_other_rows_and_clears_selection(
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_reset_and_disconnect_rebuild(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)
@@ -460,6 +466,7 @@ async def test_query_tui_reset_and_disconnect_rebuild(rich_bunch) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_expired_detail_rebuilds_selected_scope(rich_bunch) -> None:
     class ExpiringService(DeltaQueryFakeService):
         expire_once = True
@@ -488,6 +495,7 @@ async def test_query_tui_expired_detail_rebuilds_selected_scope(rich_bunch) -> N
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_unchanged_polls_preserve_detail_access(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)
@@ -509,6 +517,7 @@ async def test_query_tui_unchanged_polls_preserve_detail_access(rich_bunch) -> N
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_disconnect_resumes_same_revision(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)
@@ -537,6 +546,7 @@ async def test_query_tui_disconnect_resumes_same_revision(rich_bunch) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_local_invalidation_rebuilds_selected_scope(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service, scope_path="/flow1")
@@ -555,6 +565,7 @@ async def test_query_tui_local_invalidation_rebuilds_selected_scope(rich_bunch) 
 
 
 @pytest.mark.anyio
+@pytest.mark.integration
 async def test_query_tui_rejects_late_delta(rich_bunch) -> None:
     service = DeltaQueryFakeService(rich_bunch)
     app = TaklerTuiApp(service)

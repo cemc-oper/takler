@@ -523,6 +523,7 @@ def _collector_case(directory, case):
         "malformed",
     ],
 )
+@pytest.mark.integration
 def test_real_collector_ipc_combination(tmp_path, case):
     # Hard outer supervisor <=20s; kill the entire owned helper/collector group.
     proc = subprocess.Popen(

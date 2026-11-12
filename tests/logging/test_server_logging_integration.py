@@ -65,6 +65,8 @@ from takler.logging.backends.stdlib_backend import (
     _MANAGED_HANDLER_FLAG,
 )
 
+pytestmark = pytest.mark.integration
+
 # loguru is an optional backend; when installed it is the active backend and
 # its process-wide singleton sinks must be cleared between tests too.
 LOGURU_INSTALLED = importlib.util.find_spec("loguru") is not None

@@ -14,6 +14,9 @@ from takler.server.http_transport import create_app
 from tests.protocol.test_wire import VECTORS
 
 
+pytestmark = pytest.mark.integration
+
+
 async def send(raw, command, content_type="application/json"):
     handler = SimpleNamespace(
         dispatch=AsyncMock(

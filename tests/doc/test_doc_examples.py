@@ -3576,7 +3576,7 @@ def test_develop_protocol_retry_contract_constants():
 
 def test_develop_contributing_matches_project_config():
     """The contributing page stays in step with pyproject.toml: ruff rule
-    set, pytest import mode, the slow marker and the extras all match."""
+    set, pytest import mode, the test markers and the extras all match."""
     import tomllib
 
     text = _develop_page("contributing.rst")
@@ -3594,8 +3594,10 @@ def test_develop_contributing_matches_project_config():
     assert "--import-mode=importlib" in text
 
     markers = pyproject["tool"]["pytest"]["ini_options"]["markers"]
-    assert any(m.startswith("slow:") for m in markers)
-    assert "``slow``" in text
+    marker_names = {marker.split(":", 1)[0] for marker in markers}
+    for name in ("slow", "integration", "extended"):
+        assert name in marker_names
+        assert f"``{name}``" in text
 
     # Each user-facing extra is mentioned on the contributing page (the dev
     # group pulls them in by self-reference, so the page no longer names

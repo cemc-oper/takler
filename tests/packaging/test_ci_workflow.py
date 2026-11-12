@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import re
 import os
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -282,15 +283,18 @@ def test_a_step_runs_ruff_format_check(test_job: dict[str, Any]):
 
 
 def test_pytest_step_collects_coverage_and_reports_it(test_job: dict[str, Any]):
-    """Coverage is measured on the ``takler`` package and a report is emitted."""
+    """The matrix measures coverage and durations for the default suite."""
     pytest_lines = _steps_running(test_job, "pytest")
 
     assert pytest_lines
-    measured = [line for line in pytest_lines if "--cov=takler" in line.split()]
+    invocations = [shlex.split(line) for line in pytest_lines]
+    measured = [args for args in invocations if "--cov=takler" in args]
     assert measured, pytest_lines
-    for line in measured:
-        reports = [token for token in line.split() if token.startswith("--cov-report")]
-        assert reports, line
+    for args in measured:
+        assert "--strict-markers" in args
+        assert "-m" in args and args[args.index("-m") + 1] == "not extended"
+        assert "--durations=30" in args
+        assert any(token.startswith("--cov-report") for token in args), args
 
 
 def test_pair_defaults_to_main_and_contract_runs_in_ci(workflow):
@@ -326,7 +330,7 @@ def test_pair_defaults_to_main_and_contract_runs_in_ci(workflow):
     assert "bash scripts/check_drift_negative.sh" in commands
     assert "test_child_identity_matrix.py" in commands
     assert "test_server_state_cli_matrix.py" in commands
-    assert "test_show_cli_contract.py" in commands
+    assert "test_show_cli_contract.py" not in commands
     assert "test_full_snapshot_examples.py" in commands
     assert "paired_check.py" not in commands
 

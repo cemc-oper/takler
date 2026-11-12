@@ -23,6 +23,8 @@ REPAIR_ROOT = os.environ.get("RUN_SNAPSHOT_REPAIR_ROOT")
 if not REPAIR_ROOT:
     pytest.skip("requires the G0 validation runner", allow_module_level=True)
 
+pytestmark = [pytest.mark.extended, pytest.mark.integration]
+
 
 def owner_pidfd_open(pid):
     library = ctypes.CDLL("/usr/lib/x86_64-linux-gnu/libc.so.6", use_errno=True)

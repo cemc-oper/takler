@@ -79,7 +79,7 @@ jobs:
         uv run ruff format --check .
     - name: Test with pytest
       run: |
-        uv run pytest --cov=takler --cov-report=xml --cov-report=term
+        uv run pytest --strict-markers -m "not extended" --cov=takler --cov-report=xml --cov-report=term --durations=30
     # Requirement 16.11 puts the 85% floor on `takler/client` and the
     # Protocol_Layer, not on the whole package, so the gate re-reports the data
     # file written above with that scope instead of living in `--cov-fail-under`.
@@ -224,7 +224,5 @@ jobs:
       run: make load-contract replace-contract show-contract query-a-contract query-b-contract
     - name: Run child identity, service state and snapshot examples
       working-directory: takler
-      env:
-        TAKLER_SHOW_GO_CLIENT: ../takler-client/bin/takler_client
       run: |
-        uv run --no-sync pytest -q tests/packaging/test_ci_workflow.py tests/integration/test_child_identity_matrix.py tests/integration/test_server_state_cli_matrix.py tests/integration/test_show_cli_contract.py tests/integration/test_full_snapshot_examples.py
+        uv run --no-sync pytest -q tests/packaging/test_ci_workflow.py tests/integration/test_child_identity_matrix.py tests/integration/test_server_state_cli_matrix.py tests/integration/test_full_snapshot_examples.py

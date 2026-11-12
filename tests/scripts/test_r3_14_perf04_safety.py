@@ -293,6 +293,7 @@ def roles_case(folder):
     )
 
 
+@pytest.mark.integration
 def test_four_real_helper_processes_use_role_entry_and_registered_cleanup_under_25s(
     tmp_path,
 ):
@@ -330,6 +331,7 @@ def watchdog_case(folder):
     (folder / "watchdog-result.json").write_text(json.dumps(registry.summary()))
 
 
+@pytest.mark.integration
 def test_independent_watchdog_acts_while_parent_blocks_under_20s(tmp_path):
     result = subprocess.run(
         [
@@ -352,6 +354,7 @@ if __name__ == "__main__":
     )
 
 
+@pytest.mark.integration
 def test_private_writer_handoff_is_bounded_and_never_public(tmp_path):
     import asyncio
     from r3_14_perf04_verify import HandoffServer, HandoffClient
@@ -446,6 +449,7 @@ def test_explicit_perf04_collector_uses_04a_publisher(tmp_path, monkeypatch):
     assert state["collector_pid"] == os.getpid()
 
 
+@pytest.mark.integration
 def test_registered_cleanup_does_not_touch_unrelated_helper(tmp_path):
     registry = Registry(tmp_path / "cleanup.json")
     owned = subprocess.Popen(
@@ -484,6 +488,7 @@ def test_resource_sampling_retains_100ms_and_1s_cadences(monkeypatch, tmp_path):
     assert len(calls) == 11 and calls == [True] + [False] * 9 + [True]
 
 
+@pytest.mark.integration
 def test_registered_group_cleanup_survives_leader_exit(tmp_path):
     from r3_14_perf04_safety import group_members
 

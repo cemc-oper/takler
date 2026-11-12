@@ -179,6 +179,7 @@ def test_default_acl_inheritance_and_overwrite(tmp_path, with_umask):
     assert os.getxattr(job, "system.posix_acl_access") == bytes(expected_acl)
 
 
+@pytest.mark.integration
 def test_generation_uses_final_path_without_acl_queries(tmp_path, monkeypatch):
     task = _make_task(tmp_path)
     task.update_generated_parameters()

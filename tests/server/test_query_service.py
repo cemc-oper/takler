@@ -4,6 +4,8 @@ import asyncio
 import base64
 import hashlib
 
+import pytest
+
 from takler.core import Bunch, Flow
 from takler.protocol.query_v1 import (
     CapabilitiesRequest,
@@ -336,6 +338,7 @@ async def _snapshot_publication_rejects_expired_change_window():
     assert scheduler.query_changes.oldest_revision > 1
 
 
+@pytest.mark.integration
 def test_http_and_grpc_query_routes():
     asyncio.run(_http_and_grpc_query_routes())
 
@@ -534,6 +537,7 @@ async def _http_and_grpc_query_routes():
         await transport.stop()
 
 
+@pytest.mark.integration
 def test_http_query_requires_operator_credentials(tmp_path):
     asyncio.run(_http_query_requires_operator_credentials(tmp_path))
 

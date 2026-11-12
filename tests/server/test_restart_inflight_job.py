@@ -68,6 +68,9 @@ from takler.server.connect_config import (
 from takler.protocol.error_code import SUCCESS, error_code_for_exception
 
 
+pytestmark = pytest.mark.integration
+
+
 #: Loopback keeps the test hermetic: no name resolution, no traffic leaving the
 #: machine.
 LOCALHOST = "127.0.0.1"

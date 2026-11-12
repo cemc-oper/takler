@@ -24,7 +24,10 @@ from takler.tui.menu import (
     NodeActionMenu,
 )
 
-from .conftest import FakeTuiService, text_of, wait_until
+from .conftest import FakeTuiService, move_tree_cursor, text_of, wait_until
+
+
+pytestmark = pytest.mark.integration
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +76,7 @@ async def started_app(pilot, app: TaklerTuiApp, service: FakeTuiService) -> None
 
 async def select(pilot, app: TaklerTuiApp, path: str) -> None:
     """Move the cursor to ``path`` and select it (Enter)."""
-    app._tree.focus()
-    app._tree.select_path(path)
+    await move_tree_cursor(pilot, app._tree, path)
     await pilot.press("enter")
     await wait_until(
         lambda: app._selected_path == path,
@@ -390,9 +392,7 @@ async def test_space_toggles_the_node_under_the_cursor(
     app = make_app(fake_service)
     async with app.run_test(size=(120, 40)) as pilot:
         await started_app(pilot, app, fake_service)
-        app._tree.focus()
-        app._tree.select_path("/flow1/family1")
-        await pilot.pause()
+        await move_tree_cursor(pilot, app._tree, "/flow1/family1")
         await pilot.press("space")
         await wait_until(
             lambda: not app._tree._path_nodes["/flow1/family1"].is_expanded,

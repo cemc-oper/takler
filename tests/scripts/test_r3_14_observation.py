@@ -21,6 +21,7 @@ observation = importlib.import_module("r3_14_observation")
 probe = importlib.import_module("r3_14_isolated_probe")
 
 
+@pytest.mark.integration
 def test_grpc_phase_probe_never_imports_optional_http_dependencies():
     script = f"""
 import builtins, sys
@@ -48,6 +49,7 @@ assert 'takler.server.http_transport' not in sys.modules
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.integration
 def test_http_phase_hook_still_records_and_restores_already_loaded_transport():
     script = f"""
 import sys
@@ -156,6 +158,7 @@ def test_rpc_close_value_error_does_not_hide_or_invent_integrity_failure():
     assert semantic_failure(IntegrityError("full snapshot node count failure"))
 
 
+@pytest.mark.integration
 def test_ring_overflow_lock_reentry_and_sequence_evidence(tmp_path):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     path = str(tmp_path / "s")
@@ -175,6 +178,7 @@ def test_ring_overflow_lock_reentry_and_sequence_evidence(tmp_path):
     sock.close()
 
 
+@pytest.mark.integration
 def test_close_drains_packets_with_collector_on_calling_thread(tmp_path):
     path = str(tmp_path / "s")
     received = []
@@ -203,6 +207,7 @@ def test_close_drains_packets_with_collector_on_calling_thread(tmp_path):
     assert received == list(range(1, 2049))
 
 
+@pytest.mark.integration
 def test_stalled_and_dead_collector_cannot_block_producers(tmp_path):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     path = str(tmp_path / "s")
@@ -270,6 +275,7 @@ def test_multithread_sequences_and_gc_callback_reentry(tmp_path):
     assert final["produced"] == final["emitted"] + final["dropped"]
 
 
+@pytest.mark.integration
 def test_reentrant_record_has_a_distinct_slot(tmp_path):
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     path = str(tmp_path / "s")
@@ -395,6 +401,7 @@ def test_packet_framing_rejects_partial_and_unbudgeted_payload(payload):
         list(observation.decode_packet(payload))
 
 
+@pytest.mark.integration
 def test_cleanup_releases_worker_when_service_leader_is_killed(tmp_path):
     import os
     import signal

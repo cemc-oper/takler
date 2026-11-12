@@ -24,6 +24,9 @@ from takler.tui.tabs import InfoTab, JobTab, OutputTab, ParametersTab, ScriptTab
 from .conftest import show_payload, text_of, wait_until
 
 
+pytestmark = pytest.mark.integration
+
+
 class TabHost(App[None]):
     """Mounts a single tab widget directly."""
 

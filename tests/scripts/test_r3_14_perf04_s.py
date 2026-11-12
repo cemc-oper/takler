@@ -227,6 +227,8 @@ def run_closure_case(folder, fault=None):
     return json.loads((folder / "case/result.json").read_text())
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @pytest.mark.parametrize("fault", [None, "reordered"])
 def test_s_same_entry_normal_and_recomputable_evidence_under_30s(tmp_path, fault):
     result = run_closure_case(tmp_path / "normal", fault)
@@ -268,6 +270,8 @@ def test_s_same_entry_normal_and_recomputable_evidence_under_30s(tmp_path, fault
     } == {"requeue", "run"}
 
 
+@pytest.mark.extended
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "fault",
     [
@@ -388,6 +392,7 @@ def role_archive_case(folder):
     )
 
 
+@pytest.mark.integration
 def test_actual_process_role_archive_contains_ready_both_clocks_and_final(tmp_path):
     import subprocess
 
