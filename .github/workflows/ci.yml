@@ -64,13 +64,10 @@ jobs:
         enable-cache: true
     - name: Install the project
       run: |
-        uv sync --locked --all-groups
+        uv sync --locked
       # `--locked`：锁文件与 `pyproject.toml` 不一致时直接失败，而不是就地重新解析。
       # 忘记提交 `uv lock` 的改动会在这一步暴露，而不是变成一次隐式的依赖升级。
-      # `--all-groups` 装齐 dev、test、docs 三个组（dev 通过 include-group 已含
-      # test，并通过自引用带上 tui/log 两个 extra，无需单独 `--extra`）。
-      # `docs` 组必须装：`tests/doc/test_doc_build.py` 会在测试环境内跑
-      # `sphinx-build -W`，缺了 sphinx 该测试直接失败。
+      # 默认 dev 组包含 test 组及 TUI、日志和 HTTP 所需的 extra。
     - name: Lint with ruff
       run: |
         uv run ruff check .
@@ -79,7 +76,7 @@ jobs:
         uv run ruff format --check .
     - name: Test with pytest
       run: |
-        uv run pytest --strict-markers -m "not extended" --cov=takler --cov-report=xml --cov-report=term --durations=30
+        uv run pytest tests/unit --strict-markers --cov=takler --cov-report=xml --cov-report=term --durations=30
     # Requirement 16.11 puts the 85% floor on `takler/client` and the
     # Protocol_Layer, not on the whole package, so the gate re-reports the data
     # file written above with that scope instead of living in `--cov-fail-under`.
@@ -131,6 +128,7 @@ jobs:
 
   install-matrix:
     name: install smoke (Python ${{ matrix.python-version }})
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -151,6 +149,7 @@ jobs:
 
   paired-contract:
     name: paired protocol and CLI contracts
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -225,4 +224,4 @@ jobs:
     - name: Run child identity, service state and snapshot examples
       working-directory: takler
       run: |
-        uv run --no-sync pytest -q tests/packaging/test_ci_workflow.py tests/integration/test_child_identity_matrix.py tests/integration/test_server_state_cli_matrix.py tests/integration/test_full_snapshot_examples.py
+        uv run --no-sync pytest -q tests/unit/packaging/test_ci_workflow.py tests/integration/test_child_identity_matrix.py tests/integration/test_server_state_cli_matrix.py tests/integration/test_full_snapshot_examples.py

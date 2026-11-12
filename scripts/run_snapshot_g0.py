@@ -776,8 +776,8 @@ FILES = [
     "scripts/run_snapshot_control.py",
     "scripts/run_snapshot_g0.py",
     "scripts/run_snapshot_diagnostic.py",
-    "tests/scripts/test_run_snapshot_control.py",
-    "tests/scripts/test_run_snapshot_diagnostic.py",
+    "tests/extended/scripts/test_run_snapshot_control.py",
+    "tests/extended/scripts/test_run_snapshot_diagnostic.py",
 ]
 LIMITS = ((570, 600), (150, 180), (30, 60))
 _SESSION = None

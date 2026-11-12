@@ -144,9 +144,10 @@ docs = [
 [tool.pytest.ini_options]
 # Use importlib import mode so test packages can mirror source package names
 # without colliding with standard-library modules. In particular, the
-# `tests/logging/` package would otherwise shadow the stdlib `logging` module
+# `tests/unit/logging/` package would otherwise shadow the stdlib `logging` module
 # under the default "prepend" import mode and break collection.
 addopts = "--import-mode=importlib"
+testpaths = ["tests/unit", "tests/integration", "tests/extended"]
 markers = [
     "slow: tests that spawn real processes or otherwise take a long time to run",
     "integration: tests that exercise interactions across components, transports or processes",

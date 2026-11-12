@@ -54,7 +54,7 @@ a registered ``slow`` marker to stay out of the default run.
 
 There is no ``pytest-asyncio`` in this project, so the async server startup is
 driven with :func:`asyncio.run`, mirroring the conventions of
-``tests/server/test_server_checkpoint_integration.py``.
+``tests/integration/server/test_server_checkpoint_integration.py``.
 
 Validates: Requirements 16.9, 6.4, 6.18, 6.23, 8.15
 """

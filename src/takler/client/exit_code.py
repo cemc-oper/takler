@@ -20,7 +20,7 @@ the Error_Code -> process exit code mapping -- plus the four exit code
 constants. ``exit_code_for_exception`` is derived from the shared
 :func:`~takler.protocol.error_code.error_code_for_exception`, so the two entry
 points cannot disagree. (``EXIT_CODE_BY_ERROR_CODE``'s key set is pinned
-against the shared table by ``tests/client/test_exit_code_unit.py``.)
+against the shared table by ``tests/unit/client/test_exit_code_unit.py``.)
 """
 
 from __future__ import annotations

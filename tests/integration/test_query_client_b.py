@@ -11,7 +11,7 @@ from takler.server.connect_config import Address, ConnectConfig, HttpSettings, S
 from takler.tui.app import TaklerTuiApp
 from takler.tui.service import TaklerTuiService
 from tests.integration.test_query_a_matrix import _environment
-from tests.tui.conftest import wait_until
+from tests.tui_fixtures import wait_until
 
 
 @pytest.fixture(scope="module")

@@ -74,6 +74,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           args=(--tag "$TAG_NAME" --repository "$GITHUB_REPOSITORY" --check-remote --proof-file release-source.json
+            --ci-event workflow_dispatch
             --required-job 'ci (Python 3.11)' --required-job 'ci (Python 3.12)'
             --required-job 'install smoke (Python 3.11)' --required-job 'install smoke (Python 3.12)'
             --required-job 'paired protocol and CLI contracts')

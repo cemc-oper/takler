@@ -77,18 +77,18 @@ def api_json(repository: str, path: str) -> dict:
         return json.load(response)
 
 
-def select_ci_run(runs: dict, sha: str) -> dict:
+def select_ci_run(runs: dict, sha: str, *, event: str = "push") -> dict:
     if runs.get("total_count", 0) > 100:
         raise GateError("too many CI runs for one commit; inspect manually")
     matches = [
         run
         for run in runs.get("workflow_runs", [])
         if run.get("head_sha") == sha
-        and run.get("event") == "push"
+        and run.get("event") == event
         and run.get("head_branch") == "main"
     ]
     if not matches:
-        raise GateError(f"no main push CI run for tagged commit {sha}")
+        raise GateError(f"no main {event} CI run for tagged commit {sha}")
     latest = max(matches, key=lambda run: run["id"])
     if latest.get("status") != "completed" or latest.get("conclusion") != "success":
         raise GateError(f"latest CI run {latest['id']} did not succeed")
@@ -128,7 +128,7 @@ def source(args: argparse.Namespace) -> None:
             args.repository,
             f"actions/workflows/ci.yml/runs?head_sha={quote(sha)}&per_page=100",
         )
-    run = select_ci_run(runs, sha)
+    run = select_ci_run(runs, sha, event=args.ci_event)
     if args.jobs_file:
         jobs = json.loads(args.jobs_file.read_text())
     else:
@@ -198,6 +198,9 @@ def parser() -> argparse.ArgumentParser:
     source_command.add_argument("--repository", required=True)
     source_command.add_argument("--expected-sha")
     source_command.add_argument("--check-remote", action="store_true")
+    source_command.add_argument(
+        "--ci-event", choices=("push", "workflow_dispatch"), default="push"
+    )
     source_command.add_argument("--required-job", action="append", default=[])
     source_command.add_argument("--runs-file", type=Path)
     source_command.add_argument("--jobs-file", type=Path)

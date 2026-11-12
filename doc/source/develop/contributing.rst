@@ -14,13 +14,10 @@
 
     $ uv sync --locked
 
-``dev`` 依赖组由 ``uv sync`` 默认带上，且它已经包含一切：通过
-``include-group`` 含 ``test`` 组（ pytest 、 hypothesis 、
-cryptography ），通过自引用带上本项目的 ``tui`` / ``log`` 两个 extra
-（测试套件会用到 textual 、 loguru ），另有 ruff 、 grpcio-tools 等开
-发工具。 ``--locked`` 让锁文件与 ``pyproject.toml`` 不一致时直接失
-败，而不是就地重新解析 —— 改了依赖后记得 ``uv lock`` 并把 ``uv.lock``
-一起提交。
+``uv sync`` 默认安装 ``dev`` 组，其中包括 ``test`` 组、
+``tui`` / ``log`` / ``http`` extra 以及 Ruff、grpcio-tools 等开发工具。
+``--locked`` 会在锁文件与 ``pyproject.toml`` 不一致时失败。
+修改依赖后运行 ``uv lock``，并一并提交 ``uv.lock``。
 
 不用 uv 时的等价物是 ``pip install -e ".[tui,log]"`` ，但请注意本仓
 库的「本地通过 == CI 通过」依赖锁文件（见下节），裸 pip 现场解析的
@@ -48,30 +45,29 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 运行测试
 --------
 
-.. code-block:: console
-
-    $ uv run pytest -m "not extended"
-
-日常 CI 用 ``not extended`` 同时选择单元测试和快速集成测试。
-``integration`` 标记跨组件、真实传输或进程的集成验证。
-``extended`` 标记按需执行的规模、长时或专用运行器验证。两个标记可同时使用。
+* ``tests/unit/`` 存放小数据、替身依赖和单组件测试。日常 CI 只收集此目录。
+* ``tests/integration/`` 存放真实 gRPC / HTTP、进程与检查点恢复、
+  完整 TUI、跨语言契约和 Sphinx 构建测试。本地按变更涉及的模块选择。
+* ``tests/extended/`` 存放规模、长时属性、性能和专用工具测试，按需运行。
 
 .. code-block:: console
 
-    $ uv run pytest -m "not integration and not extended"
-    $ uv run pytest -m "integration and not extended"
-    $ uv run pytest -m extended --durations=30
+    $ uv run pytest tests/unit
+    $ uv sync --locked --all-groups
+    $ uv run --all-groups pytest tests/integration
+    $ uv run pytest tests/extended --durations=30
 
-直接运行 ``uv run pytest`` 会选择全部可收集的测试。G0 验证通过其
-专用运行器准备场景表和运行上下文。
+直接运行 ``uv run --all-groups pytest`` 会收集三个目录。G0 验证使用
+``scripts/run_snapshot_g0.py`` 准备场景表和运行上下文。真实 Flow
+验收在独立的 ``takler-test-suite`` 仓库中通过其 ``run.py`` 运行。
 
 * pytest 必须以 ``--import-mode=importlib`` 运行，已在
-  ``pyproject.toml`` 的 ``addopts`` 里固定。原因： ``tests/logging/``
+  ``pyproject.toml`` 的 ``addopts`` 里固定。``tests/unit/logging/``
   包在默认的 ``prepend`` 模式下会遮蔽标准库 ``logging`` 模块，导致收
   集失败。共享的 hypothesis 生成器也因此用包路径导入（
   ``from tests.strategies import ...`` ）。
-* ``slow`` 标记（ ``pyproject.toml`` 已注册）标记派生真实进程或耗时
-  较长的测试； ``uv run pytest -m "not slow"`` 可以跳过。
+* ``integration``、``extended`` 和 ``slow`` 标记可用于进一步筛选。
+  日常 CI 的范围由目录确定。
 * 属性测试用 hypothesis ：共享生成器集中在 ``tests/strategies.py``
   （ ``bunches`` / ``flow_operation_sequences`` 等），约定
   ``@settings(max_examples=100, deadline=None)`` 。生成器里刻意固化
@@ -79,7 +75,7 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 * 需要「时间流逝」但不想真睡的测试用 ``tests/conftest.py`` 的
   ``FakeClock`` ：把实例同时注入 ``clock=`` 与 ``sleep=`` 两个注入
   点，逻辑时间随 sleep 推进，一整天的 child 重试窗口在毫秒级跑完。
-* 文档示例由 ``tests/doc/test_doc_examples.py`` 钉住：文档里的行为声
+* 文档示例由 ``tests/unit/doc/test_doc_examples.py`` 钉住：文档里的行为声
   明应有对应测试，改动核心行为破坏了文档示例会让这里失败。
 
 覆盖率门槛
@@ -102,7 +98,7 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 
 .. code-block:: console
 
-    $ uv run pytest --strict-markers -m "not extended" --cov=takler --cov-report=term --durations=30
+    $ uv run pytest tests/unit --strict-markers --cov=takler --cov-report=term --durations=30
     $ uv run coverage report \
         --include="src/takler/query.py,src/takler/serialization/query.py,src/takler/client/*,src/takler/server/transport.py,src/takler/server/grpc_transport.py,src/takler/server/http_transport.py,src/takler/server/handlers.py,src/takler/server/protocol/*,src/takler/protocol/*" \
         --fail-under=85
@@ -134,7 +130,7 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 
 * **示例单一来源** ：教程与指南的 Python 示例放在 ``doc/examples/``
   下， rst 里用 ``literalinclude`` 引用，不在 rst 里手抄代码；示例的
-  行为由 ``tests/doc/test_doc_examples.py`` 钉住。
+  行为由 ``tests/unit/doc/test_doc_examples.py`` 钉住。
 * **交叉引用受 nitpicky 约束** ： ``:py:class:`` / ``:py:meth:`` 只能
   指向 API 页（ ``develop/api/`` ）已收录的对象，其余类名一律用
   ``双反引号字面量`` 。
@@ -162,25 +158,15 @@ protobuf 生成的 ``*_pb2.py`` / ``*_pb2_grpc.py`` 在 ruff 与覆盖率中同
 CI
 --
 
-``.github/workflows/ci.yml`` 在 Python 3.11 与 3.12 矩阵上以
-``uv sync --locked --all-groups`` 还原环境。每个版本运行 Ruff 检查、
-默认测试及覆盖率门槛，并输出最耗时的 30 个测试阶段。
+``.github/workflows/ci.yml`` 在 Python 3.11 与 3.12 上用
+``uv sync --locked`` 还原环境。推送和 PR 运行 Ruff、``tests/unit/``
+及覆盖率门槛，并输出最耗时的 30 个测试阶段。
 
-Paired repository CI
-~~~~~~~~~~~~~~~~~~~~
+本地配对检查与发布验证
+~~~~~~~~~~~~~~~~~~~~~~
 
-takler 与 takler-client 的常规 CI 会配对检查另一个仓库的 ``main`` 分
-支。协议改动尚未合并时，可在当前候选分支手动运行 `takler CI
-workflow <https://github.com/cemc-oper/takler/actions/workflows/ci.yml>`_ 或
-`takler-client CI workflow
-<https://github.com/cemc-oper/takler-client/actions/workflows/ci.yml>`_，并把
-``peer_sha`` 设置为另一个仓库候选提交的完整小写 SHA；留空时使用对方
-仓库的 ``main``。配对检查会在日志和 GitHub Actions 摘要中记录两个实
-际提交 SHA。需要复现同一组代码时，使用记录下来的 SHA，因为默认重跑
-可能会检出更新后的 ``main``。
-
-本地联调时，把两个仓库检出到同一父目录，并从 ``takler-client/`` 运
-行以下命令：
+本地联调时，把两个仓库检出到同一父目录，并从 ``takler-client/``
+运行以下命令。
 
 .. code-block:: bash
 
@@ -192,15 +178,20 @@ workflow <https://github.com/cemc-oper/takler/actions/workflows/ci.yml>`_ 或
     )
     make proto-check wire-check
     make http-contract load-contract replace-contract show-contract
+    make query-a-contract query-b-contract
 
-这些命令不会切换分支，可检查 Python proto 是否最新、共享 schema 与
-向量、HTTP 命令，以及 Python/Go 客户端在 gRPC 和 HTTP 上的 load、
-replace、show 行为。
+这些命令核对当前检出的 Python proto、共享 schema 和向量，以及
+Python / Go 客户端通过 gRPC 和 HTTP 运行命令和查询的行为。
+安装冒烟可从 ``takler/`` 执行
+``TAKLER_INSTALL_PYTHON=3.11 bash scripts/check_install_matrix.sh``，
+将版本改为 ``3.12`` 可复现另一个安装作业。
 
-协议变更先重新生成 Python bindings，再切换到 Go 仓库，针对该 Python
-checkout 运行 ``make proto-sync`` 并提交生成文件。合并前用本地检查或
-``peer_sha`` 验证两边候选改动。建议先合并兼容性的服务端改动，再合并
-客户端改动，然后重新运行默认 CI。常规 PR 检查仍使用对方 ``main``；
-手动候选检查不会代替必需的 PR 检查。若变更不兼容，需要协调合并顺序。squash 或
-rebase 后，回放时使用实际合并提交的 SHA。手动运行要求默认分支上已
-存在该 workflow；首次上线前先做本地检查。
+协议变更先重新生成 Python bindings，再从 Go 仓库运行
+``make proto-sync`` 并提交生成文件。可在候选分支手动运行
+`Takler CI <https://github.com/cemc-oper/takler/actions/workflows/ci.yml>`_
+做配对验证。``peer_sha`` 取对端完整小写提交 SHA，留空时取对端
+``main``。运行摘要记录两边实际检出的 SHA。
+
+发布前，在 ``main`` 上手动运行 Takler CI 的完整检查并等待成功，再
+为同一提交打标签。发布门槛检查该提交最新的手动 CI 运行，并逐项核对
+双版本单元测试、双版本安装冒烟和配对契约。

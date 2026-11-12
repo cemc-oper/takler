@@ -236,7 +236,7 @@ child、load 与 replace 命令返回 ``ServiceResponse{flag, message}``；七�
   段号 ``1`` ， ``message`` 保持 ``string`` 、字段号 ``2`` ，不允
   许增删字段。分类码是复用既有 ``flag`` 字段而不是新增字段引入的，
   只判断 ``flag != 0`` 的老客户端因此永远兼容。
-  ``tests/server/test_proto_contract.py`` 同时钉住 descriptor 的形
+  ``tests/unit/server/test_proto_contract.py`` 同时钉住 descriptor 的形
   状与 proto 注释里指向分类码表的说明。
 * 分类码表在 ``takler/protocol/error_code.py`` ，不是 proto 枚举
   —— 这个模块只依赖 ``takler.exceptions`` ，客户端不用拉入
@@ -300,7 +300,7 @@ HTTP 的请求头名（ HTTP 头不区分大小写），都是全小写、不带
 
 **表里没有的方法一律按 ``OPERATOR`` 处理** —— 故意 fail-closed ，
 新增命令忘了分类的结果是要凭据，而不是一个匿名的写入口。
-``tests/server/test_privilege_table_property.py`` 遍历 descriptor 断
+``tests/unit/server/test_privilege_table_property.py`` 遍历 descriptor 断
 言每个已声明方法都有显式条目。 ``auth_mode`` 为 ``disabled`` 时不做
 任何检查，但凭据仍被解析并发布给僵尸判定与审计。
 
@@ -378,16 +378,16 @@ proto 的 ``go_package`` 选项已指向该仓库。
 --------------
 
 常量契约靠一对「漂移哨兵」测试维持： Python 半是
-``tests/client/test_cross_language_contract.py`` ， Go 半是
+``tests/unit/client/test_cross_language_contract.py`` ， Go 半是
 ``takler-client`` 仓库的 ``common/errorcode_test.go`` 。两边各自 **手
 抄** 同一份期望值 —— error_code 十七行、退出码映射、重试常量、状态码
 集合（ gRPC 状态码与 HTTP 状态码各一份） —— 刻意不从生产代码的表里
 推导：读着自己要监督的表的测试永远发现不了那张表被改错。任何一侧改了
 常量而另一侧没跟上，失败的是测试而不是线上协议。
 
-另有两个相关哨兵： ``tests/server/test_proto_contract.py`` 钉住
+另有两个相关哨兵： ``tests/unit/server/test_proto_contract.py`` 钉住
 ``ServiceResponse`` 的字段形状与注释；
-``tests/server/test_privilege_table_property.py`` 断言权限表覆盖
+``tests/unit/server/test_privilege_table_property.py`` 断言权限表覆盖
 descriptor 里的全部方法。
 
 线上行为对齐使用 Go 仓的 ``scripts/http_contract.sh`` 检查 HTTP 命令，

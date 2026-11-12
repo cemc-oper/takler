@@ -2,7 +2,6 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import threading
-import time
 
 import pytest
 
@@ -13,6 +12,8 @@ from takler.server.connect_config import Address, ConnectConfig, HttpSettings, S
 def test_concurrent_baselines_since_detail_and_shutdown(
     transport, server_runner_factory, free_port_fixture, monkeypatch
 ):
+    # Keep the socket test paginated without building a full-size page.
+    monkeypatch.setattr("takler.server.query_service.PAGE_TARGET_BYTES", 1200)
     grpc_port, http_port = free_port_fixture(), free_port_fixture()
     runner = server_runner_factory(
         port=grpc_port,
@@ -27,27 +28,37 @@ def test_concurrent_baselines_since_detail_and_shutdown(
         ),
     )
     flow = runner.server.bunch.add_flow("flow")
-    for index in range(2300):
-        flow.add_task(f"t{index}")
+    flow.add_task("t0")
+    flow.add_task("t1")
     query = runner.server.scheduler.query_service
+    begin_page = query._begin_page
     original = query._capture
-    entered, proceed = threading.Event(), threading.Event()
+    client_count = 3
+    readers_joined = threading.Event()
     calls = []
+
+    def track_readers(*args):
+        result = begin_page(*args)
+        if any(pending.readers == client_count for pending in query._captures.values()):
+            readers_joined.set()
+        return result
 
     def capture(*args):
         calls.append(args[6])
-        entered.set()
-        assert proceed.wait(5)
+        assert readers_joined.wait(10), "clients did not join the same capture"
         return original(*args)
 
+    monkeypatch.setattr(query, "_begin_page", track_readers)
     monkeypatch.setattr(query, "_capture", capture)
-    clients = [runner.make_client(transport_name=transport) for _ in range(3)]
-    barrier = threading.Barrier(3)
+    clients = [
+        runner.make_client(transport_name=transport) for _ in range(client_count)
+    ]
+    barrier = threading.Barrier(client_count, timeout=10)
 
     def read(client):
-        barrier.wait(3)
+        barrier.wait()
         view = client.run_query_snapshot(scope_path="/flow")
-        assert len(view.ordered_paths) == 2301
+        assert view.ordered_paths == ("/flow", "/flow/t0", "/flow/t1")
         updated = client.run_query_since(view)
         assert updated.query_id == view.query_id
         assert (
@@ -60,19 +71,14 @@ def test_concurrent_baselines_since_detail_and_shutdown(
             if transport == "http":
                 client.port = http_port
             client.start()
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=client_count) as executor:
             results = [executor.submit(read, client) for client in clients]
-            try:
-                assert entered.wait(3)
-                time.sleep(0.05)
-            finally:
-                proceed.set()
             views = [result.result(timeout=15) for result in results]
         assert len({view.snapshot_id for view in views}) == 1
+        assert len(query._snapshots[views[0].snapshot_id].content.pages) > 1
         assert len(calls) == 1
         assert not query._captures and query._reserved == 0
     finally:
-        proceed.set()
         for client in clients:
             client.close_channel()
         runner.stop()

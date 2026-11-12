@@ -64,7 +64,7 @@ from takler.tasks import ShellScriptTask
 from takler.tasks.shell.constant import TAKLER_INCLUDE, TAKLER_JOB, TAKLER_JOBOUT
 
 # ``ShellScriptTask`` renders a POSIX shell script and its default run command is
-# a ``sh`` redirection, mirroring the skip of ``tests/tasks/shell``.
+# a ``sh`` redirection, mirroring the skip of ``tests/unit/tasks/shell``.
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="tests for linux only")
 
 
@@ -88,13 +88,13 @@ SNAPSHOT_TRY_NO = 1
 
 
 def _shell_test_data(name: str) -> Path:
-    """Return a path inside ``tests/tasks/shell``.
+    """Return a path inside ``tests/unit/tasks/shell``.
 
     Task 17.4 asks for a script taken from the repository's own script
     directory, so the templates are reused from where the ``ShellScriptTask``
     unit tests keep them rather than written fresh into ``tmp_path``.
     """
-    return Path(__file__).parents[1] / "tasks" / "shell" / name
+    return Path(__file__).parents[1] / "unit" / "tasks" / "shell" / name
 
 
 #: Script with an include that exports ``TAKLER_HOST`` / ``TAKLER_PORT`` /

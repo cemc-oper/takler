@@ -178,8 +178,10 @@ send another command. `async_task` is explicitly unsupported.
 
 ## Release verification
 
-The **release** workflow checks the tag's actual commit against the latest
-successful main-branch CI run and every required job before building. Its
+Before tagging a release, manually run **ci** on `main` and wait for the unit
+matrix, isolated install smoke tests and paired contracts to pass. The
+**release** workflow checks the latest manual run for the tag's exact commit
+and requires every verification job to succeed before building. Its
 sdist and wheel are installed and checked, then listed with SHA-256 hashes and
 the source commit in `release-manifest.json`. Run the workflow manually with an
 existing remote tag and the default `dry_run` setting to validate without

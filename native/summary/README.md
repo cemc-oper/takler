@@ -40,9 +40,9 @@ an extension must explicitly provide a matching callback to opt in. Registered
 page models and custom node constructors/from-wire methods use Python.
 
 Run the regular client/protocol tests without the extension, then with the
-built wheel installed. `tests/client/test_summary_native.py` holds the native
+built wheel installed. `tests/unit/client/test_summary_native.py` holds the native
 differential and boundary cases; it skips when the optional wheel is absent.
-`tests/client/test_summary_transport.py` exercises both transport boundaries.
+`tests/unit/client/test_summary_transport.py` exercises both transport boundaries.
 No test in those files is a benchmark or opens a 100k archive.
 
 The first candidate reuses the previously evaluated kernel without GIL changes,

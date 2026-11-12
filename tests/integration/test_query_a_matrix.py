@@ -145,18 +145,27 @@ def _executable(language, request):
     return [str(request.getfixturevalue("go_query_binary"))]
 
 
+@pytest.fixture
+def query_a_cli(language, request):
+    # Resolve the client before starting a server for a case that may skip.
+    executable = _executable(language, request)
+    return executable, request.getfixturevalue("query_a_server")
+
+
 @pytest.mark.parametrize("language", ["python", "go"])
 @pytest.mark.parametrize("transport", ["grpc", "http"])
-def test_full_snapshot_cli_streams_fixed_details_and_completion(
-    language, transport, query_a_server, request
-):
+def test_full_snapshot_cli_streams_fixed_details_and_completion(transport, query_a_cli):
+    executable, query_a_server = query_a_cli
     _, grpc_port, http_port, flow, selected = query_a_server
     for index in range(2300, 4100):
         flow.add_task(f"task{index:04d}")
     port = http_port if transport == "http" else grpc_port
+    env = _environment(transport, port)
+    # This checks the streamed data. Allow a transient read timeout to retry.
+    env["TAKLER_TIMEOUT"] = "30"
     result = subprocess.run(
         [
-            *_executable(language, request),
+            *executable,
             "snapshot",
             "--host",
             "127.0.0.1",
@@ -166,7 +175,7 @@ def test_full_snapshot_cli_streams_fixed_details_and_completion(
             "/flow",
             "--stream",
         ],
-        env=_environment(transport, port),
+        env=env,
         capture_output=True,
         text=True,
         timeout=90,
@@ -182,14 +191,13 @@ def test_full_snapshot_cli_streams_fixed_details_and_completion(
 
 @pytest.mark.parametrize("language", ["python", "go"])
 @pytest.mark.parametrize("transport", ["grpc", "http"])
-def test_full_snapshot_cli_assembles_selected_root(
-    language, transport, query_a_server, request
-):
+def test_full_snapshot_cli_assembles_selected_root(transport, query_a_cli):
+    executable, query_a_server = query_a_cli
     _, grpc_port, http_port, _, selected = query_a_server
     port = http_port if transport == "http" else grpc_port
     result = subprocess.run(
         [
-            *_executable(language, request),
+            *executable,
             "snapshot",
             "--host",
             "127.0.0.1",
@@ -216,17 +224,15 @@ def test_full_snapshot_cli_assembles_selected_root(
 
 @pytest.mark.parametrize("language", ["python", "go"])
 @pytest.mark.parametrize("transport", ["grpc", "http"])
-def test_paired_cli_complete_pages_detail_and_failures(
-    language, transport, query_a_server, request
-):
+def test_paired_cli_complete_pages_detail_and_failures(transport, query_a_cli):
+    executable, query_a_server = query_a_cli
     _, grpc_port, http_port, _, _ = query_a_server
     port = http_port if transport == "http" else grpc_port
-    command = _executable(language, request)
     env = _environment(transport, port)
 
     def call(*args):
         return subprocess.run(
-            [*command, "show", *args],
+            [*executable, "show", *args],
             env=env,
             capture_output=True,
             text=True,
@@ -257,12 +263,10 @@ def test_paired_cli_complete_pages_detail_and_failures(
 
 @pytest.mark.parametrize("language", ["python", "go"])
 @pytest.mark.parametrize("transport", ["grpc", "http"])
-def test_paired_cli_rejects_mid_page_and_detail_identity_faults(
-    language, transport, query_a_server, request
-):
+def test_paired_cli_rejects_mid_page_and_detail_identity_faults(transport, query_a_cli):
+    executable, query_a_server = query_a_cli
     runner, grpc_port, http_port, _, _ = query_a_server
     port = http_port if transport == "http" else grpc_port
-    executable = _executable(language, request)
     command = [
         *executable,
         "show",

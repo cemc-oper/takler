@@ -6,7 +6,7 @@ from takler.protocol.query_v1 import ResetReply, SinceRequest
 from takler.server.connect_config import Address, ConnectConfig, HttpSettings, Server
 from takler.tui.app import TaklerTuiApp
 from takler.tui.service import TaklerTuiService
-from tests.tui.conftest import text_of, wait_until
+from tests.tui_fixtures import move_tree_cursor, text_of, wait_until
 from textual.widgets import Static
 
 
@@ -99,9 +99,7 @@ async def test_tui_reads_compact_query_and_selected_detail(
         assert app._snapshot.service.status in {"running", "halted"}
         assert "/flow/task" not in app._tree._path_nodes
         app._tree._path_nodes["/flow"].expand()
-        await wait_until(lambda: "/flow/task" in app._tree._path_nodes, pilot)
-        app._tree.focus()
-        app._tree.select_path("/flow/task")
+        await move_tree_cursor(pilot, app._tree, "/flow/task")
         await pilot.press("enter")
         await wait_until(
             lambda: (
